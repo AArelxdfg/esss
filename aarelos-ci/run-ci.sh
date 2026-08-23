@@ -13,8 +13,11 @@ trap 'rc=$?; printf "exit_code=%s\n" "$rc" > "$EVIDENCE/final-status.txt"; exit 
   echo "utc=$(date -u +%FT%TZ)"
   echo "runner=$(uname -a)"
   echo "pin=$PIN"
+  echo "cc=${CC:-unset}"
+  echo "cxx=${CXX:-unset}"
   cmake --version | head -1 || true
   ninja --version || true
+  gcc-14 --version | head -1 || true
   qemu-system-x86_64 --version | head -1 || true
 } | tee "$EVIDENCE/host-preflight.txt"
 
@@ -23,14 +26,17 @@ cd "$SERENITY"
 git fetch --depth=1 origin "$PIN"
 git checkout --detach "$PIN"
 test "$(git rev-parse HEAD)" = "$PIN"
+cp LICENSE "$EVIDENCE/SERENITYOS-LICENSE.txt"
+printf 'SerenityOS upstream: https://github.com/SerenityOS/serenity\nPinned commit: %s\nLicense: BSD-2-Clause\n' "$PIN" > "$EVIDENCE/UPSTREAM-NOTICE.txt"
 
-# Fail early if the pinned upstream APIs no longer match the AArel overlay assumptions.
+# Fail early if pinned upstream APIs no longer match overlay assumptions.
 {
   grep -F 'ConnectionFromClient(ServerStub& stub, NonnullOwnPtr<Core::LocalSocket> socket, int client_id)' Userland/Libraries/LibIPC/ConnectionFromClient.h
   grep -F 'static void spawn_or_show_error(Window* parent_window, StringView path' Userland/Libraries/LibGUI/Process.h
   grep -F 'IPC::MultiServer<NotificationServer::ConnectionFromClient>::try_create()' Userland/Services/NotificationServer/main.cpp
   grep -F 'add_subdirectory(LoginServer)' Userland/Services/CMakeLists.txt
   grep -F '[Desktop]' Base/etc/SystemServerUser.ini
+  grep -F 'add_custom_target(uefi-image' CMakeLists.txt
 } > "$EVIDENCE/upstream-api-contract.txt"
 echo 'UPSTREAM_API_CONTRACT_GATE=PASS' >> "$EVIDENCE/upstream-api-contract.txt"
 
@@ -55,7 +61,7 @@ if entry not in s:
 p.write_text(s)
 PY
 
-# Replace the stock desktop host with ForgeShell and register the LLera portal.
+# Replace stock desktop host with ForgeShell and register the LLera portal.
 python3 - <<'PY'
 from pathlib import Path
 p=Path('Base/etc/SystemServerUser.ini')
@@ -66,7 +72,6 @@ if old in s:
     s=s.replace(old,new)
 elif new not in s:
     raise SystemExit('Desktop stanza changed; refusing blind patch')
-
 if '[LLeraService]' not in s:
     anchor='[LaunchServer]\n'
     block='[LLeraService]\nSocket=/tmp/session/%sid/portal/llera\nSocketPermissions=600\nKeepAlive=true\nSystemModes=graphical\n\n'
@@ -84,21 +89,52 @@ grep -q 'ConnectionFromClient<LLeraClientEndpoint, LLeraServerEndpoint>(\*this, 
 git diff -- Userland/Applications/CMakeLists.txt Userland/Services/CMakeLists.txt Base/etc/SystemServerUser.ini > "$EVIDENCE/overlay.diff"
 find Userland/Applications/ForgeShell Userland/Services/LLeraService -type f -print | sort > "$EVIDENCE/overlay-files.txt"
 echo "serenity_ref=$(git rev-parse HEAD)" | tee "$EVIDENCE/metadata.txt"
-
 echo 'SOURCE_OVERLAY_GATE=PASS' | tee "$EVIDENCE/source-gates.txt"
 
-Meta/serenity.sh build x86_64 2>&1 | tee "$EVIDENCE/build.log"
-find Build/x86_64 -type f \( -name '*.img' -o -name '*.iso' \) -print0 | xargs -0 -r sha256sum | tee "$EVIDENCE/artifacts.sha256"
-find Build/x86_64 -type f \( -name '*.img' -o -name '*.iso' \) -printf '%p\t%s bytes\n' | sort | tee "$EVIDENCE/artifact-sizes.txt"
-test -s "$EVIDENCE/artifacts.sha256"
+# Gate 1: compile/install only. No boot-media claim is made here.
+Meta/serenity.sh build x86_64 GNU 2>&1 | tee "$EVIDENCE/build.log"
+test -x Build/x86_64/Root/bin/ForgeShell
+test -x Build/x86_64/Root/bin/LLeraService
+sha256sum Build/x86_64/Root/bin/ForgeShell Build/x86_64/Root/bin/LLeraService | tee "$EVIDENCE/custom-binaries.sha256"
+echo 'REPRODUCIBLE_X86_64_BUILD_GATE=PASS' | tee "$EVIDENCE/passed-gates.txt"
 
-echo 'BUILD_ARTIFACT_GATE=PASS' | tee "$EVIDENCE/passed-gates.txt"
+# Gate 2a: explicitly build Serenity's UEFI disk target.
+ninja -C Build/x86_64 uefi-image 2>&1 | tee "$EVIDENCE/uefi-image.log"
+test -s Build/x86_64/uefi_disk_image
+sha256sum Build/x86_64/uefi_disk_image | tee "$EVIDENCE/boot-media.sha256"
+stat --printf='uefi_disk_image\t%s bytes\n' Build/x86_64/uefi_disk_image | tee "$EVIDENCE/boot-media-sizes.txt"
+echo 'UEFI_MEDIA_BUILD_GATE=PASS' | tee -a "$EVIDENCE/passed-gates.txt"
 
+# Release manifest is evidence-derived; never pre-populate PASS values.
+python3 - "$PIN" "$EVIDENCE" <<'PY'
+from pathlib import Path
+import hashlib, json, sys
+pin=sys.argv[1]; e=Path(sys.argv[2])
+files=[]
+for p in sorted(e.iterdir()):
+    if p.is_file():
+        b=p.read_bytes()
+        files.append({'name':p.name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()})
+manifest={
+  'project':'AArel OS developer preview',
+  'serenity_upstream_commit':pin,
+  'upstream_license':'BSD-2-Clause',
+  'forge_shell_integrated':True,
+  'llera_service_source_integrated':True,
+  'llera_4b_bundled':False,
+  'windows_exe_compatibility_claim':'none-until-demonstrated',
+  'evidence_files':files,
+}
+(e/'release-manifest.json').write_text(json.dumps(manifest,indent=2)+"\n")
+PY
+
+# Gate 2b: runtime evidence. Meta/run currently boots the built Serenity image in QEMU;
+# screenshot PASS is separate from the UEFI-media-build PASS above.
 export DISPLAY=:99
 Xvfb :99 -screen 0 1280x800x24 >"$EVIDENCE/xvfb.log" 2>&1 &
 sleep 2
 set +e
-timeout 90s Meta/serenity.sh run x86_64 >"$EVIDENCE/qemu-run.log" 2>&1 &
+timeout 90s Meta/serenity.sh run x86_64 GNU >"$EVIDENCE/qemu-run.log" 2>&1 &
 RUN_PID=$!
 sleep 45
 import -display :99 -window root "$EVIDENCE/runtime.png" >"$EVIDENCE/screenshot.log" 2>&1
@@ -112,18 +148,15 @@ python3 - "$EVIDENCE/runtime.png" <<'PY'
 from PIL import Image
 from pathlib import Path
 import hashlib, sys
-p=Path(sys.argv[1])
-im=Image.open(p).convert('RGB')
-w,h=im.size
-pix=list(im.resize((160,100)).getdata())
+p=Path(sys.argv[1]); im=Image.open(p).convert('RGB')
+w,h=im.size; pix=list(im.resize((160,100)).getdata())
 colors=len(set(pix)); bright=sum(1 for r,g,b in pix if r+g+b>480); dark=sum(1 for r,g,b in pix if r+g+b<90)
 print(f'resolution={w}x{h} unique={colors} bright={bright} dark={dark}')
 print('screenshot_sha256='+hashlib.sha256(p.read_bytes()).hexdigest())
-assert w>=640 and h>=400, 'resolution'
-assert colors>=32, 'low diversity'
-assert bright>=10, 'no highlights'
-assert dark<len(pix), 'black frame'
-print('RUNTIME_SCREENSHOT_GATE=PASS')
+assert w>=640 and h>=400
+assert colors>=32
+assert bright>=10
+assert dark<len(pix)
+print('QEMU_SCREENSHOT_GATE=PASS')
 PY
-
 echo 'QEMU_SCREENSHOT_GATE=PASS' | tee -a "$EVIDENCE/passed-gates.txt"

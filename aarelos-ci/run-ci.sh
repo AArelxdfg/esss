@@ -29,7 +29,6 @@ test "$(git rev-parse HEAD)" = "$PIN"
 cp LICENSE "$EVIDENCE/SERENITYOS-LICENSE.txt"
 printf 'SerenityOS upstream: https://github.com/SerenityOS/serenity\nPinned commit: %s\nLicense: BSD-2-Clause\n' "$PIN" > "$EVIDENCE/UPSTREAM-NOTICE.txt"
 
-# Fail early if pinned upstream APIs no longer match overlay assumptions.
 {
   grep -F 'ConnectionFromClient(ServerStub& stub, NonnullOwnPtr<Core::LocalSocket> socket, int client_id)' Userland/Libraries/LibIPC/ConnectionFromClient.h
   grep -F 'static void spawn_or_show_error(Window* parent_window, StringView path' Userland/Libraries/LibGUI/Process.h
@@ -40,12 +39,10 @@ printf 'SerenityOS upstream: https://github.com/SerenityOS/serenity\nPinned comm
 } > "$EVIDENCE/upstream-api-contract.txt"
 echo 'UPSTREAM_API_CONTRACT_GATE=PASS' >> "$EVIDENCE/upstream-api-contract.txt"
 
-# ForgeShell desktop overlay.
 mkdir -p Userland/Applications/ForgeShell
 cp "$ROOT/aarelos-ci/ForgeShell/"* Userland/Applications/ForgeShell/
 grep -q 'add_subdirectory(ForgeShell)' Userland/Applications/CMakeLists.txt || printf '\nadd_subdirectory(ForgeShell)\n' >> Userland/Applications/CMakeLists.txt
 
-# Native LLera service overlay.
 mkdir -p Userland/Services/LLeraService
 cp "$ROOT/aarelos-ci/LLeraService/"* Userland/Services/LLeraService/
 python3 - <<'PY'
@@ -61,7 +58,6 @@ if entry not in s:
 p.write_text(s)
 PY
 
-# Replace stock desktop host with ForgeShell and register the LLera portal.
 python3 - <<'PY'
 from pathlib import Path
 p=Path('Base/etc/SystemServerUser.ini')
@@ -91,21 +87,24 @@ find Userland/Applications/ForgeShell Userland/Services/LLeraService -type f -pr
 echo "serenity_ref=$(git rev-parse HEAD)" | tee "$EVIDENCE/metadata.txt"
 echo 'SOURCE_OVERLAY_GATE=PASS' | tee "$EVIDENCE/source-gates.txt"
 
-# Gate 1: compile/install only. No boot-media claim is made here.
+# Gate 1: compile/install only.
 Meta/serenity.sh build x86_64 GNU 2>&1 | tee "$EVIDENCE/build.log"
 test -x Build/x86_64/Root/bin/ForgeShell
 test -x Build/x86_64/Root/bin/LLeraService
 sha256sum Build/x86_64/Root/bin/ForgeShell Build/x86_64/Root/bin/LLeraService | tee "$EVIDENCE/custom-binaries.sha256"
 echo 'REPRODUCIBLE_X86_64_BUILD_GATE=PASS' | tee "$EVIDENCE/passed-gates.txt"
 
-# Gate 2a: explicitly build Serenity's UEFI disk target.
+# Gate 5 partial: host-cross-build a focused developer baseline and verify binaries.
+bash "$ROOT/aarelos-ci/install-dev-ports.sh" "$EVIDENCE" "$SERENITY"
+echo 'DEV_PORTS_BASH_CURL_GIT_GATE=PASS' | tee -a "$EVIDENCE/passed-gates.txt"
+
+# Gate 2a: explicitly build Serenity's UEFI disk target after port installation.
 ninja -C Build/x86_64 uefi-image 2>&1 | tee "$EVIDENCE/uefi-image.log"
 test -s Build/x86_64/uefi_disk_image
 sha256sum Build/x86_64/uefi_disk_image | tee "$EVIDENCE/boot-media.sha256"
 stat --printf='uefi_disk_image\t%s bytes\n' Build/x86_64/uefi_disk_image | tee "$EVIDENCE/boot-media-sizes.txt"
 echo 'UEFI_MEDIA_BUILD_GATE=PASS' | tee -a "$EVIDENCE/passed-gates.txt"
 
-# Release manifest is evidence-derived; never pre-populate PASS values.
 python3 - "$PIN" "$EVIDENCE" <<'PY'
 from pathlib import Path
 import hashlib, json, sys
@@ -113,14 +112,14 @@ pin=sys.argv[1]; e=Path(sys.argv[2])
 files=[]
 for p in sorted(e.iterdir()):
     if p.is_file():
-        b=p.read_bytes()
-        files.append({'name':p.name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()})
+        b=p.read_bytes(); files.append({'name':p.name,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()})
 manifest={
   'project':'AArel OS developer preview',
   'serenity_upstream_commit':pin,
   'upstream_license':'BSD-2-Clause',
   'forge_shell_integrated':True,
   'llera_service_source_integrated':True,
+  'developer_ports_requested':['bash','curl','git'],
   'llera_4b_bundled':False,
   'windows_exe_compatibility_claim':'none-until-demonstrated',
   'evidence_files':files,
@@ -128,8 +127,7 @@ manifest={
 (e/'release-manifest.json').write_text(json.dumps(manifest,indent=2)+"\n")
 PY
 
-# Gate 2b: runtime evidence. Meta/run currently boots the built Serenity image in QEMU;
-# screenshot PASS is separate from the UEFI-media-build PASS above.
+# Gate 2b: QEMU runtime screenshot is kept separate from UEFI-media build.
 export DISPLAY=:99
 Xvfb :99 -screen 0 1280x800x24 >"$EVIDENCE/xvfb.log" 2>&1 &
 sleep 2

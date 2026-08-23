@@ -24,6 +24,16 @@ git fetch --depth=1 origin "$PIN"
 git checkout --detach "$PIN"
 test "$(git rev-parse HEAD)" = "$PIN"
 
+# Fail early if the pinned upstream APIs no longer match the AArel overlay assumptions.
+{
+  grep -F 'ConnectionFromClient(ServerStub& stub, NonnullOwnPtr<Core::LocalSocket> socket, int client_id)' Userland/Libraries/LibIPC/ConnectionFromClient.h
+  grep -F 'static void spawn_or_show_error(Window* parent_window, StringView path' Userland/Libraries/LibGUI/Process.h
+  grep -F 'IPC::MultiServer<NotificationServer::ConnectionFromClient>::try_create()' Userland/Services/NotificationServer/main.cpp
+  grep -F 'add_subdirectory(LoginServer)' Userland/Services/CMakeLists.txt
+  grep -F '[Desktop]' Base/etc/SystemServerUser.ini
+} > "$EVIDENCE/upstream-api-contract.txt"
+echo 'UPSTREAM_API_CONTRACT_GATE=PASS' >> "$EVIDENCE/upstream-api-contract.txt"
+
 # ForgeShell desktop overlay.
 mkdir -p Userland/Applications/ForgeShell
 cp "$ROOT/aarelos-ci/ForgeShell/"* Userland/Applications/ForgeShell/
@@ -69,15 +79,20 @@ PY
 grep -q '^Executable=/bin/ForgeShell$' Base/etc/SystemServerUser.ini
 grep -q '^\[LLeraService\]$' Base/etc/SystemServerUser.ini
 grep -q 'add_subdirectory(LLeraService)' Userland/Services/CMakeLists.txt
+grep -q 'ConnectionFromClient<LLeraClientEndpoint, LLeraServerEndpoint>(\*this, move(socket), client_id)' Userland/Services/LLeraService/ConnectionFromClient.cpp
 
 git diff -- Userland/Applications/CMakeLists.txt Userland/Services/CMakeLists.txt Base/etc/SystemServerUser.ini > "$EVIDENCE/overlay.diff"
 find Userland/Applications/ForgeShell Userland/Services/LLeraService -type f -print | sort > "$EVIDENCE/overlay-files.txt"
 echo "serenity_ref=$(git rev-parse HEAD)" | tee "$EVIDENCE/metadata.txt"
 
+echo 'SOURCE_OVERLAY_GATE=PASS' | tee "$EVIDENCE/source-gates.txt"
+
 Meta/serenity.sh build x86_64 2>&1 | tee "$EVIDENCE/build.log"
 find Build/x86_64 -type f \( -name '*.img' -o -name '*.iso' \) -print0 | xargs -0 -r sha256sum | tee "$EVIDENCE/artifacts.sha256"
 find Build/x86_64 -type f \( -name '*.img' -o -name '*.iso' \) -printf '%p\t%s bytes\n' | sort | tee "$EVIDENCE/artifact-sizes.txt"
 test -s "$EVIDENCE/artifacts.sha256"
+
+echo 'BUILD_ARTIFACT_GATE=PASS' | tee "$EVIDENCE/passed-gates.txt"
 
 export DISPLAY=:99
 Xvfb :99 -screen 0 1280x800x24 >"$EVIDENCE/xvfb.log" 2>&1 &
@@ -111,5 +126,4 @@ assert dark<len(pix), 'black frame'
 print('RUNTIME_SCREENSHOT_GATE=PASS')
 PY
 
-echo 'BUILD_ARTIFACT_GATE=PASS' | tee "$EVIDENCE/passed-gates.txt"
 echo 'QEMU_SCREENSHOT_GATE=PASS' | tee -a "$EVIDENCE/passed-gates.txt"

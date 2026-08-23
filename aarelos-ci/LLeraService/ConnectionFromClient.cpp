@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 #include "ConnectionFromClient.h"
+#include <AK/Literals.h>
 
 using namespace AK::Literals;
 
 namespace LLeraService {
 
 ConnectionFromClient::ConnectionFromClient(NonnullOwnPtr<Core::LocalSocket> socket, int client_id)
-    : IPC::ConnectionFromClient<LLeraClientEndpoint, LLeraServerEndpoint>(move(socket), client_id)
+    : IPC::ConnectionFromClient<LLeraClientEndpoint, LLeraServerEndpoint>(*this, move(socket), client_id)
 {
 }
 

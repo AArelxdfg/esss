@@ -17,6 +17,9 @@ jobs:
       - name: Checkout AArel overlay
         uses: actions/checkout@v4
 
+      - name: Validate Forge motion math
+        run: python3 aarel-os/tools/validate_motion.py
+
       - name: Read pinned upstream
         id: upstream
         shell: bash

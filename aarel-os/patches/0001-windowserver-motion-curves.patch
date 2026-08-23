@@ -1,22 +1,6 @@
-From 0000000000000000000000000000000000000001 Mon Sep 17 00:00:00 2001
-Subject: [AArel OS] WindowServer: add easing curves and motion scaling
-
-This extends SerenityOS' existing compositor-driven Animation primitive instead
-of introducing a second animation scheduler. Forge can therefore share the
-WindowServer frame loop while selecting motion curves per transition and can
-collapse all decorative motion through a single scale factor for reduced-motion
-or low-power modes.
-
----
- Userland/Services/WindowServer/Animation.cpp | 42 ++++++++++++++++++++++++---
- Userland/Services/WindowServer/Animation.h   | 18 ++++++++++++
- 2 files changed, 56 insertions(+), 4 deletions(-)
-
-diff --git a/Userland/Services/WindowServer/Animation.h b/Userland/Services/WindowServer/Animation.h
-index 53e48e641c..aarel000001 100644
 --- a/Userland/Services/WindowServer/Animation.h
 +++ b/Userland/Services/WindowServer/Animation.h
-@@ -16,6 +16,13 @@ namespace WindowServer {
+@@ -18,6 +18,13 @@
  class Compositor;
  class Screen;
  
@@ -30,7 +14,7 @@ index 53e48e641c..aarel000001 100644
  class Animation : public RefCounted<Animation> {
  public:
      static NonnullRefPtr<Animation> create() { return adopt_ref(*new Animation); }
-@@ -30,6 +37,13 @@ public:
+@@ -33,6 +40,14 @@
      void set_duration(int duration_in_ms);
      int duration() const { return m_duration; }
  
@@ -45,7 +29,7 @@ index 53e48e641c..aarel000001 100644
      bool update(Gfx::Painter&, Screen&, Gfx::DisjointIntRectSet& flush_rects);
      void call_stop_handler(Badge<Compositor>);
  
-@@ -40,6 +54,10 @@ private:
+@@ -44,7 +59,11 @@
  
      Core::ElapsedTimer m_timer;
      int m_duration { 0 };
@@ -57,11 +41,9 @@ index 53e48e641c..aarel000001 100644
  };
  
  }
-diff --git a/Userland/Services/WindowServer/Animation.cpp b/Userland/Services/WindowServer/Animation.cpp
-index cb4e61cda9..aarel000002 100644
 --- a/Userland/Services/WindowServer/Animation.cpp
 +++ b/Userland/Services/WindowServer/Animation.cpp
-@@ -47,13 +47,47 @@ void Animation::was_removed(Badge<Compositor>)
+@@ -52,15 +52,49 @@
      m_running = false;
  }
  
@@ -113,5 +95,3 @@ index cb4e61cda9..aarel000002 100644
  }
  
  }
--- 
-2.47.0

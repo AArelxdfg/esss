@@ -1,0 +1,117 @@
+From 0000000000000000000000000000000000000001 Mon Sep 17 00:00:00 2001
+Subject: [AArel OS] WindowServer: add easing curves and motion scaling
+
+This extends SerenityOS' existing compositor-driven Animation primitive instead
+of introducing a second animation scheduler. Forge can therefore share the
+WindowServer frame loop while selecting motion curves per transition and can
+collapse all decorative motion through a single scale factor for reduced-motion
+or low-power modes.
+
+---
+ Userland/Services/WindowServer/Animation.cpp | 42 ++++++++++++++++++++++++---
+ Userland/Services/WindowServer/Animation.h   | 18 ++++++++++++
+ 2 files changed, 56 insertions(+), 4 deletions(-)
+
+diff --git a/Userland/Services/WindowServer/Animation.h b/Userland/Services/WindowServer/Animation.h
+index 53e48e641c..aarel000001 100644
+--- a/Userland/Services/WindowServer/Animation.h
++++ b/Userland/Services/WindowServer/Animation.h
+@@ -16,6 +16,13 @@ namespace WindowServer {
+ class Compositor;
+ class Screen;
+ 
++enum class AnimationCurve : u8 {
++    Linear,
++    EaseOutCubic,
++    EaseInOutCubic,
++    ForgeSpring,
++};
++
+ class Animation : public RefCounted<Animation> {
+ public:
+     static NonnullRefPtr<Animation> create() { return adopt_ref(*new Animation); }
+@@ -30,6 +37,13 @@ public:
+     void set_duration(int duration_in_ms);
+     int duration() const { return m_duration; }
+ 
++    void set_curve(AnimationCurve curve) { m_curve = curve; }
++    AnimationCurve curve() const { return m_curve; }
++
++    // 0 collapses decorative motion to an immediate state change. Values in
++    // (0, 1) accelerate motion for low-power/reduced-motion profiles.
++    void set_motion_scale(float scale) { m_motion_scale = scale < 0.0f ? 0.0f : scale; }
++    float motion_scale() const { return m_motion_scale; }
++
+     bool update(Gfx::Painter&, Screen&, Gfx::DisjointIntRectSet& flush_rects);
+     void call_stop_handler(Badge<Compositor>);
+ 
+@@ -40,6 +54,10 @@ private:
+ 
+     Core::ElapsedTimer m_timer;
+     int m_duration { 0 };
++    AnimationCurve m_curve { AnimationCurve::Linear };
++    float m_motion_scale { 1.0f };
+     bool m_running { false };
++
++    float transformed_progress(float linear_progress) const;
+ };
+ 
+ }
+diff --git a/Userland/Services/WindowServer/Animation.cpp b/Userland/Services/WindowServer/Animation.cpp
+index cb4e61cda9..aarel000002 100644
+--- a/Userland/Services/WindowServer/Animation.cpp
++++ b/Userland/Services/WindowServer/Animation.cpp
+@@ -47,13 +47,47 @@ void Animation::was_removed(Badge<Compositor>)
+     m_running = false;
+ }
+ 
++float Animation::transformed_progress(float progress) const
++{
++    switch (m_curve) {
++    case AnimationCurve::Linear:
++        return progress;
++    case AnimationCurve::EaseOutCubic: {
++        auto inverse = 1.0f - progress;
++        return 1.0f - inverse * inverse * inverse;
++    }
++    case AnimationCurve::EaseInOutCubic:
++        if (progress < 0.5f)
++            return 4.0f * progress * progress * progress;
++        else {
++            auto inverse = -2.0f * progress + 2.0f;
++            return 1.0f - (inverse * inverse * inverse) / 2.0f;
++        }
++    case AnimationCurve::ForgeSpring: {
++        // Critically-damped-looking cubic response. This deliberately avoids
++        // overshoot so geometry and hit testing never disagree about bounds.
++        auto inverse = 1.0f - progress;
++        return 1.0f - inverse * inverse * (1.0f + 2.0f * progress);
++    }
++    }
++    VERIFY_NOT_REACHED();
++}
++
+ bool Animation::update(Gfx::Painter& painter, Screen& screen, Gfx::DisjointIntRectSet& flush_rects)
+ {
+     i64 const elapsed_ms = m_timer.elapsed();
+-    float progress = min((float)elapsed_ms / (float)m_duration, 1.0f);
++    auto scaled_duration = static_cast<int>(static_cast<float>(m_duration) * m_motion_scale);
++
++    // A zero motion scale is the reduced-motion fast path. We still issue one
++    // final update so callers reach their exact terminal visual state.
++    float linear_progress = 1.0f;
++    if (scaled_duration > 0)
++        linear_progress = min((float)elapsed_ms / (float)scaled_duration, 1.0f);
++
++    auto progress = transformed_progress(linear_progress);
+ 
+     if (on_update)
+         on_update(progress, painter, screen, flush_rects);
+ 
+-    return progress < 1.0f;
++    return linear_progress < 1.0f;
+ }
+ 
+ }
+-- 
+2.47.0

@@ -1,0 +1,33 @@
+name: AArel OS CI Diagnostics
+
+on:
+  push:
+    branches: [aarelos-ci-sprint]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect environment
+        run: |
+          mkdir -p aarelos-diag
+          {
+            echo "uname:"; uname -a
+            echo "cmake:"; cmake --version | head -1 || true
+            echo "ninja:"; ninja --version || true
+            echo "gcc:"; gcc --version | head -1 || true
+            echo "python:"; python3 --version || true
+            echo "disk:"; df -h /
+            echo "memory:"; free -h
+            echo "apt packages:"; apt-cache policy qemu-system-x86 ovmf imagemagick xvfb python3-pil | sed -n '1,120p'
+          } | tee aarelos-diag/environment.txt
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: aarelos-ci-diagnostics
+          path: aarelos-diag/
+          if-no-files-found: error

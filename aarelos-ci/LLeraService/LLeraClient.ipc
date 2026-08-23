@@ -1,0 +1,4 @@
+endpoint LLeraClient
+{
+    state_changed(String state)
+}

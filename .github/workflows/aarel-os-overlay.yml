@@ -1,0 +1,62 @@
+name: AArel OS Serenity Overlay
+
+on:
+  push:
+    branches:
+      - aarel-os-serenity-sprint
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  patch-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout AArel overlay
+        uses: actions/checkout@v4
+
+      - name: Read pinned upstream
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          source aarel-os/UPSTREAM.lock
+          echo "commit=$SERENITY_COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned SerenityOS
+        uses: actions/checkout@v4
+        with:
+          repository: SerenityOS/serenity
+          ref: ${{ steps.upstream.outputs.commit }}
+          path: serenity
+          fetch-depth: 1
+
+      - name: Verify AArel patches apply cleanly
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd serenity
+          for patch in ../aarel-os/patches/*.patch; do
+            echo "checking $patch"
+            git apply --check "$patch"
+            git apply "$patch"
+          done
+          git diff --check
+
+      - name: Verify upstream attribution remains present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f aarel-os/LICENSE.serenity
+          grep -q "BSD 2-Clause License" aarel-os/LICENSE.serenity
+          grep -q "SerenityOS developers" aarel-os/LICENSE.serenity
+
+      - name: Verify motion safety invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "set_motion_scale" serenity/Userland/Services/WindowServer/Animation.h
+          grep -q "scaled_duration > 0" serenity/Userland/Services/WindowServer/Animation.cpp
+          grep -q "return linear_progress < 1.0f" serenity/Userland/Services/WindowServer/Animation.cpp

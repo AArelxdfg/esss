@@ -9,13 +9,27 @@ on:
 
 jobs:
   diagnostics:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Runner heartbeat
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "AARELOS_RUNNER_HEARTBEAT=PASS"
+          uname -a
+          python3 --version
+          df -h /
+          free -h
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Collect environment
+        shell: bash
         run: |
           mkdir -p aarelos-diag
           {
+            echo "heartbeat=PASS"
             echo "uname:"; uname -a
             echo "cmake:"; cmake --version | head -1 || true
             echo "ninja:"; ninja --version || true
@@ -23,7 +37,6 @@ jobs:
             echo "python:"; python3 --version || true
             echo "disk:"; df -h /
             echo "memory:"; free -h
-            echo "apt packages:"; apt-cache policy qemu-system-x86 ovmf imagemagick xvfb python3-pil | sed -n '1,120p'
           } | tee aarelos-diag/environment.txt
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4

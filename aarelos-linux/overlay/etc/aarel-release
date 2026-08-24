@@ -1,0 +1,8 @@
+AArel OS Linux Preview 0.1
+PRODUCT=AArel OS
+SESSION=Monolith
+WORKSPACE=Forge
+BASE=Kubuntu 26.04 LTS
+BASE_FAMILY=Ubuntu
+KERNEL_FAMILY=Linux
+TRACK=linux-one-day

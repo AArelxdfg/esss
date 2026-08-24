@@ -8,6 +8,8 @@ if [[ -f "$MARKER" && "${1:-}" != "--force" ]]; then
 fi
 
 command -v kwriteconfig6 >/dev/null
+QDBUS=""
+if command -v qdbus6 >/dev/null 2>&1; then QDBUS=qdbus6; elif command -v qdbus >/dev/null 2>&1; then QDBUS=qdbus; fi
 
 kwriteconfig6 --file kdeglobals --group General --key ColorScheme AArelMonolith
 kwriteconfig6 --file kdeglobals --group General --key font "Inter,10,-1,5,50,0,0,0,0,0"
@@ -36,20 +38,17 @@ HistoryMode=2
 ScrollBarPosition=2
 PROFILE
 
-# Wait for the Plasma D-Bus surface. First login can be slower in a live image.
-for _ in $(seq 1 30); do
-  if qdbus6 org.kde.plasmashell /PlasmaShell >/dev/null 2>&1; then
-    break
+if [[ -n "$QDBUS" ]]; then
+  for _ in $(seq 1 30); do
+    if "$QDBUS" org.kde.plasmashell /PlasmaShell >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  if "$QDBUS" org.kde.plasmashell /PlasmaShell >/dev/null 2>&1; then
+    "$QDBUS" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$(cat /usr/share/aarel/plasma-layout.js)" || true
   fi
-  sleep 1
-done
-
-if qdbus6 org.kde.plasmashell /PlasmaShell >/dev/null 2>&1; then
-  qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$(cat /usr/share/aarel/plasma-layout.js)" || true
+  "$QDBUS" org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+  "$QDBUS" org.kde.plasmashell /PlasmaShell refreshCurrentShell >/dev/null 2>&1 || true
 fi
-
-qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
-qdbus6 org.kde.plasmashell /PlasmaShell refreshCurrentShell >/dev/null 2>&1 || true
 
 touch "$MARKER"
 printf 'AArel Monolith visual profile applied.\n'

@@ -1,0 +1,7 @@
+AArel OS Linux Preview — Foundation Notice
+
+AArel OS Linux Preview is an independent derivative product assembled from open-source components. The day-one hardware/kernel/userspace foundation is Kubuntu 26.04 LTS / Ubuntu 26.04 LTS with the Linux kernel and KDE Plasma.
+
+AArel OS, AArel Monolith, Forge and LLera are AArel project identities. They do not imply endorsement by Canonical, Kubuntu, KDE, the Linux kernel project, Wine, Flatpak or their contributors.
+
+Original package licenses, copyright notices, source obligations and attribution remain in force and must not be removed by AArel branding. The independent SerenityOS-based AArel Monolith research track is preserved separately and is not represented as the kernel of this Linux Preview.

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import shutil
+import subprocess
 from pathlib import Path
 
 PIN = "5f37b60744d49b6ff217cfc60cce54a26f1d9c59"
@@ -58,14 +59,20 @@ def main() -> int:
     if not git_head.exists():
         raise RuntimeError("target does not look like a SerenityOS checkout")
 
-    # The caller is responsible for checking out UPSTREAM.lock. We still require
-    # the exact object to exist before mutating the tree so accidental application
-    # to an unrelated source tree fails closed.
-    import subprocess
-
     actual = subprocess.check_output(["git", "-C", str(serenity), "rev-parse", "HEAD"], text=True).strip()
     if actual != PIN:
         raise RuntimeError(f"pinned upstream mismatch: expected {PIN}, got {actual}")
+
+    forge_src = overlay / "Userland" / "Applications" / "Forge"
+    forge_dst = serenity / "Userland" / "Applications" / "Forge"
+    copy_tree(forge_src, forge_dst)
+
+    apps_cmake = serenity / "Userland" / "Applications" / "CMakeLists.txt"
+    append_subdirectory(
+        apps_cmake,
+        "add_subdirectory(FileManager)\n",
+        "add_subdirectory(Forge)\n",
+    )
 
     llera_src = overlay / "Userland" / "Services" / "LLeraService"
     llera_dst = serenity / "Userland" / "Services" / "LLeraService"
@@ -80,7 +87,7 @@ def main() -> int:
 
     system_user = serenity / "Base" / "etc" / "SystemServerUser.ini"
     text = system_user.read_text()
-    block = (
+    llera_block = (
         "[LLeraService]\n"
         "Socket=/tmp/session/%sid/portal/llera\n"
         "SocketPermissions=600\n"
@@ -91,10 +98,19 @@ def main() -> int:
         anchor = "[LaunchServer]\n"
         if anchor not in text:
             raise RuntimeError("SystemServerUser.ini missing LaunchServer anchor")
-        system_user.write_text(text.replace(anchor, block + anchor, 1))
+        text = text.replace(anchor, llera_block + anchor, 1)
 
-    # Fail closed if the overlay accidentally drops license metadata.
+    stock_desktop = "[Desktop]\nExecutable=/bin/FileManager\nArguments=--desktop\nKeepAlive=true"
+    forge_desktop = "[Desktop]\nExecutable=/bin/Forge\nKeepAlive=true"
+    if forge_desktop not in text:
+        if stock_desktop not in text:
+            raise RuntimeError("SystemServerUser.ini desktop stanza changed")
+        text = text.replace(stock_desktop, forge_desktop, 1)
+    system_user.write_text(text)
+
     required = [
+        forge_dst / "CMakeLists.txt",
+        forge_dst / "main.cpp",
         llera_dst / "CMakeLists.txt",
         llera_dst / "ConnectionFromClient.h",
         llera_dst / "ConnectionFromClient.cpp",

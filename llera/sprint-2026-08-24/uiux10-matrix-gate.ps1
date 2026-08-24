@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory)][string[]]$VisualReports,
     [Parameter(Mandatory)][string]$InteractionReport,
     [Parameter(Mandatory)][string[]]$AccessibilityReports,
+    [Parameter(Mandatory)][string]$RuntimeIdentityReport,
     [string]$ExpectedCandidate = 'V5.4.0 MONOLITH AURORA UX',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts')
 )
@@ -52,7 +53,7 @@ foreach($path in $VisualReports){
     if([int]$v.metrics.sampledUniqueColors -lt [int]$v.thresholds.minSampledUniqueColors){Fail "Screenshot color diversity below threshold for $case"}
     if([double]$v.metrics.luminanceStdDev -lt [double]$v.thresholds.minLuminanceStdDev){Fail "Screenshot luminance variation below threshold for $case"}
     if([double]$v.metrics.edgeRatio -lt [double]$v.thresholds.minEdgeRatio){Fail "Screenshot edge/detail evidence below threshold for $case"}
-    $evidence += [pscustomobject]@{matrixCase=$case;score=100;reportSha256=$physicalSha;visualReportSha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant();screenshotSha256=[string]$v.screenshot.sha256;capturedAt=$physical.report.capturedAt;computer=$physical.report.host.computer;visualMetrics=$v.metrics;minActionTargetDip=[int]$physical.report.thresholds.minActionTargetDip;minActionTargetPx=[int]$physical.report.thresholds.minActionTargetPx;warningCount=[int]$physical.report.warningCount}
+    $evidence += [pscustomobject]@{matrixCase=$case;score=100;reportSha256=$physicalSha;visualReportSha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant();screenshotSha256=[string]$v.screenshot.sha256;capturedAt=$physical.report.capturedAt;computer=$physical.report.host.computer;visualMetrics=$v.metrics;minActionTargetDip=[int]$physical.report.thresholds.minActionTargetDip;minActionTargetPx=[int]$physical.report.thresholds.minActionTargetPx;warningCount=[int]$physical.report.warningCount;pid=[int]$physical.report.window.pid}
 }
 foreach($case in $required){if(-not $visualSeen.ContainsKey($case)){Fail "Missing visual-integrity report for required matrix case: $case"}}
 
@@ -60,6 +61,17 @@ $computers=@($evidence|ForEach-Object{$_.computer}|Select-Object -Unique)
 if($computers.Count-ne 1){Fail "Physical matrix must come from one Windows host; hosts=$($computers -join ', ')"}
 $screenshotHashes=@($evidence|ForEach-Object{$_.screenshotSha256}|Select-Object -Unique)
 if($screenshotHashes.Count-ne 3){Fail 'Each matrix case must have a distinct real screenshot hash.'}
+
+$identity=Read-Json $RuntimeIdentityReport
+if($identity.product -ne 'LLera UIUX 10/10 Runtime Identity Audit'){Fail 'Unexpected runtime identity audit product marker.'}
+if([int]$identity.schema -lt 1){Fail 'Runtime identity audit schema is too old.'}
+if($identity.candidate -ne $ExpectedCandidate){Fail "Runtime identity candidate mismatch: $($identity.candidate)"}
+if($identity.verdict -ne 'PASS' -or [int]$identity.score -ne 100 -or [int]$identity.passCount -ne [int]$identity.totalChecks){Fail 'Runtime identity audit is not 100/100.'}
+if([string]$identity.computer -ne [string]$computers[0]){Fail 'Runtime identity audit must run on the same physical Windows host as the viewport matrix.'}
+$runtimeSha=[string]$identity.process.sha256
+if($runtimeSha -notmatch '^[0-9a-f]{64}$'){Fail 'Runtime executable SHA-256 is missing or malformed.'}
+if([int64]$identity.process.bytes -le 0){Fail 'Runtime executable identity has invalid file length.'}
+$runtimeIdentitySha=(Get-FileHash -Algorithm SHA256 -LiteralPath $RuntimeIdentityReport).Hash.ToLowerInvariant()
 
 $interaction=Read-Json $InteractionReport
 if($interaction.product -ne 'LLera UIUX 10/10 Interaction Audit'){Fail 'Unexpected interaction audit product marker.'}
@@ -85,7 +97,7 @@ foreach($path in $AccessibilityReports){
 foreach($mode in $requiredModes){if(-not $modeSeen.ContainsKey($mode)){Fail "Missing required accessibility-mode report: $mode"}}
 
 $result=[ordered]@{
- schema=5
+ schema=6
  product='LLera UIUX 10/10 Matrix Gate'
  candidate=$ExpectedCandidate
  verdict='PASS'
@@ -99,6 +111,7 @@ $result=[ordered]@{
    requiredVisualIntegrityScore=100
    requiredInteractionScore=100
    requiredAccessibilityScore=100
+   requiredRuntimeIdentityScore=100
    minActionTargetDip=44
    minEditorHeightDip=44
    requireDpiAwarePhysicalTargets=$true
@@ -109,8 +122,10 @@ $result=[ordered]@{
    requireAllChecksPass=$true
    requireKeyboardInteractionProof=$true
    requireAccessibilityModeProof=$true
+   requireRuntimeExecutableIdentityProof=$true
    requireSinglePhysicalWindowsHost=$true
  }
+ runtimeIdentity=@{score=100;reportSha256=$runtimeIdentitySha;executableSha256=$runtimeSha;bytes=[int64]$identity.process.bytes;path=[string]$identity.process.path;authenticodeStatus=[string]$identity.authenticode.status;capturedAt=$identity.capturedAt;computer=$identity.computer}
  evidence=$evidence
  interaction=@{score=100;reportSha256=$interactionSha;capturedAt=$interaction.capturedAt;computer=$interaction.computer}
  accessibility=$a11yEvidence
@@ -120,7 +135,8 @@ $out=Join-Path $OutputDirectory ("uiux10-matrix-{0}.json" -f (Get-Date -Format '
 $result|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $out -Encoding UTF8
 $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $out).Hash.ToLowerInvariant()
 "$sha  $(Split-Path -Leaf $out)"|Set-Content -LiteralPath "$out.sha256" -Encoding ASCII
-Write-Host 'PASS: UI/UX = 100/100 across viewport, DPI-aware target sizing, visual-integrity, accessibility modes and interaction gates.'
+Write-Host 'PASS: UI/UX = 100/100 across viewport, DPI-aware target sizing, visual-integrity, runtime identity, accessibility modes and interaction gates.'
+Write-Host "Runtime executable SHA-256: $runtimeSha"
 Write-Host "Evidence: $out"
 Write-Host "SHA-256: $sha"
 exit 0

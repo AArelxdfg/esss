@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][string[]]$Reports,
     [Parameter(Mandatory)][string[]]$VisualReports,
     [Parameter(Mandatory)][string]$InteractionReport,
+    [Parameter(Mandatory)][string[]]$AccessibilityReports,
     [string]$ExpectedCandidate = 'V5.4.0 MONOLITH AURORA UX',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts')
 )
@@ -61,8 +62,23 @@ if([int]$interaction.passCount -ne [int]$interaction.totalChecks){Fail 'Interact
 if([string]$interaction.computer -ne [string]$computers[0]){Fail 'Interaction audit must run on the same physical Windows host as the viewport matrix.'}
 $interactionSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $InteractionReport).Hash.ToLowerInvariant()
 
+$requiredModes=@('HighContrast','ReducedMotion');$modeSeen=@{};$a11yEvidence=@()
+foreach($path in $AccessibilityReports){
+    $a=Read-Json $path
+    if($a.product -ne 'LLera UIUX 10/10 Accessibility Mode Audit'){Fail "Unexpected accessibility report marker in $path"}
+    if($a.candidate -ne $ExpectedCandidate){Fail "Accessibility candidate mismatch in $path: $($a.candidate)"}
+    $mode=[string]$a.mode
+    if($requiredModes -notcontains $mode){Fail "Unexpected accessibility mode: $mode"}
+    if($modeSeen.ContainsKey($mode)){Fail "Duplicate accessibility mode report: $mode"}
+    $modeSeen[$mode]=$true
+    if($a.verdict -ne 'PASS' -or [int]$a.score -ne 100 -or [int]$a.passCount -ne [int]$a.totalChecks){Fail "Accessibility mode $mode is not 100/100"}
+    if([string]$a.computer -ne [string]$computers[0]){Fail "Accessibility mode $mode must run on the same physical Windows host."}
+    $a11yEvidence += [pscustomobject]@{mode=$mode;score=100;reportSha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant();capturedAt=$a.capturedAt;computer=$a.computer}
+}
+foreach($mode in $requiredModes){if(-not $modeSeen.ContainsKey($mode)){Fail "Missing required accessibility-mode report: $mode"}}
+
 $result=[ordered]@{
- schema=3
+ schema=4
  product='LLera UIUX 10/10 Matrix Gate'
  candidate=$ExpectedCandidate
  verdict='PASS'
@@ -71,26 +87,30 @@ $result=[ordered]@{
  computer=[string]$computers[0]
  policy=@{
    requiredMatrix=$required
+   requiredAccessibilityModes=$requiredModes
    requiredPerCaseScore=100
    requiredVisualIntegrityScore=100
    requiredInteractionScore=100
+   requiredAccessibilityScore=100
    allowWarnings=$false
    requireScreenshotEvidence=$true
    requireDistinctScreenshotHashes=$true
    requireVisualIntegrityProof=$true
    requireAllChecksPass=$true
    requireKeyboardInteractionProof=$true
+   requireAccessibilityModeProof=$true
    requireSinglePhysicalWindowsHost=$true
  }
  evidence=$evidence
  interaction=@{score=100;reportSha256=$interactionSha;capturedAt=$interaction.capturedAt;computer=$interaction.computer}
+ accessibility=$a11yEvidence
 }
 New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 $out=Join-Path $OutputDirectory ("uiux10-matrix-{0}.json" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $result|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $out -Encoding UTF8
 $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $out).Hash.ToLowerInvariant()
 "$sha  $(Split-Path -Leaf $out)"|Set-Content -LiteralPath "$out.sha256" -Encoding ASCII
-Write-Host 'PASS: UI/UX = 100/100 across viewport, visual-integrity, accessibility and interaction gates.'
+Write-Host 'PASS: UI/UX = 100/100 across viewport, visual-integrity, accessibility modes and interaction gates.'
 Write-Host "Evidence: $out"
 Write-Host "SHA-256: $sha"
 exit 0

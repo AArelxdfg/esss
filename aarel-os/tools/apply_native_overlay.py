@@ -111,6 +111,10 @@ def main() -> int:
     required = [
         forge_dst / "CMakeLists.txt",
         forge_dst / "main.cpp",
+        forge_dst / "LLeraConnection.h",
+        forge_dst / "LLeraConnection.cpp",
+        forge_dst / "LLeraServer.ipc",
+        forge_dst / "LLeraClient.ipc",
         llera_dst / "CMakeLists.txt",
         llera_dst / "ConnectionFromClient.h",
         llera_dst / "ConnectionFromClient.cpp",

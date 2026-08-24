@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory)][string]$FocusOrderReport,
     [Parameter(Mandatory)][string]$WindowLifecycleReport,
     [Parameter(Mandatory)][string]$ResponsivenessReport,
+    [Parameter(Mandatory)][string]$ComposerStressReport,
     [string]$ExpectedCandidate = 'V5.4.0 MONOLITH AURORA UX',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts')
 )
@@ -15,6 +16,7 @@ $matrix=Read-Json $MatrixGateReport
 $focus=Read-Json $FocusOrderReport
 $lifecycle=Read-Json $WindowLifecycleReport
 $responsive=Read-Json $ResponsivenessReport
+$composer=Read-Json $ComposerStressReport
 if($matrix.product -ne 'LLera UIUX 10/10 Matrix Gate'){Fail 'Unexpected matrix gate product marker.'}
 if([int]$matrix.schema -lt 5){Fail 'Matrix gate schema 5+ required.'}
 if($matrix.candidate -ne $ExpectedCandidate){Fail "Matrix candidate mismatch: $($matrix.candidate)"}
@@ -53,17 +55,29 @@ if([int]$responsive.sampleCount -lt 60){Fail 'Responsiveness proof requires at l
 if([double]$responsive.latency.p95Ms -gt 50){Fail "UI-thread p95 latency exceeds 50 ms: $($responsive.latency.p95Ms) ms."}
 if([double]$responsive.latency.worstMs -gt 150){Fail "UI-thread worst latency exceeds 150 ms: $($responsive.latency.worstMs) ms."}
 if([string]$responsive.computer -ne [string]$matrix.computer){Fail 'Responsiveness proof must come from the same physical Windows host as the matrix.'}
+if($composer.product -ne 'LLera UIUX 10/10 Composer Stress Audit'){Fail 'Unexpected composer-stress product marker.'}
+if([int]$composer.schema -lt 1){Fail 'Composer-stress schema 1+ required.'}
+if($composer.candidate -ne $ExpectedCandidate){Fail "Composer candidate mismatch: $($composer.candidate)"}
+if($composer.verdict -ne 'PASS' -or [int]$composer.score -ne 100){Fail "Composer stress is not 100/100: score=$($composer.score) verdict=$($composer.verdict)"}
+if([int]$composer.failureCount -ne 0 -or [int]$composer.warningCount -ne 0){Fail 'Composer-stress evidence contains failures or warnings.'}
+if([int]$composer.longTextChars -lt 8192){Fail 'Composer stress proof requires at least 8192 characters.'}
+if([string]$composer.computer -ne [string]$matrix.computer){Fail 'Composer-stress proof must come from the same physical Windows host as the matrix.'}
+$badComposer=@($composer.checks|Where-Object{-not $_.pass})
+if($badComposer.Count-ne0){Fail "Composer stress contains $($badComposer.Count) failed check(s)."}
+$requiredComposerChecks=@('window-responsive','composer-found','composer-value-pattern','composer-not-clipped','composer-onscreen','composer-keyboard-focus','turkish-unicode-roundtrip','long-content-roundtrip','responsive-after-long-content','composer-bounds-stable-after-long-content','composer-content-restored')
+foreach($name in $requiredComposerChecks){if(-not(@($composer.checks|Where-Object{$_.name-eq$name -and $_.pass}).Count-eq1)){Fail "Composer stress lacks required PASS check: $name"}}
 $matrixSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $MatrixGateReport).Hash.ToLowerInvariant()
 $focusSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $FocusOrderReport).Hash.ToLowerInvariant()
 $lifecycleSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $WindowLifecycleReport).Hash.ToLowerInvariant()
 $responsiveSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $ResponsivenessReport).Hash.ToLowerInvariant()
+$composerSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $ComposerStressReport).Hash.ToLowerInvariant()
 $result=[ordered]@{
-  schema=3;product='LLera UIUX 10/10 Ultimate Gate';candidate=$ExpectedCandidate;verdict='PASS';score=100;checkedAt=(Get-Date).ToUniversalTime().ToString('o');computer=$matrix.computer
-  policy=@{requireMatrix100=$true;requireThreePhysicalViewports=$true;requireScreenshotHashes=$true;allowWarnings=$false;requireFocusOrder100=$true;requireForwardAndReverseTraversal=$true;requireWindowLifecycle100=$true;requireMinimizeRestoreMaximizeRestore=$true;requireStableDpiAcrossLifecycle=$true;requireResponsiveness100=$true;maxP95UiThreadLatencyMs=50;maxWorstUiThreadLatencyMs=150;requireSamePhysicalWindowsHost=$true}
-  evidence=@{matrixGateSha256=$matrixSha;focusOrderSha256=$focusSha;windowLifecycleSha256=$lifecycleSha;responsivenessSha256=$responsiveSha;viewportCount=@($matrix.evidence).Count;forwardFocusSteps=@($focus.forward).Count;reverseFocusSteps=@($focus.reverse).Count;lifecycleCycles=[int]$lifecycle.cycles;lifecycleSteps=@($lifecycle.steps).Count;responsivenessSamples=[int]$responsive.sampleCount;p95UiThreadLatencyMs=[double]$responsive.latency.p95Ms;worstUiThreadLatencyMs=[double]$responsive.latency.worstMs}
+  schema=4;product='LLera UIUX 10/10 Ultimate Gate';candidate=$ExpectedCandidate;verdict='PASS';score=100;checkedAt=(Get-Date).ToUniversalTime().ToString('o');computer=$matrix.computer
+  policy=@{requireMatrix100=$true;requireThreePhysicalViewports=$true;requireScreenshotHashes=$true;allowWarnings=$false;requireFocusOrder100=$true;requireForwardAndReverseTraversal=$true;requireWindowLifecycle100=$true;requireMinimizeRestoreMaximizeRestore=$true;requireStableDpiAcrossLifecycle=$true;requireResponsiveness100=$true;maxP95UiThreadLatencyMs=50;maxWorstUiThreadLatencyMs=150;requireComposerStress100=$true;requireTurkishUnicodeRoundtrip=$true;minimumComposerStressChars=8192;requireComposerNoClipping=$true;requireComposerContentRestore=$true;requireSamePhysicalWindowsHost=$true}
+  evidence=@{matrixGateSha256=$matrixSha;focusOrderSha256=$focusSha;windowLifecycleSha256=$lifecycleSha;responsivenessSha256=$responsiveSha;composerStressSha256=$composerSha;viewportCount=@($matrix.evidence).Count;forwardFocusSteps=@($focus.forward).Count;reverseFocusSteps=@($focus.reverse).Count;lifecycleCycles=[int]$lifecycle.cycles;lifecycleSteps=@($lifecycle.steps).Count;responsivenessSamples=[int]$responsive.sampleCount;p95UiThreadLatencyMs=[double]$responsive.latency.p95Ms;worstUiThreadLatencyMs=[double]$responsive.latency.worstMs;composerStressChars=[int]$composer.longTextChars;composerChecks=@($composer.checks).Count}
 }
 New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 $out=Join-Path $OutputDirectory ("uiux10-ultimate-{0}.json" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $result|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $out -Encoding UTF8
 $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $out).Hash.ToLowerInvariant();"$sha  $(Split-Path -Leaf $out)"|Set-Content -LiteralPath "$out.sha256" -Encoding ASCII
-Write-Host 'PASS: LLera UI/UX strict physical contract = 100/100, including focus-order, Windows lifecycle and UI-thread responsiveness proof.';Write-Host "Evidence: $out";Write-Host "SHA-256: $sha";exit 0
+Write-Host 'PASS: LLera UI/UX strict physical contract = 100/100, including viewport, focus-order, Windows lifecycle, UI-thread responsiveness and Unicode/long-content composer proof.';Write-Host "Evidence: $out";Write-Host "SHA-256: $sha";exit 0

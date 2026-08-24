@@ -149,27 +149,27 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     subtitle.set_fixed_height(28);
     subtitle.set_text_alignment(Gfx::TextAlignment::CenterLeft);
 
-    add_section_title(main_column, "Pinned workspace");
-    add_status_line(main_column, "Search — native application and command discovery");
-    add_status_line(main_column, "Terminal — POSIX shell with bash, curl and git");
-    add_status_line(main_column, "Browser — integrated web surface");
-    add_status_line(main_column, "Files — projects, downloads and build artifacts");
-    add_status_line(main_column, "Settings / System Monitor — native system control");
+    add_section_title(main_column, "Pinned workspace"sv);
+    add_status_line(main_column, "Search — native application and command discovery"sv);
+    add_status_line(main_column, "Terminal — POSIX shell with bash, curl and git"sv);
+    add_status_line(main_column, "Browser — integrated web surface"sv);
+    add_status_line(main_column, "Files — projects, downloads and build artifacts"sv);
+    add_status_line(main_column, "Settings / System Monitor — native system control"sv);
 
     auto& spacer = main_column.add<GUI::Widget>();
     spacer.set_fixed_height(16);
 
-    add_section_title(main_column, "Windows-class direction");
-    add_status_line(main_column, "Fast boot • app discovery • native multitasking • recovery-first updates");
-    add_status_line(main_column, "Compatibility target: POSIX toolchain first, Win32 compatibility only when demonstrated");
+    add_section_title(main_column, "Windows-class direction"sv);
+    add_status_line(main_column, "Fast boot • app discovery • native multitasking • recovery-first updates"sv);
+    add_status_line(main_column, "Compatibility target: POSIX toolchain first, Win32 compatibility only when demonstrated"sv);
 
     auto& status_column = workspace.add<GUI::Widget>();
     status_column.set_fixed_width(360);
     status_column.set_layout<GUI::VerticalBoxLayout>(8);
 
-    add_section_title(status_column, "System status");
-    add_status_line(status_column, "UEFI boot media: verified");
-    add_status_line(status_column, "Developer tools: bash / curl / git");
+    add_section_title(status_column, "System status"sv);
+    add_status_line(status_column, "UEFI boot media: verified"sv);
+    add_status_line(status_column, "Developer tools: bash / curl / git"sv);
     add_status_line(status_column, llera_gate_passed
             ? "LLera IPC: PASS — policy boundary online"sv
             : "LLera IPC: FAIL — service unavailable"sv);
@@ -177,15 +177,15 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
             ? "LLera kill-switch: verified"sv
             : "LLera kill-switch: unavailable"sv);
 
-    add_section_title(status_column, "Security boundary");
-    add_status_line(status_column, "Applications: separate native processes");
-    add_status_line(status_column, "LLera actions: explicit capability allow-list");
-    add_status_line(status_column, "Free-form shell execution: denied");
+    add_section_title(status_column, "Security boundary"sv);
+    add_status_line(status_column, "Applications: separate native processes"sv);
+    add_status_line(status_column, "LLera actions: explicit capability allow-list"sv);
+    add_status_line(status_column, "Free-form shell execution: denied"sv);
 
-    add_section_title(status_column, "Next parity gates");
-    add_status_line(status_column, "Installer + update rollback");
-    add_status_line(status_column, "Hardware / driver qualification");
-    add_status_line(status_column, "Win32 compatibility sandbox");
+    add_section_title(status_column, "Next parity gates"sv);
+    add_status_line(status_column, "Installer + update rollback"sv);
+    add_status_line(status_column, "Hardware / driver qualification"sv);
+    add_status_line(status_column, "Win32 compatibility sandbox"sv);
 
     auto& footer = root->add<GUI::Label>("AArel OS 0.7-dev • SerenityOS foundation, BSD-2-Clause notices preserved"_string);
     footer.set_text_alignment(Gfx::TextAlignment::CenterLeft);

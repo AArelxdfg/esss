@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "product": "LLera Windows-grade soak runbook",
+  "baseline": "5.3.5",
+  "principle": "No Windows-grade claim without physical Windows evidence.",
+  "phases": [
+    {"id":"S1","name":"interactive-soak","duration_minutes":120,"required":true,"workload":["ordinary Turkish chat","persistent work mission","terminal tool","browser tool","vision enable/disable","Operations Evidence inspection"],"fail_on":["unresponsive UI > 10s unrelated to OS modal UI","blank final assistant response","duplicate llama-server","lost mission checkpoint","unbounded retry loop"]},
+    {"id":"S2","name":"runtime-health-cycles","iterations":50,"required":true,"assertions":["health returns bounded result","no empty parser-channel false kill","llama-server count <= 1","working runtime is preserved on failed candidate switch"]},
+    {"id":"S3","name":"forced-runtime-recovery","iterations":10,"required":true,"destructive":true,"assertions":["replacement runtime becomes healthy within configured recovery bound","UI remains responsive/status-bearing","no duplicate runtime remains"]},
+    {"id":"S4","name":"mission-restart-recovery","iterations":5,"required":true,"destructive":true,"assertions":["checkpoint restored","tool trace restored","anti-loop history restored","verification debt restored","material action is re-observed before retry"]},
+    {"id":"S5","name":"host-pressure","required":true,"assertions":["background inference concurrency decreases under elevated pressure","low-priority council/verifier inference is abortable under critical pressure","Vision is blocked/unloaded before desktop responsiveness is sacrificed","download concurrency is reduced under pressure"]},
+    {"id":"S6","name":"ui-matrix","required":true,"matrix":[{"resolution":"1366x768","scale":"125%"},{"resolution":"1920x1080","scale":"150%"},{"resolution":"2560x1440","scale":"200%"}],"assertions":["primary controls reachable","composer reachable","Operations/Evidence reachable","no shell-wide horizontal overflow","window lifecycle repeatable"]}
+  ],
+  "promotion_rule": "Every required phase must have captured evidence and zero unresolved required failures. Static/cross-build PASS cannot substitute for a physical Windows phase."
+}

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include "LLeraConnection.h"
 #include <LibCore/System.h>
 #include <LibGUI/Application.h>
 #include <LibGUI/BoxLayout.h>
@@ -30,7 +31,9 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     auto window = GUI::Window::construct();
     window->set_title("AArel OS — Forge");
     window->resize(1120, 700);
-    window->center_on_screen();
+    window->set_maximized(true);
+    window->set_closeable(false);
+    window->set_minimizable(false);
 
     auto root = window->set_main_widget<GUI::Widget>();
     root->set_fill_with_background_color(true);
@@ -59,9 +62,31 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     add_launcher("Files", "/bin/FileManager");
     add_launcher("Settings", "/bin/Settings");
 
-    auto& llera_status = root->add<GUI::Label>("LLera service: system IPC enabled; UI client pending");
+    auto& llera_status = root->add<GUI::Label>("LLera service: connecting");
     llera_status.set_text_alignment(Gfx::TextAlignment::CenterLeft);
     llera_status.set_fixed_height(26);
+
+    RefPtr<LLeraConnection> llera_connection;
+    auto llera_connection_or_error = LLeraConnection::try_create();
+    if (llera_connection_or_error.is_error()) {
+        llera_status.set_text("LLera service: unavailable");
+    } else {
+        llera_connection = llera_connection_or_error.release_value();
+        auto status = llera_connection->status();
+        llera_status.set_text(status.state());
+    }
+
+    auto& llera_refresh = root->add<GUI::Button>("Refresh LLera service status");
+    llera_refresh.set_fixed_height(40);
+    llera_refresh.set_enabled(llera_connection);
+    llera_refresh.on_click = [llera_connection, &llera_status](auto) {
+        if (!llera_connection || !llera_connection->is_open()) {
+            llera_status.set_text("LLera service: disconnected");
+            return;
+        }
+        auto status = llera_connection->status();
+        llera_status.set_text(status.state());
+    };
 
     window->show();
     return app->exec();

@@ -11,6 +11,7 @@ compile_ipc(LLeraClient.ipc LLeraClientEndpoint.h)
 
 set(SOURCES
     ConnectionFromClient.cpp
+    Policy.cpp
     main.cpp
 )
 

@@ -1,6 +1,11 @@
 name: AArel OS Linux ISO Build
 
 on:
+  push:
+    branches: [aarelos-linux-one-day]
+    paths:
+      - 'aarelos-linux/**'
+      - '.github/workflows/aarelos-linux-image.yml'
   workflow_dispatch:
 
 jobs:

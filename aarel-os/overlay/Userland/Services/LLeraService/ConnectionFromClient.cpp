@@ -5,6 +5,7 @@
  */
 
 #include "ConnectionFromClient.h"
+#include "Policy.h"
 #include <AK/Literals.h>
 
 using namespace AK::Literals;
@@ -40,23 +41,8 @@ Messages::LLeraServer::RequestActionResponse ConnectionFromClient::request_actio
     if (m_killed)
         return { false, "kill-switch-active"_string };
 
-    // LLera is intentionally not a generic command-execution service. Every
-    // privileged action must be brokered through a named capability.
-    if (capability == "app.open"sv) {
-        if (verb == "terminal"sv || verb == "browser"sv || verb == "files"sv)
-            return { true, "accepted-for-forge-broker"_string };
-        return { false, "unsupported-app"_string };
-    }
-
-    if (capability == "web.open"sv) {
-        if (verb != "url"sv)
-            return { false, "unsupported-web-verb"_string };
-        if (!(argument.starts_with("https://"sv) || argument.starts_with("http://"sv)))
-            return { false, "invalid-web-url"_string };
-        return { true, "accepted-for-browser-broker"_string };
-    }
-
-    return { false, "denied-by-policy"_string };
+    auto decision = Policy::evaluate(capability, verb, argument);
+    return { decision.accepted, String::from_utf8(decision.reason).release_value_but_fixme_should_propagate_errors() };
 }
 
 Messages::LLeraServer::SetVoiceEnabledResponse ConnectionFromClient::set_voice_enabled(bool enabled)

@@ -1,6 +1,6 @@
 {
-  "schema": 1,
-  "captured_at": "2026-08-24T03:56:00+03:00",
+  "schema": 2,
+  "captured_at": "2026-08-24T05:58:00+03:00",
   "sprint": "Windows-grade 12h",
   "baseline": {
     "version": "5.3.5",
@@ -33,15 +33,26 @@
     "source ZIP integrity PASS"
   ],
   "hard_blockers": [
-    "V5.3.5 source archive bytes are not available in the connected GitHub repository or retrievable File Library surface.",
-    "Current connected GitHub repository stores llera/stable.json but not the LLera runtime source tree.",
+    "V5.3.5 source archive bytes are still not available in the connected GitHub repository or retrievable File Library surface; File Library exposes the build report and source SHA-256 only.",
+    "Current connected GitHub repository does not contain the LLera runtime source tree.",
     "Physical Windows/GPU/pagefile/local-GGUF V5.3.5 stress validation has not been evidenced in the accessible build report.",
     "Stable update manifest remains at version 5.3.0 and must not be advanced until a verified publishable candidate and signing material exist."
   ],
   "sprint_outputs": [
     "llera/sprint-2026-08-24/README.md",
     "llera/sprint-2026-08-24/windows-grade-gate.ps1",
+    "llera/sprint-2026-08-24/ui-windows-matrix.ps1",
+    "llera/sprint-2026-08-24/soak-runbook.json",
+    "llera/sprint-2026-08-24/source-recovery-gate.ps1",
+    "llera/sprint-2026-08-24/run-windows-grade-suite.ps1",
     "llera/sprint-2026-08-24/current-state.json"
+  ],
+  "new_this_turn": [
+    "Added hash-locked V5.3.5 source recovery gate that searches common Windows roots and accepts only the known source SHA-256.",
+    "Added ZIP path traversal rejection before source extraction and writes a source-entry inventory when extraction is explicitly enabled.",
+    "Added unified Windows-grade evidence suite runner that composes core gate, UI matrix and optional source recovery and hashes the final evidence JSON.",
+    "Reconfirmed File Library contains the V5.3.5 build report but not the source archive bytes.",
+    "Reconfirmed GitHub llera root contains sprint evidence plus stable.json, not runtime source."
   ],
   "release_policy": {
     "modify_stable_manifest": false,

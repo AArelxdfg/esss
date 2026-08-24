@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-and-boot:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, aarelos]
     timeout-minutes: 240
     permissions:
       contents: read

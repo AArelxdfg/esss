@@ -23,22 +23,42 @@ Messages::LLeraServer::PingResponse ConnectionFromClient::ping()
 
 Messages::LLeraServer::StatusResponse ConnectionFromClient::status()
 {
-    return {
-        m_killed ? "killed"_string : "ready-without-model"_string,
-        false,
-        m_voice_enabled && !m_killed
-    };
+    if (m_killed)
+        return { "killed"_string, false, false };
+
+    if (m_denied_count > 0)
+        return { "ready-policy-enforced"_string, false, m_voice_enabled };
+
+    return { "ready-without-model"_string, false, m_voice_enabled };
+}
+
+bool ConnectionFromClient::action_allowed(String const& capability, String const& verb) const
+{
+    if (capability != "app.open"sv)
+        return false;
+
+    return verb == "terminal"sv
+        || verb == "browser"sv
+        || verb == "files"sv
+        || verb == "settings"sv
+        || verb == "system-monitor"sv;
 }
 
 Messages::LLeraServer::RequestActionResponse ConnectionFromClient::request_action(String const& capability, String const& verb, String const&)
 {
-    if (m_killed)
+    ++m_request_count;
+
+    if (m_killed) {
+        ++m_denied_count;
         return { false, "kill-switch-active"_string };
+    }
 
-    if (capability == "app.open"sv && (verb == "terminal"sv || verb == "browser"sv || verb == "files"sv))
-        return { true, "accepted-for-broker"_string };
+    if (!action_allowed(capability, verb)) {
+        ++m_denied_count;
+        return { false, "denied-by-policy"_string };
+    }
 
-    return { false, "denied-by-policy"_string };
+    return { true, "accepted-for-broker"_string };
 }
 
 Messages::LLeraServer::SetVoiceEnabledResponse ConnectionFromClient::set_voice_enabled(bool enabled)
@@ -47,6 +67,7 @@ Messages::LLeraServer::SetVoiceEnabledResponse ConnectionFromClient::set_voice_e
         m_voice_enabled = false;
         return { false };
     }
+
     m_voice_enabled = enabled;
     return { m_voice_enabled };
 }

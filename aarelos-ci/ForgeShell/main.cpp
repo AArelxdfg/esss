@@ -86,8 +86,10 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     TRY(Core::System::unveil(nullptr, nullptr));
 
     auto llera = TRY(LLeraConnection::try_create());
-    auto ping = llera->try_ping();
-    auto llera_gate_passed = !ping.is_error() && ping.value() == "pong"sv;
+    // The pinned IPC generator's try_ping() wrapper is malformed for a
+    // single flattened String response, so use its valid synchronous proxy.
+    auto ping = llera->ping();
+    auto llera_gate_passed = ping == "pong"sv;
     auto initial = llera->try_status();
     llera_gate_passed = llera_gate_passed && !initial.is_error()
         && initial.value().state() == "ready-without-model"sv;

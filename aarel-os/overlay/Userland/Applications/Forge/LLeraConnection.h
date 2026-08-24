@@ -6,10 +6,10 @@
 
 #pragma once
 
+#include <Forge/LLeraClientEndpoint.h>
+#include <Forge/LLeraServerEndpoint.h>
 #include <LibCore/Forward.h>
 #include <LibIPC/ConnectionToServer.h>
-#include <LLeraClientEndpoint.h>
-#include <LLeraServerEndpoint.h>
 
 class LLeraConnection final
     : public IPC::ConnectionToServer<LLeraClientEndpoint, LLeraServerEndpoint>

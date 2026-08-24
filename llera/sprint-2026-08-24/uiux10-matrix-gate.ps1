@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string[]]$Reports,
+    [Parameter(Mandatory)][string]$InteractionReport,
     [string]$ExpectedCandidate = 'V5.4.0 MONOLITH AURORA UX',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts')
 )
@@ -26,8 +27,15 @@ foreach($path in $Reports){
 }
 foreach($case in $required){if(-not $seen.ContainsKey($case)){Fail "Missing required matrix case: $case"}}
 
+$interaction=Read-Json $InteractionReport
+if($interaction.product -ne 'LLera UIUX 10/10 Interaction Audit'){Fail 'Unexpected interaction audit product marker.'}
+if($interaction.candidate -ne $ExpectedCandidate){Fail "Interaction candidate mismatch: $($interaction.candidate)"}
+if($interaction.verdict -ne 'PASS' -or [int]$interaction.score -ne 100){Fail "Keyboard/command-palette interaction is not 100/100: score=$($interaction.score) verdict=$($interaction.verdict)"}
+if([int]$interaction.passCount -ne [int]$interaction.totalChecks){Fail 'Interaction audit contains a non-PASS check.'}
+$interactionSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $InteractionReport).Hash.ToLowerInvariant()
+
 $result=[ordered]@{
- schema=1
+ schema=2
  product='LLera UIUX 10/10 Matrix Gate'
  candidate=$ExpectedCandidate
  verdict='PASS'
@@ -36,18 +44,21 @@ $result=[ordered]@{
  policy=@{
    requiredMatrix=$required
    requiredPerCaseScore=100
+   requiredInteractionScore=100
    allowWarnings=$false
    requireScreenshotEvidence=$true
    requireAllChecksPass=$true
+   requireKeyboardInteractionProof=$true
  }
  evidence=$evidence
+ interaction=@{score=100;reportSha256=$interactionSha;capturedAt=$interaction.capturedAt;computer=$interaction.computer}
 }
 New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 $out=Join-Path $OutputDirectory ("uiux10-matrix-{0}.json" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $result|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $out -Encoding UTF8
 $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $out).Hash.ToLowerInvariant()
 "$sha  $(Split-Path -Leaf $out)"|Set-Content -LiteralPath "$out.sha256" -Encoding ASCII
-Write-Host 'PASS: UI/UX = 100/100 across all required Windows matrix cases.'
+Write-Host 'PASS: UI/UX = 100/100 across viewport, accessibility and interaction gates.'
 Write-Host "Evidence: $out"
 Write-Host "SHA-256: $sha"
 exit 0

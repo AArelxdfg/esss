@@ -1,0 +1,17 @@
+name: AArel OS Runner Probe
+
+on:
+  push:
+    branches: [aarelos-ci-sprint]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe runner
+        shell: bash
+        run: |
+          echo "AARELOS_RUNNER_PROBE=PASS"
+          uname -a
+          date -u

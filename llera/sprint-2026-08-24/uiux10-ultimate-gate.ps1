@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][string]$MatrixGateReport,
     [Parameter(Mandatory)][string]$FocusOrderReport,
     [Parameter(Mandatory)][string]$WindowLifecycleReport,
+    [Parameter(Mandatory)][string]$ResponsivenessReport,
     [string]$ExpectedCandidate = 'V5.4.0 MONOLITH AURORA UX',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts')
 )
@@ -13,6 +14,7 @@ function Read-Json([string]$p){if(-not(Test-Path -LiteralPath $p -PathType Leaf)
 $matrix=Read-Json $MatrixGateReport
 $focus=Read-Json $FocusOrderReport
 $lifecycle=Read-Json $WindowLifecycleReport
+$responsive=Read-Json $ResponsivenessReport
 if($matrix.product -ne 'LLera UIUX 10/10 Matrix Gate'){Fail 'Unexpected matrix gate product marker.'}
 if([int]$matrix.schema -lt 5){Fail 'Matrix gate schema 5+ required.'}
 if($matrix.candidate -ne $ExpectedCandidate){Fail "Matrix candidate mismatch: $($matrix.candidate)"}
@@ -43,16 +45,25 @@ if(@($lifecycle.steps).Count -lt 12){Fail 'Lifecycle evidence lacks the required
 if([string]$lifecycle.computer -ne [string]$matrix.computer){Fail 'Window-lifecycle proof must come from the same physical Windows host as the matrix.'}
 $badLifecycle=@($lifecycle.steps|Where-Object{$_.hung -or (-not $_.responding) -or ([int]$_.dpi-ne[int]$lifecycle.initialDpi)})
 if($badLifecycle.Count-ne0){Fail "Lifecycle contains $($badLifecycle.Count) unresponsive or DPI-drift state(s)."}
+if($responsive.product -ne 'LLera UIUX 10/10 Responsiveness Audit'){Fail 'Unexpected responsiveness product marker.'}
+if($responsive.candidate -ne $ExpectedCandidate){Fail "Responsiveness candidate mismatch: $($responsive.candidate)"}
+if($responsive.verdict -ne 'PASS' -or [int]$responsive.score -ne 100){Fail "Responsiveness is not 100/100: score=$($responsive.score) verdict=$($responsive.verdict)"}
+if([int]$responsive.failureCount -ne 0){Fail "Responsiveness audit contains $($responsive.failureCount) failure(s)."}
+if([int]$responsive.sampleCount -lt 60){Fail 'Responsiveness proof requires at least 60 physical UI-thread probes.'}
+if([double]$responsive.latency.p95Ms -gt 50){Fail "UI-thread p95 latency exceeds 50 ms: $($responsive.latency.p95Ms) ms."}
+if([double]$responsive.latency.worstMs -gt 150){Fail "UI-thread worst latency exceeds 150 ms: $($responsive.latency.worstMs) ms."}
+if([string]$responsive.computer -ne [string]$matrix.computer){Fail 'Responsiveness proof must come from the same physical Windows host as the matrix.'}
 $matrixSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $MatrixGateReport).Hash.ToLowerInvariant()
 $focusSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $FocusOrderReport).Hash.ToLowerInvariant()
 $lifecycleSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $WindowLifecycleReport).Hash.ToLowerInvariant()
+$responsiveSha=(Get-FileHash -Algorithm SHA256 -LiteralPath $ResponsivenessReport).Hash.ToLowerInvariant()
 $result=[ordered]@{
-  schema=2;product='LLera UIUX 10/10 Ultimate Gate';candidate=$ExpectedCandidate;verdict='PASS';score=100;checkedAt=(Get-Date).ToUniversalTime().ToString('o');computer=$matrix.computer
-  policy=@{requireMatrix100=$true;requireThreePhysicalViewports=$true;requireScreenshotHashes=$true;allowWarnings=$false;requireFocusOrder100=$true;requireForwardAndReverseTraversal=$true;requireWindowLifecycle100=$true;requireMinimizeRestoreMaximizeRestore=$true;requireStableDpiAcrossLifecycle=$true;requireSamePhysicalWindowsHost=$true}
-  evidence=@{matrixGateSha256=$matrixSha;focusOrderSha256=$focusSha;windowLifecycleSha256=$lifecycleSha;viewportCount=@($matrix.evidence).Count;forwardFocusSteps=@($focus.forward).Count;reverseFocusSteps=@($focus.reverse).Count;lifecycleCycles=[int]$lifecycle.cycles;lifecycleSteps=@($lifecycle.steps).Count}
+  schema=3;product='LLera UIUX 10/10 Ultimate Gate';candidate=$ExpectedCandidate;verdict='PASS';score=100;checkedAt=(Get-Date).ToUniversalTime().ToString('o');computer=$matrix.computer
+  policy=@{requireMatrix100=$true;requireThreePhysicalViewports=$true;requireScreenshotHashes=$true;allowWarnings=$false;requireFocusOrder100=$true;requireForwardAndReverseTraversal=$true;requireWindowLifecycle100=$true;requireMinimizeRestoreMaximizeRestore=$true;requireStableDpiAcrossLifecycle=$true;requireResponsiveness100=$true;maxP95UiThreadLatencyMs=50;maxWorstUiThreadLatencyMs=150;requireSamePhysicalWindowsHost=$true}
+  evidence=@{matrixGateSha256=$matrixSha;focusOrderSha256=$focusSha;windowLifecycleSha256=$lifecycleSha;responsivenessSha256=$responsiveSha;viewportCount=@($matrix.evidence).Count;forwardFocusSteps=@($focus.forward).Count;reverseFocusSteps=@($focus.reverse).Count;lifecycleCycles=[int]$lifecycle.cycles;lifecycleSteps=@($lifecycle.steps).Count;responsivenessSamples=[int]$responsive.sampleCount;p95UiThreadLatencyMs=[double]$responsive.latency.p95Ms;worstUiThreadLatencyMs=[double]$responsive.latency.worstMs}
 }
 New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 $out=Join-Path $OutputDirectory ("uiux10-ultimate-{0}.json" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $result|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $out -Encoding UTF8
 $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $out).Hash.ToLowerInvariant();"$sha  $(Split-Path -Leaf $out)"|Set-Content -LiteralPath "$out.sha256" -Encoding ASCII
-Write-Host 'PASS: LLera UI/UX strict physical contract = 100/100, including focus-order and Windows lifecycle proof.';Write-Host "Evidence: $out";Write-Host "SHA-256: $sha";exit 0
+Write-Host 'PASS: LLera UI/UX strict physical contract = 100/100, including focus-order, Windows lifecycle and UI-thread responsiveness proof.';Write-Host "Evidence: $out";Write-Host "SHA-256: $sha";exit 0

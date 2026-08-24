@@ -4,6 +4,37 @@ EVIDENCE="${1:?evidence dir required}"
 SERENITY="${2:?serenity tree required}"
 cd "$SERENITY"
 
+# GNU's rotating mirror occasionally returns transient 5xx responses. Keep the
+# pinned archive names and hashes, but use the canonical endpoint and make all
+# port downloads resilient to short network outages.
+python3 - <<'PY'
+from pathlib import Path
+
+ports = Path("Ports")
+for package in ports.rglob("package.sh"):
+    text = package.read_text()
+    canonical = text.replace(
+        "https://ftpmirror.gnu.org/gnu/", "https://ftp.gnu.org/gnu/"
+    )
+    if canonical != text:
+        package.write_text(canonical)
+
+include = ports / ".port_include.sh"
+text = include.read_text()
+old = 'run_nocd curl ${curlopts:-} "$url" --fail -L -o "$filename"'
+new = (
+    'run_nocd curl ${curlopts:-} "$url" --fail -L '
+    '--retry 5 --retry-all-errors --retry-delay 2 -o "$filename"'
+)
+if old not in text and new not in text:
+    raise SystemExit("Port curl invocation changed upstream; refusing an unsafe patch")
+if old in text:
+    include.write_text(text.replace(old, new))
+PY
+
+git diff -- Ports/.port_include.sh 'Ports/**/package.sh' \
+  > "$EVIDENCE/ports-download-overlay.diff"
+
 # Serenity's documented VM workflow cross-builds ports on the host and
 # installs them into the image root before boot. Build only a focused
 # developer baseline here; each binary is verified before a PASS is emitted.

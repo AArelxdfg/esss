@@ -13,6 +13,6 @@ jobs:
         shell: bash
         run: |
           echo "AARELOS_RUNNER_PROBE=PASS"
-          echo "AARELOS_PROBE_REV=2026-08-24T15:47+03:00"
+          echo "AARELOS_PROBE_REV=2026-08-24T15:53+03:00"
           uname -a
           date -u

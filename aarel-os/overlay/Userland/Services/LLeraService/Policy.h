@@ -6,13 +6,14 @@
 
 #pragma once
 
+#include <AK/String.h>
 #include <AK/StringView.h>
 
 namespace LLeraService {
 
 struct PolicyDecision {
     bool accepted { false };
-    StringView reason;
+    String reason;
 };
 
 class Policy {

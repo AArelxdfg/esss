@@ -9,14 +9,44 @@
 #include <LibGUI/Window.h>
 #include <LibMain/Main.h>
 
-static GUI::Button& add_launcher(GUI::Widget& parent, RefPtr<GUI::Window> const& window, StringView label, StringView executable)
+struct LauncherSpec {
+    StringView label;
+    StringView executable;
+};
+
+static constexpr LauncherSpec s_primary_launchers[] = {
+    { "Forge Terminal", "/bin/Terminal" },
+    { "Browser", "/bin/Browser" },
+    { "Files", "/bin/FileManager" },
+    { "Settings", "/bin/Settings" },
+    { "System Monitor", "/bin/SystemMonitor" },
+};
+
+static GUI::Button& add_launcher(GUI::Widget& parent, RefPtr<GUI::Window> const& window, LauncherSpec const& spec)
 {
-    auto& button = parent.add<GUI::Button>(label);
+    auto& button = parent.add<GUI::Button>(spec.label);
     button.set_fixed_height(42);
-    button.on_click = [window, executable](auto) {
+    button.on_click = [window, executable = spec.executable](auto) {
         GUI::Process::spawn_or_show_error(window, executable);
     };
     return button;
+}
+
+static GUI::Label& add_section_title(GUI::Widget& parent, StringView text)
+{
+    auto& label = parent.add<GUI::Label>(text);
+    label.set_font(label.font().bold_variant());
+    label.set_fixed_height(30);
+    label.set_text_alignment(Gfx::TextAlignment::CenterLeft);
+    return label;
+}
+
+static GUI::Label& add_status_line(GUI::Widget& parent, StringView text)
+{
+    auto& label = parent.add<GUI::Label>(text);
+    label.set_fixed_height(24);
+    label.set_text_alignment(Gfx::TextAlignment::CenterLeft);
+    return label;
 }
 
 ErrorOr<int> serenity_main(Main::Arguments arguments)
@@ -38,73 +68,76 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     auto root = window->set_main_widget<GUI::Widget>();
     root->set_fill_with_background_color(true);
-    root->set_layout<GUI::VerticalBoxLayout>(14);
-    root->layout()->set_margins({ 28, 28, 28, 28 });
+    root->set_layout<GUI::VerticalBoxLayout>(12);
+    root->layout()->set_margins({ 24, 24, 24, 24 });
 
     auto& top_bar = root->add<GUI::Widget>();
-    top_bar.set_fixed_height(56);
+    top_bar.set_fixed_height(54);
     top_bar.set_layout<GUI::HorizontalBoxLayout>(10);
 
     auto& brand = top_bar.add<GUI::Label>("AArel OS");
     brand.set_font(brand.font().bold_variant());
     brand.set_text_alignment(Gfx::TextAlignment::CenterLeft);
 
-    auto& mode = top_bar.add<GUI::Label>("SerenityForge Native • developer preview");
+    auto& mode = top_bar.add<GUI::Label>("SerenityForge Native • 0.6-dev");
     mode.set_text_alignment(Gfx::TextAlignment::CenterRight);
 
-    auto& hero = root->add<GUI::Label>("Forge");
-    hero.set_font(hero.font().bold_variant());
-    hero.set_text_alignment(Gfx::TextAlignment::CenterLeft);
-    hero.set_fixed_height(48);
-
-    auto& subtitle = root->add<GUI::Label>("Build, browse, inspect and operate from one native desktop shell.");
-    subtitle.set_text_alignment(Gfx::TextAlignment::CenterLeft);
-    subtitle.set_fixed_height(28);
-
     auto& launch_row = root->add<GUI::Widget>();
-    launch_row.set_fixed_height(50);
+    launch_row.set_fixed_height(48);
     launch_row.set_layout<GUI::HorizontalBoxLayout>(8);
-
-    add_launcher(launch_row, window, "Terminal", "/bin/Terminal");
-    add_launcher(launch_row, window, "Browser", "/bin/Browser");
-    add_launcher(launch_row, window, "Files", "/bin/FileManager");
-    add_launcher(launch_row, window, "Settings", "/bin/Settings");
-    add_launcher(launch_row, window, "System", "/bin/SystemMonitor");
+    for (auto const& launcher : s_primary_launchers)
+        add_launcher(launch_row, window, launcher);
 
     auto& workspace = root->add<GUI::Widget>();
     workspace.set_layout<GUI::HorizontalBoxLayout>(14);
 
-    auto& developer_panel = workspace.add<GUI::Widget>();
-    developer_panel.set_layout<GUI::VerticalBoxLayout>(8);
+    auto& left = workspace.add<GUI::Widget>();
+    left.set_layout<GUI::VerticalBoxLayout>(8);
 
-    auto& developer_title = developer_panel.add<GUI::Label>("Developer workspace");
-    developer_title.set_font(developer_title.font().bold_variant());
-    developer_title.set_fixed_height(34);
+    auto& hero = left.add<GUI::Label>("Forge Workspace");
+    hero.set_font(hero.font().bold_variant());
+    hero.set_fixed_height(46);
+    hero.set_text_alignment(Gfx::TextAlignment::CenterLeft);
 
-    auto& developer_body = developer_panel.add<GUI::Label>(
-        "Forge is the AArel OS desktop host. Native applications remain isolated processes, while common developer tools are exposed through the SerenityOS userland and Ports environment.");
-    developer_body.set_text_alignment(Gfx::TextAlignment::TopLeft);
+    auto& subtitle = left.add<GUI::Label>("Native desktop host for building, browsing, debugging and operating AArel OS.");
+    subtitle.set_fixed_height(28);
+    subtitle.set_text_alignment(Gfx::TextAlignment::CenterLeft);
 
-    auto& system_panel = workspace.add<GUI::Widget>();
-    system_panel.set_fixed_width(300);
-    system_panel.set_layout<GUI::VerticalBoxLayout>(8);
+    add_section_title(left, "Developer workspace");
+    add_status_line(left, "• Terminal: native Serenity terminal with POSIX userland/Ports path");
+    add_status_line(left, "• Browser: native Browser launcher with web integration path");
+    add_status_line(left, "• Files: FileManager-backed project and artifact navigation");
+    add_status_line(left, "• System: SystemMonitor and Settings remain independent native processes");
 
-    auto& system_title = system_panel.add<GUI::Label>("System services");
-    system_title.set_font(system_title.font().bold_variant());
-    system_title.set_fixed_height(34);
+    auto& spacer = left.add<GUI::Widget>();
+    spacer.set_fixed_height(12);
 
-    auto& llera = system_panel.add<GUI::Label>("LLera IPC service: managed by SystemServer");
-    llera.set_fixed_height(28);
+    add_section_title(left, "Desktop contract");
+    auto& desktop_contract = left.add<GUI::Label>(
+        "Forge is the graphical session desktop host, not a decorative launcher. It owns the always-on workspace surface while applications remain separate processes under SerenityOS security boundaries.");
+    desktop_contract.set_text_alignment(Gfx::TextAlignment::TopLeft);
 
-    auto& compositor = system_panel.add<GUI::Label>("Compositor effects: capability-gated");
-    compositor.set_fixed_height(28);
+    auto& right = workspace.add<GUI::Widget>();
+    right.set_fixed_width(340);
+    right.set_layout<GUI::VerticalBoxLayout>(8);
 
-    auto& safety = system_panel.add<GUI::Label>("Low-end fallback: required");
-    safety.set_fixed_height(28);
+    add_section_title(right, "System services");
+    add_status_line(right, "LLera: SystemServer IPC service");
+    add_status_line(right, "Policy: explicit capability allow-list");
+    add_status_line(right, "Kill switch: service-enforced");
+
+    add_section_title(right, "Graphics");
+    add_status_line(right, "Compositor effects: capability-gated");
+    add_status_line(right, "Low-end fallback: required");
+
+    add_section_title(right, "Boot / recovery");
+    add_status_line(right, "UEFI raw image: separate artifact");
+    add_status_line(right, "Optical ISO: must be genuine ISO9660/El Torito");
+    add_status_line(right, "Rollback: update generation boundary");
 
     auto& footer = root->add<GUI::Label>("AArel OS 0.6-dev • SerenityOS BSD-2-Clause foundation");
     footer.set_text_alignment(Gfx::TextAlignment::CenterLeft);
-    footer.set_fixed_height(28);
+    footer.set_fixed_height(26);
 
     window->show();
     return app->exec();

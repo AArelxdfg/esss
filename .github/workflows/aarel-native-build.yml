@@ -1,0 +1,72 @@
+name: AArel OS Native Build
+
+on:
+  push:
+    branches: [aarel-os-serenity-sprint]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  native-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Overlay unit tests
+        run: python3 -m unittest discover -s aarel-os/tools -p 'test_*.py'
+
+      - name: Install Serenity build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake curl e2fsprogs fuse2fs git libgmp-dev \
+            libmpc-dev libmpfr-dev libssl-dev ninja-build qemu-system-x86 \
+            qemu-utils rsync texinfo unzip zlib1g-dev
+
+      - name: Checkout pinned SerenityOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          source aarel-os/UPSTREAM.lock
+          git clone --filter=blob:none https://github.com/${SERENITY_REPOSITORY}.git serenity
+          git -C serenity fetch --depth=1 origin "${SERENITY_COMMIT}"
+          git -C serenity checkout --detach "${SERENITY_COMMIT}"
+          test "$(git -C serenity rev-parse HEAD)" = "${SERENITY_COMMIT}"
+
+      - name: Apply AArel native overlay
+        run: python3 aarel-os/tools/apply_native_overlay.py serenity
+
+      - name: Build x86_64
+        working-directory: serenity
+        run: Meta/serenity.sh build x86_64
+
+      - name: Verify native binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x serenity/Build/x86_64/Root/bin/Forge
+          test -x serenity/Build/x86_64/Root/bin/LLeraService
+          file serenity/Build/x86_64/Root/bin/Forge serenity/Build/x86_64/Root/bin/LLeraService
+          sha256sum serenity/Build/x86_64/Root/bin/Forge serenity/Build/x86_64/Root/bin/LLeraService | tee aarel-native-binaries.sha256
+
+      - name: Build genuine UEFI disk image
+        working-directory: serenity
+        run: ninja -C Build/x86_64 uefi-image
+
+      - name: Collect disk-image evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          find serenity/Build/x86_64 -maxdepth 2 -type f -name 'uefi_disk_image' -print -exec file {} \; -exec sha256sum {} \; -exec stat --printf='%n %s bytes\n' {} \; | tee aarel-uefi-image.txt
+          test -s aarel-uefi-image.txt
+
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: aarel-native-build-evidence
+          path: |
+            aarel-native-binaries.sha256
+            aarel-uefi-image.txt
+            serenity/Build/aarel-native-overlay.sha256
+          if-no-files-found: error

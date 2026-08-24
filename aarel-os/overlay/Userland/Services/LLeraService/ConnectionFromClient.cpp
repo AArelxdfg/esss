@@ -42,7 +42,7 @@ Messages::LLeraServer::RequestActionResponse ConnectionFromClient::request_actio
         return { false, "kill-switch-active"_string };
 
     auto decision = Policy::evaluate(capability, verb, argument);
-    return { decision.accepted, String::from_utf8(decision.reason).release_value_but_fixme_should_propagate_errors() };
+    return { decision.accepted, move(decision.reason) };
 }
 
 Messages::LLeraServer::SetVoiceEnabledResponse ConnectionFromClient::set_voice_enabled(bool enabled)

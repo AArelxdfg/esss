@@ -1,17 +1,20 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 #include "ConnectionFromClient.h"
+#include <AK/HashMap.h>
 namespace LLeraService {
 
 static constexpr u64 request_budget_per_connection = 4096;
+static HashMap<int, RefPtr<ConnectionFromClient>> s_connections;
 
 ConnectionFromClient::ConnectionFromClient(NonnullOwnPtr<Core::LocalSocket> socket, int client_id)
     : IPC::ConnectionFromClient<LLeraClientEndpoint, LLeraServerEndpoint>(*this, move(socket), client_id)
 {
+    s_connections.set(client_id, *this);
 }
 
 void ConnectionFromClient::die()
 {
-    shutdown();
+    s_connections.remove(client_id());
 }
 
 Messages::LLeraServer::PingResponse ConnectionFromClient::ping()

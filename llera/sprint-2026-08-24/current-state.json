@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "captured_at": "2026-08-24T03:56:00+03:00",
+  "sprint": "Windows-grade 12h",
+  "baseline": {
+    "version": "5.3.5",
+    "name": "MONOLITH OMEGA EVIDENCE LEDGER",
+    "installer": "LLera_V5_3_5_MONOLITH_OMEGA_EVIDENCE_LEDGER_Setup.exe",
+    "installer_sha256": "1852b9c116fca9c4107e814b556956028d4732f4f04a00f606908d47667b9d2e",
+    "source_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "schema": 535
+  },
+  "proven_capabilities": [
+    "HOSTGUARD single-runtime pressure-aware inference management",
+    "adaptive inference preemption under critical host pressure",
+    "agent anti-loop guard",
+    "verification debt across material actions",
+    "checkpoint and durable tool-trace resume context",
+    "structured evidence ledger with target bindings and SHA-256 result hashes",
+    "signed live-update design retained from V5.3",
+    "Vision and Windows OCR retained",
+    "persistent missions and dual verifier retained"
+  ],
+  "verified_build_evidence": [
+    "15 JavaScript regression/contract tests PASS",
+    "Node syntax main.js PASS",
+    "Node syntax agent.js PASS",
+    "Windows amd64 go vet installer.go PASS",
+    "Windows amd64 go vet uninstaller.go PASS",
+    "Windows amd64 go vet watchdog.go PASS",
+    "Windows amd64 GUI installer build PASS",
+    "PE32+ x86-64 Windows GUI installer PASS",
+    "source ZIP integrity PASS"
+  ],
+  "hard_blockers": [
+    "V5.3.5 source archive bytes are not available in the connected GitHub repository or retrievable File Library surface.",
+    "Current connected GitHub repository stores llera/stable.json but not the LLera runtime source tree.",
+    "Physical Windows/GPU/pagefile/local-GGUF V5.3.5 stress validation has not been evidenced in the accessible build report.",
+    "Stable update manifest remains at version 5.3.0 and must not be advanced until a verified publishable candidate and signing material exist."
+  ],
+  "sprint_outputs": [
+    "llera/sprint-2026-08-24/README.md",
+    "llera/sprint-2026-08-24/windows-grade-gate.ps1",
+    "llera/sprint-2026-08-24/current-state.json"
+  ],
+  "release_policy": {
+    "modify_stable_manifest": false,
+    "claim_physical_windows_validation_without_evidence": false,
+    "claim_runtime_source_changes_without_source": false
+  }
+}

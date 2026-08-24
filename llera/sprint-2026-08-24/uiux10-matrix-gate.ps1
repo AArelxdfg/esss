@@ -17,12 +17,19 @@ $seen=@{};$physicalByCase=@{};$evidence=@()
 foreach($path in $Reports){
     $r=Read-Json $path
     if($r.product -ne 'LLera UIUX 10/10 Physical Audit'){Fail "Unexpected product marker in $path"}
+    if([int]$r.schema -lt 2){Fail "Physical audit schema is too old in $path; schema 2+ required for DPI-aware targets and warning evidence."}
     if($r.candidate -ne $ExpectedCandidate){Fail "Candidate mismatch in $path: $($r.candidate)"}
     if($required -notcontains [string]$r.matrixCase){Fail "Unexpected matrix case: $($r.matrixCase)"}
     if($seen.ContainsKey([string]$r.matrixCase)){Fail "Duplicate matrix case: $($r.matrixCase)"}
     $seen[[string]$r.matrixCase]=$true;$physicalByCase[[string]$r.matrixCase]=@{path=$path;report=$r}
     if($r.verdict -ne 'PASS' -or [int]$r.score -ne 100){Fail "UI/UX is not 10/10 for $($r.matrixCase): score=$($r.score) verdict=$($r.verdict)"}
     if([int]$r.passCount -ne [int]$r.totalChecks){Fail "Not all checks passed for $($r.matrixCase)."}
+    if([int]$r.warningCount -ne 0 -or @($r.warnings).Count -ne 0){Fail "Warnings are forbidden for 10/10 in $($r.matrixCase)."}
+    if([int]$r.thresholds.minActionTargetDip -lt 44){Fail "Action target threshold below 44 DIP in $($r.matrixCase)."}
+    if([int]$r.thresholds.minEditorHeightDip -lt 44){Fail "Composer/editor threshold below 44 DIP in $($r.matrixCase)."}
+    $expectedPx=[int][Math]::Ceiling(44.0 * [int]$r.window.dpi / 96.0)
+    if([int]$r.thresholds.minActionTargetPx -lt $expectedPx){Fail "Physical target threshold is not DPI-aware in $($r.matrixCase): expected >= ${expectedPx}px."}
+    if([int]$r.thresholds.minEditorHeightPx -lt $expectedPx){Fail "Physical editor threshold is not DPI-aware in $($r.matrixCase): expected >= ${expectedPx}px."}
     if(-not $r.screenshot.sha256 -or ([string]$r.screenshot.sha256).Length -ne 64){Fail "Missing screenshot SHA-256 for $($r.matrixCase)."}
 }
 foreach($case in $required){if(-not $seen.ContainsKey($case)){Fail "Missing required matrix case: $case"}}
@@ -45,7 +52,7 @@ foreach($path in $VisualReports){
     if([int]$v.metrics.sampledUniqueColors -lt [int]$v.thresholds.minSampledUniqueColors){Fail "Screenshot color diversity below threshold for $case"}
     if([double]$v.metrics.luminanceStdDev -lt [double]$v.thresholds.minLuminanceStdDev){Fail "Screenshot luminance variation below threshold for $case"}
     if([double]$v.metrics.edgeRatio -lt [double]$v.thresholds.minEdgeRatio){Fail "Screenshot edge/detail evidence below threshold for $case"}
-    $evidence += [pscustomobject]@{matrixCase=$case;score=100;reportSha256=$physicalSha;visualReportSha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant();screenshotSha256=[string]$v.screenshot.sha256;capturedAt=$physical.report.capturedAt;computer=$physical.report.host.computer;visualMetrics=$v.metrics}
+    $evidence += [pscustomobject]@{matrixCase=$case;score=100;reportSha256=$physicalSha;visualReportSha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant();screenshotSha256=[string]$v.screenshot.sha256;capturedAt=$physical.report.capturedAt;computer=$physical.report.host.computer;visualMetrics=$v.metrics;minActionTargetDip=[int]$physical.report.thresholds.minActionTargetDip;minActionTargetPx=[int]$physical.report.thresholds.minActionTargetPx;warningCount=[int]$physical.report.warningCount}
 }
 foreach($case in $required){if(-not $visualSeen.ContainsKey($case)){Fail "Missing visual-integrity report for required matrix case: $case"}}
 
@@ -78,7 +85,7 @@ foreach($path in $AccessibilityReports){
 foreach($mode in $requiredModes){if(-not $modeSeen.ContainsKey($mode)){Fail "Missing required accessibility-mode report: $mode"}}
 
 $result=[ordered]@{
- schema=4
+ schema=5
  product='LLera UIUX 10/10 Matrix Gate'
  candidate=$ExpectedCandidate
  verdict='PASS'
@@ -92,6 +99,9 @@ $result=[ordered]@{
    requiredVisualIntegrityScore=100
    requiredInteractionScore=100
    requiredAccessibilityScore=100
+   minActionTargetDip=44
+   minEditorHeightDip=44
+   requireDpiAwarePhysicalTargets=$true
    allowWarnings=$false
    requireScreenshotEvidence=$true
    requireDistinctScreenshotHashes=$true
@@ -110,7 +120,7 @@ $out=Join-Path $OutputDirectory ("uiux10-matrix-{0}.json" -f (Get-Date -Format '
 $result|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $out -Encoding UTF8
 $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $out).Hash.ToLowerInvariant()
 "$sha  $(Split-Path -Leaf $out)"|Set-Content -LiteralPath "$out.sha256" -Encoding ASCII
-Write-Host 'PASS: UI/UX = 100/100 across viewport, visual-integrity, accessibility modes and interaction gates.'
+Write-Host 'PASS: UI/UX = 100/100 across viewport, DPI-aware target sizing, visual-integrity, accessibility modes and interaction gates.'
 Write-Host "Evidence: $out"
 Write-Host "SHA-256: $sha"
 exit 0

@@ -224,7 +224,7 @@ print('QEMU_SCREENSHOT_GATE=PASS')
 PY
 tesseract "$EVIDENCE/runtime.png" "$EVIDENCE/runtime-ocr" 2>"$EVIDENCE/tesseract.log"
 cat "$EVIDENCE/runtime-ocr.txt"
-grep -E 'IPC.*PASS' "$EVIDENCE/runtime-ocr.txt"
+grep -E 'PC: PASS' "$EVIDENCE/runtime-ocr.txt"
 if grep -E 'Crash Reporter|has crashed' "$EVIDENCE/runtime-ocr.txt"; then
   echo 'Crash UI detected in runtime evidence' >&2
   exit 1

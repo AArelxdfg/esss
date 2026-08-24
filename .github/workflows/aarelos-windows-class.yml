@@ -3,6 +3,8 @@ name: AArel OS Windows-Class Sprint
 on:
   push:
     branches: [aarelos-windows-class]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:

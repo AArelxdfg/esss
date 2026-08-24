@@ -12,6 +12,7 @@
 #include <LibMain/Main.h>
 #include <Userland/Applications/ForgeShell/ForgeLLeraClientEndpoint.h>
 #include <Userland/Applications/ForgeShell/ForgeLLeraServerEndpoint.h>
+#include <unistd.h>
 
 class LLeraConnection final
     : public IPC::ConnectionToServer<LLeraClientEndpoint, LLeraServerEndpoint>
@@ -85,6 +86,10 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     TRY(Core::System::unveil("/tmp/session/%sid/portal/llera", "rw"));
     TRY(Core::System::unveil(nullptr, nullptr));
 
+    // SystemServer starts the desktop and per-session services concurrently.
+    // Give LLeraService time to take over its inherited listening socket before
+    // issuing the first synchronous request.
+    sleep(3);
     auto llera = TRY(LLeraConnection::try_create());
     // The pinned IPC generator's try_ping() wrapper is malformed for a
     // single flattened String response, so use its valid synchronous proxy.

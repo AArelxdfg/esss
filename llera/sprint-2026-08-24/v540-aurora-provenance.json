@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "product": "LLera V5.4.0 MONOLITH AURORA UX",
+  "status": "candidate-unpromoted",
+  "baseline": "V5.3.5 MONOLITH OMEGA EVIDENCE LEDGER",
+  "source": {
+    "report": "LLera_V5_4_0_AURORA_UX_BUILD_REPORT.md",
+    "sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "bytes_available_to_repository": false
+  },
+  "installer": {
+    "sha256": "0304fc6586a0002b2c327ee113dfa9348a220e83668ebbb5aa3c1ef405fd969a",
+    "identity_reported": "PE32+ Windows GUI x86-64",
+    "bytes_available_to_repository": false,
+    "authenticode_verified": false
+  },
+  "reported_validation": {
+    "javascript_regression_contract": "16/16 PASS",
+    "node_syntax": ["main.js PASS", "agent.js PASS", "preload.js PASS", "renderer.js PASS"],
+    "windows_amd64_go_vet": ["installer.go PASS", "uninstaller.go PASS", "watchdog.go PASS"],
+    "installer_cross_build": "PASS"
+  },
+  "windows_runtime_validation": {
+    "physical_windows_ui_render": "NOT_PROVEN",
+    "gpu_runtime": "NOT_PROVEN",
+    "host_pressure": "NOT_PROVEN",
+    "soak": "NOT_PROVEN",
+    "update_rollback": "NOT_PROVEN",
+    "signature": "NOT_PROVEN"
+  },
+  "promotion": {
+    "allowed": false,
+    "reason": "Artifact bytes/signing material and physical Windows evidence are not available in the connected repository. Existing Windows-grade promotion gate remains authoritative."
+  },
+  "stable_json_modified": false
+}

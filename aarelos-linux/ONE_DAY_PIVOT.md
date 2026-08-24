@@ -30,7 +30,7 @@ This is a deliberate product pivot, not a claim that AArel Monolith remains a st
 5. Keep KDE services for notifications, networking, Bluetooth, audio, power, multi-monitor, settings, clipboard, search and Wayland instead of rewriting them.
 6. Boot the generated ISO in QEMU/OVMF and test live session + installer.
 7. Install to a clean virtual disk and verify second boot from the installed disk.
-8. Smoke-test Wi-Fi/network UI, audio UI, browser, files, terminal, settings, system monitor, sleep/reboot/shutdown paths where VM support allows.
+8. Smoke-test Wi-Fi/network UI, audio UI, browser, files, terminal, settings and system monitor where VM support allows.
 9. Test a small, explicit Windows application matrix under Wine. Never claim universal EXE compatibility.
 10. Produce ISO, SHA256, source overlay, package manifest, license notices, build log, install log and screenshots.
 
@@ -41,6 +41,9 @@ This is a deliberate product pivot, not a claim that AArel Monolith remains a st
 - Do not implement hardware drivers ourselves on day one.
 - Do not build every app from source; use signed Ubuntu repositories and Flatpak where appropriate.
 - Do not wait for native AArel replacements before shipping; replace components incrementally after the preview exists.
+
+## Visual priority
+The first-day build treats visual identity as a release gate, not decoration. The canonical direction is `aarelos-linux/design/VISUAL_DIRECTION.md`; the image must ship AArel Monolith colors, wallpaper, floating Plasma surfaces and Forge terminal defaults from the source overlay.
 
 ## 24-hour acceptance gates
 The build can be called `AArel OS Linux Preview` only if all of the following pass:

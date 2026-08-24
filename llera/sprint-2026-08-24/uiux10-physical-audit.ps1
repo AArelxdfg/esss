@@ -2,8 +2,8 @@
 param(
     [string]$ProcessName = 'LLera',
     [Parameter(Mandatory)][ValidateSet('1366x768@125','1920x1080@150','2560x1440@200')][string]$MatrixCase,
-    [int]$MinActionTargetPx = 32,
-    [int]$MinEditorHeightPx = 40,
+    [int]$MinActionTargetDip = 44,
+    [int]$MinEditorHeightDip = 44,
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts')
 )
 
@@ -37,6 +37,7 @@ $matrix = @{
 $expected = $matrix[$MatrixCase]
 
 $checks = [System.Collections.Generic.List[object]]::new()
+$warnings = [System.Collections.Generic.List[object]]::new()
 function Add-Check {
     param([string]$Id,[string]$Name,[bool]$Pass,[string]$Detail,$Evidence=$null)
     $checks.Add([pscustomobject]@{id=$Id;name=$Name;pass=$Pass;detail=$Detail;evidence=$Evidence})
@@ -47,7 +48,7 @@ function Add-Check {
 $procs = @(Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
 if ($procs.Count -ne 1) {
     Add-Check 'UIX-001' 'Exactly one visible LLera shell' $false "count=$($procs.Count)" $null
-    $report = [ordered]@{schema=1;product='LLera UIUX 10/10 Physical Audit';matrixCase=$MatrixCase;score=0;verdict='FAIL';capturedAt=(Get-Date).ToUniversalTime().ToString('o');checks=$checks}
+    $report = [ordered]@{schema=2;product='LLera UIUX 10/10 Physical Audit';matrixCase=$MatrixCase;score=0;verdict='FAIL';capturedAt=(Get-Date).ToUniversalTime().ToString('o');warningCount=0;warnings=@();checks=$checks}
     $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'; $out=Join-Path $OutputDirectory "uiux10-$($MatrixCase.Replace('@','-'))-$stamp.json"
     $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $out -Encoding UTF8
     exit 2
@@ -118,15 +119,20 @@ Add-Check 'UIX-009' 'Accessible names on visible enabled actions' ($missingNames
 $focusViolations=@($actions | Where-Object { -not $_.offscreen -and $_.type -notin @('Hyperlink') -and -not $_.keyboardFocusable })
 Add-Check 'UIX-010' 'Keyboard focusability on visible actions' ($focusViolations.Count -eq 0) "violations=$($focusViolations.Count)" $focusViolations
 
+# UI Automation bounding rectangles are physical pixels. Enforce a constant 44-DIP target at every DPI,
+# rather than allowing high-DPI modes to pass with physically smaller logical controls.
+$effectiveDpi = if ($dpi -gt 0) { $dpi } else { [int]$expected.dpi }
+$minActionTargetPx = [int][Math]::Ceiling($MinActionTargetDip * $effectiveDpi / 96.0)
+$minEditorHeightPx = [int][Math]::Ceiling($MinEditorHeightDip * $effectiveDpi / 96.0)
 $smallTargets=@($actions | Where-Object {
     -not $_.offscreen -and $_.type -in @('Button','CheckBox','RadioButton','ComboBox','TabItem','MenuItem') -and
-    ($_.width -lt $MinActionTargetPx -or $_.height -lt $MinActionTargetPx)
+    ($_.width -lt $minActionTargetPx -or $_.height -lt $minActionTargetPx)
 })
-Add-Check 'UIX-011' 'Minimum action target size' ($smallTargets.Count -eq 0) "violations=$($smallTargets.Count) threshold=${MinActionTargetPx}px" $smallTargets
+Add-Check 'UIX-011' 'Minimum 44-DIP action target size' ($smallTargets.Count -eq 0) "violations=$($smallTargets.Count) threshold=${MinActionTargetDip}dip/${minActionTargetPx}px dpi=$effectiveDpi" $smallTargets
 
 $editors=@($records | Where-Object { $_.type -eq 'Edit' -and $_.enabled -and -not $_.offscreen })
-$editorHeightOk = ($editors.Count -ge 1 -and @($editors | Where-Object { $_.height -ge $MinEditorHeightPx }).Count -ge 1)
-Add-Check 'UIX-012' 'Usable composer/editor target' $editorHeightOk "visibleEditors=$($editors.Count) minHeight=${MinEditorHeightPx}px" $editors
+$editorHeightOk = ($editors.Count -ge 1 -and @($editors | Where-Object { $_.height -ge $minEditorHeightPx }).Count -ge 1)
+Add-Check 'UIX-012' 'Usable 44-DIP composer/editor target' $editorHeightOk "visibleEditors=$($editors.Count) min=${MinEditorHeightDip}dip/${minEditorHeightPx}px" $editors
 
 $sendStop=@($records | Where-Object { -not $_.offscreen -and $_.enabled -and $_.type -in @('Button','MenuItem') -and $_.name -match '(?i)(send|gönder|stop|durdur|iptal|cancel)' })
 Add-Check 'UIX-013' 'Send/stop affordance exposed semantically' ($sendStop.Count -ge 1) "matches=$($sendStop.Count)" $sendStop
@@ -143,13 +149,17 @@ $clipped=@($actions | Where-Object {
 })
 Add-Check 'UIX-016' 'No clipped visible actionable controls' ($clipped.Count -eq 0) "violations=$($clipped.Count)" $clipped
 
+# A strict 10/10 run is warning-free by definition. Keep a first-class warning channel so future soft
+# diagnostics cannot silently coexist with a perfect score.
+Add-Check 'UIX-017' 'No UI/UX audit warnings' ($warnings.Count -eq 0) "warnings=$($warnings.Count)" @($warnings)
+
 $passCount=@($checks | Where-Object {$_.pass}).Count
 $total=$checks.Count
 $score=[int][Math]::Round(($passCount*100.0)/[Math]::Max(1,$total))
-$verdict=if($score -eq 100){'PASS'}else{'FAIL'}
+$verdict=if($score -eq 100 -and $warnings.Count -eq 0){'PASS'}else{'FAIL'}
 
 $report=[ordered]@{
-    schema=1
+    schema=2
     product='LLera UIUX 10/10 Physical Audit'
     candidate='V5.4.0 MONOLITH AURORA UX'
     matrixCase=$MatrixCase
@@ -157,10 +167,12 @@ $report=[ordered]@{
     capturedAt=(Get-Date).ToUniversalTime().ToString('o')
     host=@{computer=$env:COMPUTERNAME;os=[Environment]::OSVersion.VersionString;primaryScreen=@{width=$primary.Bounds.Width;height=$primary.Bounds.Height;workingWidth=$wa.Width;workingHeight=$wa.Height}}
     window=@{pid=$p.Id;title=$p.MainWindowTitle;dpi=$dpi;rect=$window;workingSetBytes=$p.WorkingSet64}
-    thresholds=@{minActionTargetPx=$MinActionTargetPx;minEditorHeightPx=$MinEditorHeightPx;requiredScore=100}
+    thresholds=@{minActionTargetDip=$MinActionTargetDip;minActionTargetPx=$minActionTargetPx;minEditorHeightDip=$MinEditorHeightDip;minEditorHeightPx=$minEditorHeightPx;requiredScore=100}
     score=$score
     passCount=$passCount
     totalChecks=$total
+    warningCount=$warnings.Count
+    warnings=@($warnings)
     verdict=$verdict
     screenshot=@{path=$screenshotPath;sha256=$screenshotSha}
     checks=$checks

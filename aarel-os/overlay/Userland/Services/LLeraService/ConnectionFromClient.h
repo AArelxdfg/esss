@@ -27,9 +27,6 @@ private:
     virtual Messages::LLeraServer::RequestActionResponse request_action(String const& capability, String const& verb, String const& argument) override;
     virtual Messages::LLeraServer::SetVoiceEnabledResponse set_voice_enabled(bool enabled) override;
     virtual void kill_switch() override;
-
-    bool m_killed { false };
-    bool m_voice_enabled { false };
 };
 
 }

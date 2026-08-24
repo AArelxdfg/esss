@@ -22,14 +22,26 @@ jobs:
           python3 --version
           df -h /
           free -h
-      - name: Checkout repository
-        uses: actions/checkout@v4
+
+      - name: Checkout repository without external actions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf .git
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --detach FETCH_HEAD
+          git rev-parse HEAD
+
       - name: Collect environment
         shell: bash
         run: |
+          set -euxo pipefail
           mkdir -p aarelos-diag
           {
             echo "heartbeat=PASS"
+            echo "commit=$(git rev-parse HEAD)"
             echo "uname:"; uname -a
             echo "cmake:"; cmake --version | head -1 || true
             echo "ninja:"; ninja --version || true
@@ -38,9 +50,13 @@ jobs:
             echo "disk:"; df -h /
             echo "memory:"; free -h
           } | tee aarelos-diag/environment.txt
-      - name: Upload diagnostics
-        uses: actions/upload-artifact@v4
-        with:
-          name: aarelos-ci-diagnostics
-          path: aarelos-diag/
-          if-no-files-found: error
+          cat aarelos-diag/environment.txt >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Validate AArel CI files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f aarelos-ci/run-ci.sh
+          bash -n aarelos-ci/run-ci.sh
+          find aarelos-ci -maxdepth 2 -type f | sort | tee aarelos-diag/files.txt
+          echo "AARELOS_DIAGNOSTICS=PASS" | tee -a "${GITHUB_STEP_SUMMARY}"

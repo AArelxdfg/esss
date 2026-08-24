@@ -1,8 +1,6 @@
 name: AArel OS Runtime Evidence
 
 on:
-  push:
-    branches: [aarelos-ci-sprint]
   pull_request:
     branches: [main]
   workflow_dispatch:

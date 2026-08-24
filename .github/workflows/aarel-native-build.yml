@@ -2,7 +2,7 @@ name: AArel OS Native Build
 
 on:
   push:
-    branches: [aarel-os-serenity-sprint]
+    branches: [aarel-os-serenity-sprint, aarel-os-code-sprint]
   pull_request:
   workflow_dispatch:
 
@@ -36,6 +36,15 @@ jobs:
 
       - name: Apply AArel native overlay
         run: python3 aarel-os/tools/apply_native_overlay.py serenity
+
+      - name: Verify LLera policy wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'Policy.cpp' serenity/Userland/Services/LLeraService/CMakeLists.txt
+          grep -q 'Policy::evaluate' serenity/Userland/Services/LLeraService/ConnectionFromClient.cpp
+          grep -q 'unexpected-app-argument' serenity/Userland/Services/LLeraService/Policy.cpp
+          grep -q 'invalid-web-url' serenity/Userland/Services/LLeraService/Policy.cpp
 
       - name: Build x86_64
         working-directory: serenity

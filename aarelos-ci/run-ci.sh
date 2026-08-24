@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-PIN=f0056dbba76bbf28fb38247a35c465746034fedd
 ROOT="$GITHUB_WORKSPACE"
+LOCK="$ROOT/UPSTREAM.lock"
 WORK="$RUNNER_TEMP/aarelos"
 SERENITY="$WORK/serenity"
 EVIDENCE="$ROOT/aarelos-evidence"
 mkdir -p "$WORK" "$EVIDENCE"
+
+# shellcheck disable=SC1090
+source "$LOCK"
+PIN="$SERENITY_COMMIT"
+REPO="$SERENITY_REPOSITORY"
+
+[[ "$PIN" =~ ^[0-9a-f]{40}$ ]]
+[[ "$SERENITY_LICENSE" == "BSD-2-Clause" ]]
+[[ "$REPO" == "https://github.com/SerenityOS/serenity.git" ]]
+cp "$LOCK" "$EVIDENCE/UPSTREAM.lock"
 
 trap 'rc=$?; printf "exit_code=%s\n" "$rc" > "$EVIDENCE/final-status.txt"; exit "$rc"' EXIT
 
@@ -13,6 +23,8 @@ trap 'rc=$?; printf "exit_code=%s\n" "$rc" > "$EVIDENCE/final-status.txt"; exit 
   echo "utc=$(date -u +%FT%TZ)"
   echo "runner=$(uname -a)"
   echo "pin=$PIN"
+  echo "upstream=$REPO"
+  echo "license=$SERENITY_LICENSE"
   echo "cc=${CC:-unset}"
   echo "cxx=${CXX:-unset}"
   cmake --version | head -1 || true
@@ -21,13 +33,13 @@ trap 'rc=$?; printf "exit_code=%s\n" "$rc" > "$EVIDENCE/final-status.txt"; exit 
   qemu-system-x86_64 --version | head -1 || true
 } | tee "$EVIDENCE/host-preflight.txt"
 
-git clone --filter=blob:none https://github.com/SerenityOS/serenity.git "$SERENITY"
+git clone --filter=blob:none "$REPO" "$SERENITY"
 cd "$SERENITY"
 git fetch --depth=1 origin "$PIN"
 git checkout --detach "$PIN"
 test "$(git rev-parse HEAD)" = "$PIN"
 cp LICENSE "$EVIDENCE/SERENITYOS-LICENSE.txt"
-printf 'SerenityOS upstream: https://github.com/SerenityOS/serenity\nPinned commit: %s\nLicense: BSD-2-Clause\n' "$PIN" > "$EVIDENCE/UPSTREAM-NOTICE.txt"
+printf 'SerenityOS upstream: %s\nPinned commit: %s\nLicense: %s\n' "$REPO" "$PIN" "$SERENITY_LICENSE" > "$EVIDENCE/UPSTREAM-NOTICE.txt"
 
 {
   grep -F 'ConnectionFromClient(ServerStub& stub, NonnullOwnPtr<Core::LocalSocket> socket, int client_id)' Userland/Libraries/LibIPC/ConnectionFromClient.h
@@ -79,26 +91,26 @@ PY
 
 grep -q '^Executable=/bin/ForgeShell$' Base/etc/SystemServerUser.ini
 grep -q '^\[LLeraService\]$' Base/etc/SystemServerUser.ini
+grep -q '^SocketPermissions=600$' Base/etc/SystemServerUser.ini
 grep -q 'add_subdirectory(LLeraService)' Userland/Services/CMakeLists.txt
 grep -q 'ConnectionFromClient<LLeraClientEndpoint, LLeraServerEndpoint>(\*this, move(socket), client_id)' Userland/Services/LLeraService/ConnectionFromClient.cpp
+grep -q 'arguments-not-supported' Userland/Services/LLeraService/ConnectionFromClient.cpp
+grep -q 'request-budget-exhausted' Userland/Services/LLeraService/ConnectionFromClient.cpp
 
 git diff -- Userland/Applications/CMakeLists.txt Userland/Services/CMakeLists.txt Base/etc/SystemServerUser.ini > "$EVIDENCE/overlay.diff"
 find Userland/Applications/ForgeShell Userland/Services/LLeraService -type f -print | sort > "$EVIDENCE/overlay-files.txt"
 echo "serenity_ref=$(git rev-parse HEAD)" | tee "$EVIDENCE/metadata.txt"
 echo 'SOURCE_OVERLAY_GATE=PASS' | tee "$EVIDENCE/source-gates.txt"
 
-# Gate 1: compile/install only.
 Meta/serenity.sh build x86_64 GNU 2>&1 | tee "$EVIDENCE/build.log"
 test -x Build/x86_64/Root/bin/ForgeShell
 test -x Build/x86_64/Root/bin/LLeraService
 sha256sum Build/x86_64/Root/bin/ForgeShell Build/x86_64/Root/bin/LLeraService | tee "$EVIDENCE/custom-binaries.sha256"
 echo 'REPRODUCIBLE_X86_64_BUILD_GATE=PASS' | tee "$EVIDENCE/passed-gates.txt"
 
-# Gate 5 partial: host-cross-build a focused developer baseline and verify binaries.
 bash "$ROOT/aarelos-ci/install-dev-ports.sh" "$EVIDENCE" "$SERENITY"
 echo 'DEV_PORTS_BASH_CURL_GIT_GATE=PASS' | tee -a "$EVIDENCE/passed-gates.txt"
 
-# Gate 2a: explicitly build Serenity's UEFI disk target after port installation.
 ninja -C Build/x86_64 uefi-image 2>&1 | tee "$EVIDENCE/uefi-image.log"
 test -s Build/x86_64/uefi_disk_image
 sha256sum Build/x86_64/uefi_disk_image | tee "$EVIDENCE/boot-media.sha256"
@@ -122,12 +134,12 @@ manifest={
   'developer_ports_requested':['bash','curl','git'],
   'llera_4b_bundled':False,
   'windows_exe_compatibility_claim':'none-until-demonstrated',
+  'optical_iso_claim':'none-until-genuine-iso9660-el-torito-artifact-exists',
   'evidence_files':files,
 }
 (e/'release-manifest.json').write_text(json.dumps(manifest,indent=2)+"\n")
 PY
 
-# Gate 2b: QEMU runtime screenshot is kept separate from UEFI-media build.
 export DISPLAY=:99
 Xvfb :99 -screen 0 1280x800x24 >"$EVIDENCE/xvfb.log" 2>&1 &
 sleep 2

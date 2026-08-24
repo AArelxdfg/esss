@@ -8,7 +8,29 @@
 #include <LibGUI/Widget.h>
 #include <LibGUI/Window.h>
 #include <LibGfx/Font/Font.h>
+#include <LibIPC/ConnectionToServer.h>
 #include <LibMain/Main.h>
+#include <Userland/Applications/ForgeShell/LLeraClientEndpoint.h>
+#include <Userland/Applications/ForgeShell/LLeraServerEndpoint.h>
+
+class LLeraConnection final
+    : public IPC::ConnectionToServer<LLeraClientEndpoint, LLeraServerEndpoint>
+    , public LLeraClientEndpoint {
+    IPC_CLIENT_CONNECTION(LLeraConnection, "/tmp/session/%sid/portal/llera"sv)
+
+public:
+    virtual void die() override { m_disconnected = true; }
+    bool disconnected() const { return m_disconnected; }
+
+private:
+    explicit LLeraConnection(NonnullOwnPtr<Core::LocalSocket> socket)
+        : IPC::ConnectionToServer<LLeraClientEndpoint, LLeraServerEndpoint>(*this, move(socket))
+    {
+    }
+
+    virtual void state_changed(String const&) override { }
+    bool m_disconnected { false };
+};
 struct LauncherSpec {
     StringView label;
     StringView executable;
@@ -60,7 +82,23 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     TRY(Core::System::unveil("/bin/FileManager", "x"));
     TRY(Core::System::unveil("/bin/Settings", "x"));
     TRY(Core::System::unveil("/bin/SystemMonitor", "x"));
+    TRY(Core::System::unveil("/tmp/session/%sid/portal/llera", "rw"));
     TRY(Core::System::unveil(nullptr, nullptr));
+
+    auto llera = TRY(LLeraConnection::try_create());
+    auto ping = llera->ping();
+    auto initial = llera->status();
+    auto allowed = llera->request_action("app.open"_string, "terminal"_string, String {});
+    auto denied = llera->request_action("system.exec"_string, "shell"_string, String {});
+    llera->kill_switch();
+    auto killed = llera->status();
+    auto llera_gate_passed = ping == "pong"sv
+        && initial.state() == "ready-without-model"sv
+        && allowed.accepted() && allowed.decision() == "accepted-for-broker"sv
+        && !denied.accepted() && denied.decision() == "denied-by-policy"sv
+        && killed.state() == "killed"sv && !llera->disconnected();
+    if (!llera_gate_passed)
+        return Error::from_string_literal("LLera IPC runtime gate failed");
 
     auto window = GUI::Window::construct();
     window->set_title("AArel OS — Forge");
@@ -122,7 +160,8 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     right.set_layout<GUI::VerticalBoxLayout>(8);
 
     add_section_title(right, "System services"sv);
-    add_status_line(right, "LLera: SystemServer IPC service"sv);
+    add_status_line(right, "LLera IPC: PASS — ping/status/request/deny/kill"sv);
+    add_status_line(right, "State after kill-switch: killed"sv);
     add_status_line(right, "Policy: explicit capability allow-list"sv);
     add_status_line(right, "Kill switch: service-enforced"sv);
 

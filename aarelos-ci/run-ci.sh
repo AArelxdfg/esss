@@ -165,19 +165,47 @@ manifest={
 (e/'release-manifest.json').write_text(json.dumps(manifest,indent=2)+"\n")
 PY
 
-export DISPLAY=:99
-Xvfb :99 -screen 0 1280x800x24 >"$EVIDENCE/xvfb.log" 2>&1 &
-sleep 2
+# Boot the artifact itself through OVMF. Capture QEMU's emulated framebuffer
+# with HMP screendump so the result is independent of X11/GL compositing.
+cp /usr/share/OVMF/OVMF_VARS_4M.fd "$EVIDENCE/OVMF_VARS.fd"
+rm -f "$EVIDENCE/qemu-monitor.sock"
 set +e
-timeout 90s Meta/serenity.sh run x86_64 GNU >"$EVIDENCE/qemu-run.log" 2>&1 &
+timeout 150s qemu-system-x86_64 \
+  -machine q35,accel=tcg -cpu max,migratable=no,-x2apic -m 2G -smp 2 \
+  -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+  -drive if=pflash,format=raw,file="$EVIDENCE/OVMF_VARS.fd" \
+  -drive file="$SERENITY/Build/x86_64/uefi_disk_image",format=raw,if=virtio \
+  -device virtio-vga -display none -serial stdio \
+  -monitor unix:"$EVIDENCE/qemu-monitor.sock",server,nowait -no-reboot \
+  >"$EVIDENCE/qemu-run.log" 2>&1 &
 RUN_PID=$!
-sleep 45
-import -display :99 -window root "$EVIDENCE/runtime.png" >"$EVIDENCE/screenshot.log" 2>&1
-SHOT_RC=$?
-wait $RUN_PID
+set -e
+
+for _ in $(seq 1 75); do
+  test -S "$EVIDENCE/qemu-monitor.sock" && break
+  sleep 1
+done
+test -S "$EVIDENCE/qemu-monitor.sock"
+sleep 75
+python3 - "$EVIDENCE/qemu-monitor.sock" "$EVIDENCE/runtime.ppm" <<'PY'
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect(sys.argv[1])
+s.sendall(f"screendump {sys.argv[2]}\n".encode())
+time.sleep(2)
+reply = s.recv(4096).decode(errors="replace")
+print(reply)
+PY
+convert "$EVIDENCE/runtime.ppm" "$EVIDENCE/runtime.png" \
+  >"$EVIDENCE/screenshot.log" 2>&1
+kill "$RUN_PID" 2>/dev/null || true
+set +e
+wait "$RUN_PID"
 RUN_RC=$?
 set -e
-printf 'qemu_run_rc=%s\nscreenshot_rc=%s\n' "$RUN_RC" "$SHOT_RC" | tee "$EVIDENCE/runtime-status.txt"
+printf 'qemu_run_rc=%s\nscreenshot_rc=0\nboot_path=OVMF_UEFI\n' "$RUN_RC" | tee "$EVIDENCE/runtime-status.txt"
+grep -F 'SerenityOS EFI Prekernel' "$EVIDENCE/qemu-run.log"
+grep -F 'Exiting EFI Boot Services' "$EVIDENCE/qemu-run.log"
 test -s "$EVIDENCE/runtime.png"
 python3 - "$EVIDENCE/runtime.png" <<'PY'
 from PIL import Image

@@ -10,8 +10,8 @@
 #include <LibGfx/Font/Font.h>
 #include <LibIPC/ConnectionToServer.h>
 #include <LibMain/Main.h>
-#include <Userland/Applications/ForgeShell/LLeraClientEndpoint.h>
-#include <Userland/Applications/ForgeShell/LLeraServerEndpoint.h>
+#include <Userland/Applications/ForgeShell/ForgeLLeraClientEndpoint.h>
+#include <Userland/Applications/ForgeShell/ForgeLLeraServerEndpoint.h>
 
 class LLeraConnection final
     : public IPC::ConnectionToServer<LLeraClientEndpoint, LLeraServerEndpoint>

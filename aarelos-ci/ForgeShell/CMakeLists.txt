@@ -8,12 +8,12 @@ set(SOURCES
     main.cpp
 )
 
-compile_ipc(LLeraServer.ipc LLeraServerEndpoint.h)
-compile_ipc(LLeraClient.ipc LLeraClientEndpoint.h)
+compile_ipc(ForgeLLeraServer.ipc ForgeLLeraServerEndpoint.h)
+compile_ipc(ForgeLLeraClient.ipc ForgeLLeraClientEndpoint.h)
 
 set(GENERATED_SOURCES
-    LLeraServerEndpoint.h
-    LLeraClientEndpoint.h
+    ForgeLLeraServerEndpoint.h
+    ForgeLLeraClientEndpoint.h
 )
 
 serenity_app(ForgeShell ICON app-terminal)

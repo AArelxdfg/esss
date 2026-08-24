@@ -29,8 +29,12 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     auto window = GUI::Window::construct();
     window->set_title("AArel OS — Forge");
-    window->resize(1120, 700);
-    window->center_on_screen();
+    window->set_window_type(GUI::WindowType::Desktop);
+    window->set_frameless(true);
+    window->set_resizable(false);
+    window->set_minimizable(false);
+    window->set_closeable(false);
+    window->set_fullscreen(true);
 
     auto root = window->set_main_widget<GUI::Widget>();
     root->set_fill_with_background_color(true);
@@ -59,7 +63,7 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     add_launcher("Files", "/bin/FileManager");
     add_launcher("Settings", "/bin/Settings");
 
-    auto& llera_status = root->add<GUI::Label>("LLera service: system IPC enabled; UI client pending");
+    auto& llera_status = root->add<GUI::Label>("LLera service: native system IPC");
     llera_status.set_text_alignment(Gfx::TextAlignment::CenterLeft);
     llera_status.set_fixed_height(26);
 

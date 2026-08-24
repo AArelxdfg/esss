@@ -41,7 +41,7 @@ jobs:
             libmpfr-dev libmpc-dev libgmp-dev e2fsprogs fuse2fs parted dosfstools \
             ninja-build qemu-system-x86 qemu-system-gui qemu-utils ovmf \
             ccache rsync unzip texinfo libssl-dev zlib1g-dev \
-            python3 python3-pil xvfb imagemagick
+            python3 python3-pil xvfb imagemagick tesseract-ocr
           gcc-14 --version | head -1
           g++-14 --version | head -1
           qemu-system-x86_64 --version | head -1

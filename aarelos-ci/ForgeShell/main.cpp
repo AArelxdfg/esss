@@ -86,19 +86,22 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     TRY(Core::System::unveil(nullptr, nullptr));
 
     auto llera = TRY(LLeraConnection::try_create());
-    auto ping = llera->ping();
-    auto initial = llera->status();
-    auto allowed = llera->request_action("app.open"_string, "terminal"_string, String {});
-    auto denied = llera->request_action("system.exec"_string, "shell"_string, String {});
-    llera->kill_switch();
-    auto killed = llera->status();
-    auto llera_gate_passed = ping == "pong"sv
-        && initial.state() == "ready-without-model"sv
-        && allowed.accepted() && allowed.decision() == "accepted-for-broker"sv
-        && !denied.accepted() && denied.decision() == "denied-by-policy"sv
-        && killed.state() == "killed"sv && !llera->disconnected();
-    if (!llera_gate_passed)
-        return Error::from_string_literal("LLera IPC runtime gate failed");
+    auto ping = llera->try_ping();
+    auto llera_gate_passed = !ping.is_error() && ping.value() == "pong"sv;
+    auto initial = llera->try_status();
+    llera_gate_passed = llera_gate_passed && !initial.is_error()
+        && initial.value().state() == "ready-without-model"sv;
+    auto allowed = llera->try_request_action("app.open"_string, "terminal"_string, String {});
+    llera_gate_passed = llera_gate_passed && !allowed.is_error()
+        && allowed.value().accepted() && allowed.value().decision() == "accepted-for-broker"sv;
+    auto denied = llera->try_request_action("system.exec"_string, "shell"_string, String {});
+    llera_gate_passed = llera_gate_passed && !denied.is_error()
+        && !denied.value().accepted() && denied.value().decision() == "denied-by-policy"sv;
+    auto kill = llera->try_kill_switch();
+    llera_gate_passed = llera_gate_passed && !kill.is_error();
+    auto killed = llera->try_status();
+    llera_gate_passed = llera_gate_passed && !killed.is_error()
+        && killed.value().state() == "killed"sv && !llera->disconnected();
 
     auto window = GUI::Window::construct();
     window->set_title("AArel OS — Forge");
@@ -160,8 +163,12 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     right.set_layout<GUI::VerticalBoxLayout>(8);
 
     add_section_title(right, "System services"sv);
-    add_status_line(right, "LLera IPC: PASS — ping/status/request/deny/kill"sv);
-    add_status_line(right, "State after kill-switch: killed"sv);
+    add_status_line(right, llera_gate_passed
+            ? "LLera IPC: PASS — ping/status/request/deny/kill"sv
+            : "LLera IPC: FAIL — runtime transaction rejected"sv);
+    add_status_line(right, llera_gate_passed
+            ? "State after kill-switch: killed"sv
+            : "State after kill-switch: unavailable"sv);
     add_status_line(right, "Policy: explicit capability allow-list"sv);
     add_status_line(right, "Kill switch: service-enforced"sv);
 

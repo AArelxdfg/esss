@@ -222,4 +222,12 @@ assert bright>=10
 assert dark<len(pix)
 print('QEMU_SCREENSHOT_GATE=PASS')
 PY
+tesseract "$EVIDENCE/runtime.png" "$EVIDENCE/runtime-ocr" 2>"$EVIDENCE/tesseract.log"
+cat "$EVIDENCE/runtime-ocr.txt"
+grep -E 'IPC.*PASS' "$EVIDENCE/runtime-ocr.txt"
+if grep -E 'Crash Reporter|has crashed' "$EVIDENCE/runtime-ocr.txt"; then
+  echo 'Crash UI detected in runtime evidence' >&2
+  exit 1
+fi
+echo 'FORGE_LLERA_VISIBLE_RUNTIME_GATE=PASS' | tee -a "$EVIDENCE/passed-gates.txt"
 echo 'QEMU_SCREENSHOT_GATE=PASS' | tee -a "$EVIDENCE/passed-gates.txt"

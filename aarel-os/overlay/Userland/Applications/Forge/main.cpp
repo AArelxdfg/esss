@@ -78,10 +78,10 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
 
     auto& llera_refresh = root->add<GUI::Button>("Refresh LLera service status");
     llera_refresh.set_fixed_height(40);
-    llera_refresh.set_enabled(llera_connection);
+    llera_refresh.set_enabled(llera_connection != nullptr);
     llera_refresh.on_click = [llera_connection, &llera_status](auto) {
-        if (!llera_connection || !llera_connection->is_open()) {
-            llera_status.set_text("LLera service: disconnected");
+        if (!llera_connection) {
+            llera_status.set_text("LLera service: unavailable");
             return;
         }
         auto status = llera_connection->status();

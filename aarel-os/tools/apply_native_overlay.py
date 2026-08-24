@@ -46,14 +46,45 @@ def copy_tree(src: Path, dst: Path) -> None:
     shutil.copytree(src, dst)
 
 
+def apply_patch(repo: Path, patch: Path) -> None:
+    if not patch.is_file() or patch.stat().st_size == 0:
+        raise RuntimeError(f"patch missing: {patch}")
+
+    check = subprocess.run(
+        ["git", "-C", str(repo), "apply", "--check", str(patch)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if check.returncode == 0:
+        subprocess.run(["git", "-C", str(repo), "apply", str(patch)], check=True)
+        return
+
+    reverse_check = subprocess.run(
+        ["git", "-C", str(repo), "apply", "--reverse", "--check", str(patch)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if reverse_check.returncode == 0:
+        return
+
+    raise RuntimeError(
+        "patch no longer applies cleanly and is not already applied: "
+        f"{patch}\n{check.stderr.strip()}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("serenity", type=Path)
     parser.add_argument("--overlay-root", type=Path, default=Path(__file__).resolve().parents[1] / "overlay")
+    parser.add_argument("--patch-root", type=Path, default=Path(__file__).resolve().parents[1] / "patches")
     args = parser.parse_args()
 
     serenity = args.serenity.resolve()
     overlay = args.overlay_root.resolve()
+    patch_root = args.patch_root.resolve()
 
     git_head = serenity / ".git" / "HEAD"
     if not git_head.exists():
@@ -108,6 +139,9 @@ def main() -> int:
         text = text.replace(stock_desktop, forge_desktop, 1)
     system_user.write_text(text)
 
+    motion_patch = patch_root / "0001-windowserver-motion-curves.patch"
+    apply_patch(serenity, motion_patch)
+
     required = [
         forge_dst / "CMakeLists.txt",
         forge_dst / "main.cpp",
@@ -121,6 +155,8 @@ def main() -> int:
         llera_dst / "main.cpp",
         llera_dst / "LLeraServer.ipc",
         llera_dst / "LLeraClient.ipc",
+        serenity / "Userland" / "Services" / "WindowServer" / "Animation.h",
+        serenity / "Userland" / "Services" / "WindowServer" / "Animation.cpp",
     ]
     for file in required:
         if not file.is_file() or file.stat().st_size == 0:

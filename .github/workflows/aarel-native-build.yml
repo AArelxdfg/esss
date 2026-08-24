@@ -37,7 +37,7 @@ jobs:
       - name: Apply AArel native overlay
         run: python3 aarel-os/tools/apply_native_overlay.py serenity
 
-      - name: Verify LLera policy wiring
+      - name: Verify native integration wiring
         shell: bash
         run: |
           set -euo pipefail
@@ -45,6 +45,12 @@ jobs:
           grep -q 'Policy::evaluate' serenity/Userland/Services/LLeraService/ConnectionFromClient.cpp
           grep -q 'unexpected-app-argument' serenity/Userland/Services/LLeraService/Policy.cpp
           grep -q 'invalid-web-url' serenity/Userland/Services/LLeraService/Policy.cpp
+          grep -q 'compile_ipc(LLeraServer.ipc LLeraServerEndpoint.h)' serenity/Userland/Applications/Forge/CMakeLists.txt
+          grep -q 'LLeraConnection::try_create' serenity/Userland/Applications/Forge/main.cpp
+          grep -q 'AnimationCurve::ForgeSpring' serenity/Userland/Services/WindowServer/Animation.cpp
+          grep -q 'm_motion_scale' serenity/Userland/Services/WindowServer/Animation.h
+          grep -q '^Executable=/bin/Forge$' serenity/Base/etc/SystemServerUser.ini
+          grep -q '^\[LLeraService\]$' serenity/Base/etc/SystemServerUser.ini
 
       - name: Build x86_64
         working-directory: serenity

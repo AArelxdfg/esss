@@ -1,0 +1,78 @@
+name: AArel OS Windows-Class Sprint
+
+on:
+  push:
+    branches: [aarelos-windows-class]
+  workflow_dispatch:
+
+jobs:
+  build-boot-identity:
+    runs-on: [self-hosted, linux, x64, aarelos]
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - name: Runner heartbeat
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "AARELOS_WINDOWS_CLASS_RUNNER=PASS"
+          uname -a
+          df -h /
+          free -h
+
+      - name: Checkout repository without external actions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git init .
+          git remote remove origin || true
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git reset --hard FETCH_HEAD
+          git clean -ffd
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gcc-14 g++-14 cmake curl \
+            libmpfr-dev libmpc-dev libgmp-dev e2fsprogs fuse2fs parted dosfstools \
+            ninja-build qemu-system-x86 qemu-system-gui qemu-utils ovmf \
+            ccache rsync unzip texinfo libssl-dev zlib1g-dev \
+            python3 python3-pil xvfb imagemagick tesseract-ocr
+
+      - name: Build AArel OS 0.7 and boot runtime evidence
+        shell: bash
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: |
+          set -euxo pipefail
+          bash aarelos-ci/run-windows-class-ci.sh
+
+      - name: Publish sprint summary
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          echo "## AArel OS Windows-Class Sprint" >> "${GITHUB_STEP_SUMMARY}"
+          echo >> "${GITHUB_STEP_SUMMARY}"
+          echo "Commit: ${GITHUB_SHA}" >> "${GITHUB_STEP_SUMMARY}"
+          if [ -d aarelos-evidence ]; then
+            if [ -f aarelos-evidence/passed-gates.txt ]; then
+              echo '### Passed gates' >> "${GITHUB_STEP_SUMMARY}"
+              cat aarelos-evidence/passed-gates.txt >> "${GITHUB_STEP_SUMMARY}"
+            fi
+            if [ -f aarelos-evidence/windows-class-identity.txt ]; then
+              echo '### Identity overlay' >> "${GITHUB_STEP_SUMMARY}"
+              cat aarelos-evidence/windows-class-identity.txt >> "${GITHUB_STEP_SUMMARY}"
+            fi
+            if [ -f aarelos-evidence/final-status.txt ]; then
+              echo '### Final status' >> "${GITHUB_STEP_SUMMARY}"
+              cat aarelos-evidence/final-status.txt >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          fi

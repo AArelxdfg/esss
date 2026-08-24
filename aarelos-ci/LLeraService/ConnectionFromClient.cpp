@@ -1,9 +1,5 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 #include "ConnectionFromClient.h"
-#include <AK/Literals.h>
-
-using namespace AK::Literals;
-
 namespace LLeraService {
 
 static constexpr u64 request_budget_per_connection = 4096;

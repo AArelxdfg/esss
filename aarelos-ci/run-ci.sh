@@ -41,6 +41,24 @@ test "$(git rev-parse HEAD)" = "$PIN"
 cp LICENSE "$EVIDENCE/SERENITYOS-LICENSE.txt"
 printf 'SerenityOS upstream: %s\nPinned commit: %s\nLicense: %s\n' "$REPO" "$PIN" "$SERENITY_LICENSE" > "$EVIDENCE/UPSTREAM-NOTICE.txt"
 
+# ftpmirror.gnu.org can select a mirror that times out or serves an invalid
+# payload on this host. Keep the pinned versions and checksums, but use GNU's
+# canonical HTTPS origin for deterministic toolchain archives.
+python3 - <<'PY'
+from pathlib import Path
+p = Path('Toolchain/BuildGNU.sh')
+s = p.read_text()
+old_binutils = 'BINUTILS_BASE_URL="https://ftpmirror.gnu.org/gnu/binutils"'
+old_gcc = 'GCC_BASE_URL="https://ftpmirror.gnu.org/gnu/gcc"'
+if old_binutils not in s or old_gcc not in s:
+    raise SystemExit('GNU toolchain download URL shape changed')
+s = s.replace(old_binutils, 'BINUTILS_BASE_URL="https://ftp.gnu.org/gnu/binutils"', 1)
+s = s.replace(old_gcc, 'GCC_BASE_URL="https://ftp.gnu.org/gnu/gcc"', 1)
+p.write_text(s)
+PY
+grep -F 'BINUTILS_BASE_URL="https://ftp.gnu.org/gnu/binutils"' Toolchain/BuildGNU.sh
+grep -F 'GCC_BASE_URL="https://ftp.gnu.org/gnu/gcc"' Toolchain/BuildGNU.sh
+
 {
   grep -F 'ConnectionFromClient(ServerStub& stub, NonnullOwnPtr<Core::LocalSocket> socket, int client_id)' Userland/Libraries/LibIPC/ConnectionFromClient.h
   grep -F 'static void spawn_or_show_error(Window* parent_window, StringView path' Userland/Libraries/LibGUI/Process.h
@@ -97,7 +115,7 @@ grep -q 'ConnectionFromClient<LLeraClientEndpoint, LLeraServerEndpoint>(\*this, 
 grep -q 'arguments-not-supported' Userland/Services/LLeraService/ConnectionFromClient.cpp
 grep -q 'request-budget-exhausted' Userland/Services/LLeraService/ConnectionFromClient.cpp
 
-git diff -- Userland/Applications/CMakeLists.txt Userland/Services/CMakeLists.txt Base/etc/SystemServerUser.ini > "$EVIDENCE/overlay.diff"
+git diff -- Toolchain/BuildGNU.sh Userland/Applications/CMakeLists.txt Userland/Services/CMakeLists.txt Base/etc/SystemServerUser.ini > "$EVIDENCE/overlay.diff"
 find Userland/Applications/ForgeShell Userland/Services/LLeraService -type f -print | sort > "$EVIDENCE/overlay-files.txt"
 echo "serenity_ref=$(git rev-parse HEAD)" | tee "$EVIDENCE/metadata.txt"
 echo 'SOURCE_OVERLAY_GATE=PASS' | tee "$EVIDENCE/source-gates.txt"

@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$GITHUB_WORKSPACE"
 LOCK="$ROOT/UPSTREAM.lock"
-WORK="$RUNNER_TEMP/aarelos"
+WORK="${AARELOS_BUILD_ROOT:-$HOME/.cache/aarelos-ci}"
 SERENITY="$WORK/serenity"
 EVIDENCE="$ROOT/aarelos-evidence"
 mkdir -p "$WORK" "$EVIDENCE"
@@ -33,10 +33,17 @@ trap 'rc=$?; printf "exit_code=%s\n" "$rc" > "$EVIDENCE/final-status.txt"; exit 
   qemu-system-x86_64 --version | head -1 || true
 } | tee "$EVIDENCE/host-preflight.txt"
 
-git clone --filter=blob:none "$REPO" "$SERENITY"
-cd "$SERENITY"
-git fetch --depth=1 origin "$PIN"
-git checkout --detach "$PIN"
+if [[ -d "$SERENITY/.git" ]]; then
+  cd "$SERENITY"
+  git fetch --depth=1 origin "$PIN"
+  git reset --hard "$PIN"
+  git clean -ffd
+else
+  git clone --filter=blob:none "$REPO" "$SERENITY"
+  cd "$SERENITY"
+  git fetch --depth=1 origin "$PIN"
+  git checkout --detach "$PIN"
+fi
 test "$(git rev-parse HEAD)" = "$PIN"
 cp LICENSE "$EVIDENCE/SERENITYOS-LICENSE.txt"
 printf 'SerenityOS upstream: %s\nPinned commit: %s\nLicense: %s\n' "$REPO" "$PIN" "$SERENITY_LICENSE" > "$EVIDENCE/UPSTREAM-NOTICE.txt"

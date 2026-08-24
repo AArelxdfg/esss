@@ -13,14 +13,12 @@ namespace LLeraService {
 
 bool Policy::is_safe_web_url(StringView url)
 {
-    if (url.length() == 0 || url.length() > 4096)
+    if (url.is_empty() || url.length() > 4096)
         return false;
 
     if (!(url.starts_with("https://"sv) || url.starts_with("http://"sv)))
         return false;
 
-    // Reject URL forms that are commonly abused to smuggle credentials or
-    // parser-confusing whitespace through a privileged broker.
     if (url.contains('@') || url.contains(' ') || url.contains('\t') || url.contains('\n') || url.contains('\r'))
         return false;
 
@@ -31,25 +29,25 @@ PolicyDecision Policy::evaluate(StringView capability, StringView verb, StringVi
 {
     if (capability == "app.open"sv) {
         if (!argument.is_empty())
-            return { false, "unexpected-app-argument"sv };
+            return { false, "unexpected-app-argument"_string };
 
         if (verb == "terminal"sv || verb == "browser"sv || verb == "files"sv || verb == "settings"sv)
-            return { true, "accepted-for-forge-broker"sv };
+            return { true, "accepted-for-forge-broker"_string };
 
-        return { false, "unsupported-app"sv };
+        return { false, "unsupported-app"_string };
     }
 
     if (capability == "web.open"sv) {
         if (verb != "url"sv)
-            return { false, "unsupported-web-verb"sv };
+            return { false, "unsupported-web-verb"_string };
 
         if (!is_safe_web_url(argument))
-            return { false, "invalid-web-url"sv };
+            return { false, "invalid-web-url"_string };
 
-        return { true, "accepted-for-browser-broker"sv };
+        return { true, "accepted-for-browser-broker"_string };
     }
 
-    return { false, "denied-by-policy"sv };
+    return { false, "denied-by-policy"_string };
 }
 
 }

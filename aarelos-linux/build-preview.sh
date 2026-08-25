@@ -58,12 +58,13 @@ xorriso -osirrox on -indev "$BASE_ISO" -extract /casper/filesystem.squashfs "$OL
 unsquashfs -d "$ROOTFS" "$OLD_SQUASH"
 
 # AArel-owned files are a clean overlay; base package licenses remain untouched.
-rsync -aHAX "$SCRIPT_DIR/overlay/" "$ROOTFS/"
+rsync -aHAX --chown=root:root --chmod=D755,F644 "$SCRIPT_DIR/overlay/" "$ROOTFS/"
 install -m 0755 "$SCRIPT_DIR/bootstrap-packages.sh" "$ROOTFS/tmp/aarel-bootstrap-packages.sh"
 
 # A developer may invoke the remaster from a Windows checkout. Normalize only
 # AArel-owned shell assets so CRLF cannot turn a valid shebang into `bash\r`.
-find "$ROOTFS/usr/lib/aarel" -maxdepth 1 -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
+find "$ROOTFS/usr/lib/aarel" -maxdepth 1 -type f \( -name '*.sh' -o -name '*.py' \) -exec sed -i 's/\r$//' {} +
+sed -i 's/\r$//' "$ROOTFS/usr/bin/mmonolithctl" "$ROOTFS/usr/bin/lleractl" "$ROOTFS/usr/bin/aarel-forge"
 
 # Keep package installation quiet inside the image and prevent daemons from trying
 # to start under chroot. The file is removed before the squashfs is produced.

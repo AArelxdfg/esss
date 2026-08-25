@@ -1,5 +1,19 @@
 # AArel MMonolith OS release status
 
+## 2026-08-26 GitHub preview release candidate
+
+- CURRENT BRANCH: `aarelos-linux-one-day`
+- SOURCE BASE: official Ubuntu 26.04 desktop archive pinned by URL and SHA-256; no downstream flavour image, identity, or package source
+- LAST PASS GATE: `AAREL_UEFI_QEMU_SCREEN_GATE=PASS`; AArel GRUB -> SDDM Wayland -> AArel Plasma Wayland desktop, 1280x800 and 1,376 sampled colors
+- SQUASHFS GATE: PASS; source/ISO-embedded SHA-256 equality plus complete pre-test and tmpfs post-test decompression (266,664 files, 23,394 directories, 108,248 symlinks)
+- FINAL ISO: `AArelOS-Linux-Preview-amd64.iso`
+- FINAL ISO SIZE: `8,663,560,192` bytes
+- FINAL ISO SHA-256: `ca72bd94a853b65dc72705e1e5ad16b2cdd209a26ec1431c9e2e64485a6aca19`
+- VOLUME ID: `AAREL_MMONOLITH`
+- INCLUDED FIXES: AArel GRUB menu; SDDM selected in `/etc/X11/default-display-manager`; Casper main `Session=` repaired to `aarel.desktop`; archive installer user service masked; archive installer desktop launcher removed
+- CURRENT FAILED GATE: none for the release-candidate build and QEMU live-desktop scope
+- HOST NOTE: WSL ext4 twice remounted read-only under the duplicate 266k-inode post-test; the final post-test passed on a 12 GiB tmpfs after embedded/source hash equality was independently confirmed
+
 ## 2026-08-25 final-release continuation
 
 - CURRENT HEAD AT SPRINT START: `683682f2b6b0a8a2fc6141d88f3635e61073b215`

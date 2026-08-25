@@ -72,5 +72,8 @@ systemctl enable NetworkManager.service sddm.service aarel-live-autologin.servic
 # deliberately refuses to replace an existing display-manager.service alias,
 # so make the AArel Plasma choice explicit after package installation.
 ln -sfn /usr/lib/systemd/system/sddm.service /etc/systemd/system/display-manager.service
+printf '%s\n' /usr/bin/sddm > /etc/X11/default-display-manager
+install -d -m 0755 /etc/systemd/user
+ln -sfn /dev/null /etc/systemd/user/ubuntu-desktop-installer.service
 
 printf 'AArel package bootstrap complete.\n'

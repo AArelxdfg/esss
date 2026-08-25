@@ -13,6 +13,10 @@ install -m 0755 "$SOURCE_DIR/overlay/usr/lib/aarel/live-autologin.sh" \
   "$ROOTFS/usr/lib/aarel/live-autologin.sh"
 install -D -m 0644 "$SOURCE_DIR/overlay/etc/sddm.conf.d/10-aarel-wayland.conf" \
   "$ROOTFS/etc/sddm.conf.d/10-aarel-wayland.conf"
+install -D -m 0644 "$SOURCE_DIR/overlay/etc/X11/default-display-manager" \
+  "$ROOTFS/etc/X11/default-display-manager"
+install -d -m 0755 "$ROOTFS/etc/systemd/user"
+ln -sfn /dev/null "$ROOTFS/etc/systemd/user/ubuntu-desktop-installer.service"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 chroot "$ROOTFS" dpkg-query -W --showformat='${Package} ${Version}\n' | sort > "$WORK_DIR/filesystem.manifest"
@@ -23,6 +27,8 @@ unsquashfs -d "$WORK_DIR/pre-test" "$WORK_DIR/filesystem.squashfs"
 test -f "$WORK_DIR/pre-test/usr/share/wayland-sessions/aarel.desktop"
 xorriso -indev "$BASE_ISO" -outdev "$OUT_ISO.tmp" -overwrite on \
   -volid AAREL_MMONOLITH \
+  -map "$SOURCE_DIR/overlay/boot/grub/grub.cfg" /boot/grub/grub.cfg \
+  -map "$SOURCE_DIR/overlay/boot/grub/loopback.cfg" /boot/grub/loopback.cfg \
   -map "$WORK_DIR/filesystem.squashfs" /casper/minimal.squashfs \
   -map "$WORK_DIR/filesystem.manifest" /casper/minimal.manifest \
   -map "$WORK_DIR/filesystem.size" /casper/minimal.size \

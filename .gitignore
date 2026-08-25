@@ -1,2 +1,10 @@
 __pycache__/
 *.py[cod]
+*.iso
+*.iso.sha256
+*.squashfs
+*.qcow2
+*.vdi
+*.vmdk
+*.ppm
+aarelos-linux-evidence/

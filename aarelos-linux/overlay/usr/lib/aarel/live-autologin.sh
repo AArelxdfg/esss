@@ -28,7 +28,21 @@ if ! getent passwd "$live_user" >/dev/null; then
     chown -R "$live_user:$live_user" "/home/$live_user"
 fi
 
+# The archive live hooks can place their installer launcher on the ephemeral
+# desktop. AArel provides its own installation flow; do not expose that foreign
+# launcher in the AArel session.
+find "/home/$live_user/Desktop" -maxdepth 1 -type f -name '*.desktop' \
+    -exec grep -Il 'ubuntu-desktop-bootstrap\|ubuntu_bootstrap' {} + 2>/dev/null |
+    while IFS= read -r launcher; do rm -f -- "$launcher"; done
+
 install -d -m 0755 /etc/sddm.conf.d
+# Casper writes Session= to the main file. SDDM gives that value precedence
+# over drop-ins, so set the AArel session in the same authoritative file.
+if grep -q '^Session=' /etc/sddm.conf 2>/dev/null; then
+    sed -i 's/^Session=.*/Session=aarel.desktop/' /etc/sddm.conf
+else
+    printf '\nSession=aarel.desktop\n' >> /etc/sddm.conf
+fi
 cat > /etc/sddm.conf.d/99-aarel-live-autologin.conf <<EOF
 [Autologin]
 Relogin=false

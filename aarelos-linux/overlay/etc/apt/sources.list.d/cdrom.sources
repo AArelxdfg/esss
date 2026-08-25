@@ -1,0 +1,4 @@
+Types: deb
+URIs: file:/cdrom/
+Suites: resolute
+Components: main restricted

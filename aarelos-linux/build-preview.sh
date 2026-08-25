@@ -111,6 +111,12 @@ MOUNTED=()
 rm -f "$ROOTFS/usr/sbin/policy-rc.d" "$ROOTFS/tmp/aarel-bootstrap-packages.sh"
 rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/tmp/"* "$ROOTFS/var/tmp/"*
 
+# Calamares temporarily uses the live-media repository to guarantee that the
+# matching signed EFI GRUB and shim packages are available during installation.
+# It removes this source from the installed target itself.
+install -m 0644 "$SCRIPT_DIR/overlay/etc/apt/sources.list.d/cdrom.sources" \
+  "$ROOTFS/etc/apt/sources.list.d/cdrom.sources"
+
 chroot "$ROOTFS" dpkg-query -W --showformat='${Package} ${Version}\n' | sort > "$MANIFEST"
 du -sx --block-size=1 "$ROOTFS" | cut -f1 > "$FS_SIZE"
 

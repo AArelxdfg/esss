@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LLERA_CTL="${AAREL_LLERA_CTL:-/usr/bin/lleractl}"
+KONSOLE="${AAREL_KONSOLE:-/usr/bin/konsole}"
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  [[ -x "$LLERA_CTL" ]]
+  [[ -x "$KONSOLE" ]]
+  printf 'FORGE_PREREQUISITES_GATE=PASS\n'
+  exit 0
+fi
+
+if ! "$LLERA_CTL" authorize launch-forge >/dev/null; then
+  printf 'AArel Forge launch denied by LLera policy.\n' >&2
+  exit 1
+fi
+
+exec "$KONSOLE" --profile "AArel Forge" --workdir "${HOME:-/tmp}"

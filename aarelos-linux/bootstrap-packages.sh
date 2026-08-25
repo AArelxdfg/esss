@@ -50,7 +50,7 @@ apt-get install -y --no-install-recommends \
 # not allowed to make the image unreproducible; the remote is retried on first boot.
 flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
 
-chmod 0755 /usr/lib/aarel/*.sh /usr/lib/aarel/*.py /usr/bin/mmonolithctl
-systemctl enable NetworkManager.service sddm.service aarel-live-autologin.service mmonolith.service || true
+chmod 0755 /usr/lib/aarel/*.sh /usr/lib/aarel/*.py /usr/bin/mmonolithctl /usr/bin/lleractl /usr/bin/aarel-forge
+systemctl enable NetworkManager.service sddm.service aarel-live-autologin.service llera.service mmonolith.service || true
 
 printf 'AArel package bootstrap complete.\n'

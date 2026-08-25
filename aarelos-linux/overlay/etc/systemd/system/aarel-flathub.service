@@ -1,0 +1,14 @@
+[Unit]
+Description=Configure the Flathub system remote
+After=NetworkManager-wait-online.service
+Wants=NetworkManager-wait-online.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+Restart=on-failure
+RestartSec=15s
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

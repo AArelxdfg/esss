@@ -47,10 +47,12 @@ apt-get install -y --no-install-recommends \
   rsync squashfs-tools xorriso isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin
 
 # Flatpak is additive. Failure to reach Flathub during an offline ISO build is
-# not allowed to make the image unreproducible; the remote is retried on first boot.
+# not allowed to make the image unreproducible; a system service retries it on
+# the installed machine once networking is online.
 flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
 
 chmod 0755 /usr/lib/aarel/*.sh /usr/lib/aarel/*.py /usr/bin/mmonolithctl /usr/bin/lleractl /usr/bin/aarel-forge
-systemctl enable NetworkManager.service sddm.service aarel-live-autologin.service llera.service mmonolith.service || true
+systemctl enable NetworkManager.service sddm.service aarel-live-autologin.service \
+  aarel-flathub.service llera.service mmonolith.service || true
 
 printf 'AArel package bootstrap complete.\n'

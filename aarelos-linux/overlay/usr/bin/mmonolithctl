@@ -1,0 +1,20 @@
+#!/usr/bin/python3
+import json
+import os
+import socket
+import sys
+
+command = sys.argv[1] if len(sys.argv) > 1 else "status"
+path = os.environ.get("MMONOLITH_SOCKET", "/run/mmonolith/health.sock")
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3)
+        client.connect(path)
+        client.sendall((command + "\n").encode())
+        response = json.loads(client.recv(65536))
+except (OSError, ValueError) as error:
+    print(json.dumps({"service": "MMonolith", "state": "error", "error": str(error)}))
+    raise SystemExit(1)
+
+print(json.dumps(response, indent=2, sort_keys=True))
+raise SystemExit(0 if response.get("state") in {"running", "degraded"} else 1)

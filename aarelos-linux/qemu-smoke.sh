@@ -5,6 +5,7 @@ ISO="${1:-AArelOS-Linux-Preview-amd64.iso}"
 EVIDENCE="${AAREL_EVIDENCE:-$PWD/aarelos-linux-evidence}"
 WAIT="${AAREL_BOOT_WAIT:-150}"
 BOOT_SELECT_WAIT="${AAREL_BOOT_SELECT_WAIT:-12}"
+LIVE_PROMPT_WAIT="${AAREL_LIVE_PROMPT_WAIT:-120}"
 CODE="${AAREL_OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.fd}"
 VARS_SRC="${AAREL_OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
 MON="$EVIDENCE/qemu-monitor.sock"
@@ -68,6 +69,21 @@ time.sleep(1)
 print(s.recv(4096).decode(errors="replace"))
 PY
 
+# Kubuntu's live environment intentionally stops at a Try/Install chooser.
+# Wake its headless Qt surface, focus "Try Kubuntu", and activate it. On a
+# fresh chooser the focus order is language, network, then Try.
+sleep "$LIVE_PROMPT_WAIT"
+python3 - "$MON" <<'PY'
+import socket, sys, time
+s=socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect(sys.argv[1])
+s.recv(4096)
+for command in (b"sendkey tab\n", b"sendkey tab\n", b"sendkey spc\n"):
+    s.sendall(command)
+    time.sleep(1)
+    s.recv(4096)
+PY
+
 sleep "$WAIT"
 python3 - "$MON" "$PPM" <<'PY'
 import socket, sys, time
@@ -115,7 +131,7 @@ sample=im.resize((160,90))
 colors=len(set(sample.getdata()))
 print(f'resolution={w}x{h} sampled_unique_colors={colors}')
 assert w >= 640 and h >= 400
-assert colors >= 256, 'screen appears blank, stuck on a splash, or too uniform'
+assert colors >= 512, 'screen appears blank, stuck on firmware/login/splash, or too uniform'
 PY
 
 if command -v tesseract >/dev/null 2>&1; then
@@ -128,5 +144,6 @@ if command -v tesseract >/dev/null 2>&1; then
 fi
 
 sha256sum "$ISO" "$PNG" > "$EVIDENCE/SHA256SUMS.txt"
-printf 'acceleration=%s\nboot_wait_seconds=%s\n' "$ACCEL" "$WAIT" > "$EVIDENCE/qemu-smoke.env"
+printf 'acceleration=%s\nboot_wait_seconds=%s\nlive_prompt_wait_seconds=%s\n' \
+  "$ACCEL" "$WAIT" "$LIVE_PROMPT_WAIT" > "$EVIDENCE/qemu-smoke.env"
 printf 'AAREL_UEFI_QEMU_SCREEN_GATE=PASS\n'

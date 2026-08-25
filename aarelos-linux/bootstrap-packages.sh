@@ -50,7 +50,7 @@ apt-get install -y --no-install-recommends \
 # not allowed to make the image unreproducible; the remote is retried on first boot.
 flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
 
-chmod 0755 /usr/lib/aarel/live-autologin.sh
+chmod 0755 /usr/lib/aarel/*.sh
 systemctl enable NetworkManager.service sddm.service aarel-live-autologin.service || true
 
 printf 'AArel package bootstrap complete.\n'

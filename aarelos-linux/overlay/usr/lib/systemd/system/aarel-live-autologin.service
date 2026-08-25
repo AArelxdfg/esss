@@ -1,6 +1,6 @@
 [Unit]
 Description=AArel OS live-session autologin compatibility
-ConditionKernelCommandLine=boot=casper
+ConditionPathExists=/cdrom/casper/filesystem.squashfs
 Before=sddm.service
 After=systemd-user-sessions.service
 
@@ -11,4 +11,3 @@ RemainAfterExit=yes
 
 [Install]
 WantedBy=graphical.target
-

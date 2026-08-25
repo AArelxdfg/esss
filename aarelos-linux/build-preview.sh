@@ -61,6 +61,10 @@ unsquashfs -d "$ROOTFS" "$OLD_SQUASH"
 rsync -aHAX "$SCRIPT_DIR/overlay/" "$ROOTFS/"
 install -m 0755 "$SCRIPT_DIR/bootstrap-packages.sh" "$ROOTFS/tmp/aarel-bootstrap-packages.sh"
 
+# A developer may invoke the remaster from a Windows checkout. Normalize only
+# AArel-owned shell assets so CRLF cannot turn a valid shebang into `bash\r`.
+find "$ROOTFS/usr/lib/aarel" -maxdepth 1 -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
+
 # Keep package installation quiet inside the image and prevent daemons from trying
 # to start under chroot. The file is removed before the squashfs is produced.
 cat > "$ROOTFS/usr/sbin/policy-rc.d" <<'POLICY'

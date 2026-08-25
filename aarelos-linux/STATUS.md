@@ -3,22 +3,22 @@
 ## Current state
 
 - CURRENT BRANCH: `aarelos-linux-one-day`
-- CURRENT HEAD: `055bf7d6f2760902e69e8f6197c0f96698012f5e` before the current checkpoint
-- LAST SUCCESSFUL GATE: genuine hybrid ISO rebuilt from the cached rootfs; OVMF accepted the ISO; Casper live autologin reached the Plasma session
-- CURRENT FAILED GATE: live environment reaches the AArel desktop
-- EXACT ERROR: after 150 seconds with KVM, the 1280x800 runtime screenshot remains on a uniform stock Kubuntu gear surface (`sampled_unique_colors=143`); the hardened visual gate reports `screen appears blank, stuck on a splash, or too uniform`
-- WHAT WAS CHANGED: enabled KVM access in CI; made the QEMU gate select the default GRUB entry, prove the UEFI DVD was started, reject firmware/PXE fallback, reject interactive login, and reject uniform splash screens; added a Casper-only SDDM autologin compatibility service; made delivery copies checksum-verified; corrected an emitted `MMonolith` product name
-- WHAT STILL NEEDS TO BE DONE: diagnose why Plasma does not progress past the gear surface, reach and capture the AArel desktop, then continue with MMonolith, LLera, Forge, installer, Wine, and installed-system gates
-- NEXT COMMAND TO RUN: boot `/home/arelx/aarel-autologin-test.iso`, switch to a TTY with the QEMU monitor (`sendkey ctrl-alt-f3`), and capture `systemctl --user --failed`, `journalctl --user -b`, `systemctl status sddm`, and the `aarel-live-autologin.service` journal
-- LATEST WORKFLOW RUN ID: `32820854846`
+- CURRENT HEAD: `972881b32273b544cf7f5d2849aa636954e86d01` before the current checkpoint
+- LAST SUCCESSFUL GATE: genuine hybrid ISO; OVMF UEFI; Casper account repair/autologin; automated Try Kubuntu selection; live Plasma desktop with AArel wallpaper and AArel panel layout (`sampled_unique_colors=2346`)
+- CURRENT FAILED GATE: Linux-native MMonolith service implementation
+- EXACT ERROR: no `mmonolith.service`, health endpoint, or Linux production implementation exists under `aarelos-linux`
+- WHAT WAS CHANGED: repaired missing Casper passwd account creation and home ownership; conditioned repair on real live media; automated Kubuntu's Try/Install chooser; normalized CRLF AArel scripts; hardened screenshot false-positive checks; reached and captured the AArel-themed live desktop
+- WHAT STILL NEEDS TO BE DONE: implement and test MMonolith, then LLera and Forge; continue installer, installed reboot, package, Flatpak, Wine, and visual-polish gates
+- NEXT COMMAND TO RUN: add the minimum hardened `mmonolith.service` plus a real health/status interface under `aarelos-linux/overlay`, enable it in the image, and add a fast service test before the next full ISO rebuild
+- LATEST WORKFLOW RUN ID: `32831167791`
 - ISO STATUS: build succeeds; native reconstructed image is 6,504,306,688 bytes; the previous Desktop copy was partial and is not valid evidence
-- QEMU STATUS: OVMF starts the ISO and Casper autologin proceeds; AArel desktop gate still fails
+- QEMU STATUS: local OVMF/KVM gate passes and reaches the AArel-themed live Plasma desktop
 - INSTALLER STATUS: not tested
 - MMONOLITH STATUS: not implemented on the Linux production track
 - FORGE STATUS: not implemented on the Linux production track
 - LLERA STATUS: not implemented on the Linux production track
-- VISUAL STATUS: stock Kubuntu gear surface remains dominant; acceptance gate fails
+- VISUAL STATUS: AArel dark wallpaper and two-panel layout are active; stock KDE Welcome Center remains and needs rebranding/removal
 
 ## NEXT AGENT START HERE
 
-Capture the live session/system journal from a QEMU TTY and fix the first Plasma startup failure. Do not weaken the screenshot gate or treat the current gear screen as a desktop pass.
+Implement and test the minimum Linux-native MMonolith service and health/status interface. Preserve the now-passing live desktop gate.

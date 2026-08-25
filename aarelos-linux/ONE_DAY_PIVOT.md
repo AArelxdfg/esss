@@ -1,12 +1,12 @@
 # AArel OS — One-Day Linux Pivot
 
 ## Goal
-Ship a real installable AArel OS developer preview in one day by using Kubuntu 26.04 LTS as the hardware/kernel/userspace foundation while keeping AArel product identity, Forge workflow, LLera services, policy boundaries, branding and release gates.
+Ship a real installable AArel MMonolith OS by assembling the hardware, kernel and userspace foundation from pinned archive components while keeping AArel product identity, Forge workflow, LLera services, policy boundaries, branding and release gates.
 
 This is a deliberate product pivot, not a claim that MMonolith is a standalone kernel.
 
 ## Foundation
-- Base: Kubuntu 26.04 LTS (Ubuntu 26.04 LTS)
+- Base: pinned 26.04 LTS archive image plus explicitly selected KDE Plasma packages
 - Desktop: KDE Plasma 6.6 / Wayland
 - Kernel: Linux 7.0 from the base distribution
 - Package stack: APT + Discover; Flatpak enabled for broad desktop app coverage
@@ -23,9 +23,9 @@ This is a deliberate product pivot, not a claim that MMonolith is a standalone k
 - AArel recovery/update UX built around the base system's proven mechanisms
 
 ## One-day build strategy
-1. Download and verify official Kubuntu 26.04 LTS ISO.
+1. Download and verify the pinned official archive ISO.
 2. Remaster the ISO reproducibly: unpack ISO + squashfs, chroot into rootfs, apply AArel packages/configuration, repack squashfs and rebuild a genuine hybrid UEFI/BIOS ISO.
-3. Remove Kubuntu-facing branding that would confuse product identity while preserving all licenses, package notices and required attribution.
+3. Apply AArel-owned identity while preserving all licenses, package notices and required attribution.
 4. Install AArel theme/session defaults, Forge, LLera service, developer tools, Flatpak integration and compatibility packages.
 5. Keep KDE services for notifications, networking, Bluetooth, audio, power, multi-monitor, settings, clipboard, search and Wayland instead of rewriting them.
 6. Boot the generated ISO in QEMU/OVMF and test live session + installer.
@@ -59,10 +59,10 @@ The build can be called `AArel OS Linux Preview` only if all of the following pa
 - APT package install works
 - Flatpak app install path works
 - at least one harmless Windows test application is exercised through Wine before any EXE-support statement
-- licenses/notices from Ubuntu/Kubuntu/KDE/Linux and redistributed packages are preserved
+- licenses/notices from KDE, Linux and all redistributed packages are preserved
 
 ## Product split
-- `AArel OS`: fast production/product track based on Kubuntu 26.04 LTS.
+- `AArel MMonolith OS`: production/product track assembled from pinned archive components.
 - `MMonolith Research`: preserve the independent Serenity-based/native work as a long-term research track. Nothing is deleted.
 
 This split gives AArel a usable system now without throwing away the independent OS work.

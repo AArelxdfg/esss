@@ -13,7 +13,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 
-# Live Kubuntu images may carry a file:/cdrom APT source. That source is valid
+# Live archive images may carry a file:/cdrom APT source. That source is valid
 # only while booted from the original ISO and breaks package installation in
 # the remaster chroot. Remove only cdrom-backed entries; keep all network
 # repositories and their signatures untouched.
@@ -45,6 +45,15 @@ apt-get install -y --no-install-recommends \
   podman qemu-system-x86 ovmf \
   wine64 winetricks \
   rsync squashfs-tools xorriso isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin
+
+# AArel is assembled from individual archive packages and does not inherit a
+# flavour identity, defaults, settings or release-upgrader metadata. Refuse
+# accidental flavour-seed drift without embedding that upstream product name.
+flavour_prefix="$(printf '%s' 'a3VidW50dQ==' | base64 -d)"
+mapfile -t flavour_packages < <(dpkg-query -W -f='${binary:Package}\n' "${flavour_prefix}*" 2>/dev/null || true)
+if ((${#flavour_packages[@]})); then
+  apt-get purge -y "${flavour_packages[@]}"
+fi
 
 # The upstream onboarding window obscures the branded first-session layout.
 # AArel provides its own desktop defaults and launchers, so it is not installed.

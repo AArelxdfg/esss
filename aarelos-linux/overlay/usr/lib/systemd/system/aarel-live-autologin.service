@@ -1,6 +1,6 @@
 [Unit]
 Description=AArel OS live-session autologin compatibility
-ConditionPathExists=/cdrom/casper/filesystem.squashfs
+ConditionPathExists=/cdrom/casper/minimal.squashfs
 Before=sddm.service
 After=systemd-user-sessions.service
 

@@ -7,12 +7,17 @@ source "$SCRIPT_DIR/BASE.lock"
 BASE_URL="${AAREL_BASE_URL:-$LOCK_BASE_URL}"
 BASE_SHA256="${AAREL_BASE_SHA256:-$LOCK_BASE_SHA256}"
 CACHE_DIR="${AAREL_CACHE:-$HOME/.cache/aarelos-linux}"
-WORK_DIR="${AAREL_WORK:-$CACHE_DIR/work}"
-BASE_ISO="${AAREL_BASE_ISO:-$CACHE_DIR/kubuntu-26.04-desktop-amd64.iso}"
-OUT_ISO="${AAREL_OUT:-$PWD/AArelOS-Linux-Preview-amd64.iso}"
+BUILD_ID="${AAREL_BUILD_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+WORK_ROOT="${AAREL_WORK:-$CACHE_DIR/builds}"
+WORK_DIR="$WORK_ROOT/$BUILD_ID"
+BASE_ISO="${AAREL_BASE_ISO:-$CACHE_DIR/$LOCK_BASE_FILENAME}"
+OUT_ISO="${AAREL_OUT:-$PWD/AArel-MMonolith-OS-Final-amd64.iso}"
+PUBLISH_TMP="${OUT_ISO}.tmp-$BUILD_ID"
+LOCK_FILE="$CACHE_DIR/release-build.lock"
 ROOTFS="$WORK_DIR/rootfs"
 OLD_SQUASH="$WORK_DIR/filesystem.original.squashfs"
 NEW_SQUASH="$WORK_DIR/filesystem.squashfs"
+ISO_SQUASH_PATH="/casper/minimal.squashfs"
 MANIFEST="$WORK_DIR/filesystem.manifest"
 FS_SIZE="$WORK_DIR/filesystem.size"
 ISO_INFO="$WORK_DIR/info"
@@ -34,7 +39,11 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
-for c in curl sha256sum xorriso unsquashfs mksquashfs rsync chroot mount umount; do need "$c"; done
+for c in curl sha256sum xorriso unsquashfs mksquashfs rsync chroot mount umount flock findmnt; do need "$c"; done
+
+mkdir -p "$CACHE_DIR" "$WORK_ROOT" "$(dirname "$OUT_ISO")"
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "another AArel release build owns $LOCK_FILE" >&2; exit 1; }
 
 cleanup() {
   set +e
@@ -44,11 +53,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$CACHE_DIR" "$WORK_DIR" "$(dirname "$OUT_ISO")"
+mkdir -p "$WORK_DIR"
 
 if [[ ! -s "$BASE_ISO" ]]; then
-  echo "Downloading verified Kubuntu 26.04 LTS base..."
-  curl -fL --retry 6 --retry-delay 3 --continue-at - "$BASE_URL" -o "$BASE_ISO"
+  echo "Downloading verified archive base..."
+  curl -fL --retry 6 --retry-delay 3 "$BASE_URL" -o "$BASE_ISO.part"
+  mv -f "$BASE_ISO.part" "$BASE_ISO"
 fi
 printf '%s  %s\n' "$BASE_SHA256" "$BASE_ISO" | sha256sum -c -
 
@@ -56,7 +66,7 @@ echo "Inspecting base boot structure..."
 xorriso -indev "$BASE_ISO" -report_el_torito plain > "$WORK_DIR/base-el-torito.txt" 2>&1
 
 rm -rf "$ROOTFS" "$OLD_SQUASH" "$NEW_SQUASH"
-xorriso -osirrox on -indev "$BASE_ISO" -extract /casper/filesystem.squashfs "$OLD_SQUASH"
+xorriso -osirrox on -indev "$BASE_ISO" -extract "$ISO_SQUASH_PATH" "$OLD_SQUASH"
 unsquashfs -d "$ROOTFS" "$OLD_SQUASH"
 
 # Preserve the base ISO's one-time inline signing key. It is intentionally not
@@ -83,7 +93,7 @@ chmod 0755 "$ROOTFS/usr/sbin/policy-rc.d"
 rm -f "$ROOTFS/etc/resolv.conf"
 cp -L /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
-# The Kubuntu live root carries a file:/cdrom APT source. That source is valid only
+# The live root carries a file:/cdrom APT source. That source is valid only
 # while booted from the original media and breaks remaster chroot package installs.
 # Replace all live-media sources with the official Ubuntu network archives before
 # apt is invoked, including deb822 .sources files.
@@ -124,9 +134,8 @@ rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/tmp/"* "$ROOTFS/var/tmp/"*
 # applicable kernel modules are loaded automatically from hardware aliases.
 rm -f "$ROOTFS/etc/modules-load.d/cups-filters.conf"
 
-# Do not seed upstream Kubuntu/KFocus web shortcuts onto each user's desktop.
-rm -f "$ROOTFS/etc/skel/Desktop/org.kfocus.web.howtos.desktop" \
-  "$ROOTFS/etc/skel/Desktop/org.kubuntu.web.home.desktop"
+# Do not seed upstream web shortcuts onto each user's desktop.
+rm -f "$ROOTFS/etc/skel/Desktop/"*.desktop
 
 # Calamares temporarily uses the live-media repository to guarantee that the
 # matching signed EFI GRUB and shim packages are available during installation.
@@ -134,7 +143,7 @@ rm -f "$ROOTFS/etc/skel/Desktop/org.kfocus.web.howtos.desktop" \
 install -m 0644 "$WORK_DIR/cdrom.sources" \
   "$ROOTFS/etc/apt/sources.list.d/cdrom.sources"
 
-# Kubuntu's Calamares automirror module writes the installed deb822 source and
+# The installer automirror module writes the installed deb822 source and
 # then unconditionally removes this legacy path. Keep an empty compatibility
 # file in the live root so that final cleanup is idempotent on deb822-only APT
 # images instead of aborting an otherwise successful installation.
@@ -145,35 +154,65 @@ du -sx --block-size=1 "$ROOTFS" | cut -f1 > "$FS_SIZE"
 
 # Zstd cuts iteration time dramatically while remaining supported by modern
 # Ubuntu kernels. The day-one target prioritizes iteration speed over minimum ISO size.
+if findmnt -Rno TARGET "$ROOTFS" | grep -qxv "$ROOTFS"; then
+  echo "unexpected mount remains below immutable rootfs snapshot" >&2
+  findmnt -R "$ROOTFS" >&2
+  exit 1
+fi
 mksquashfs "$ROOTFS" "$NEW_SQUASH" -noappend -comp zstd -Xcompression-level 15 -processors "$(nproc)"
 
+# A metadata listing is insufficient: force decompression of every data and
+# fragment block, then assert critical AArel identity/service files survived.
+PRE_ISO_EXTRACT="$WORK_DIR/squashfs-full-test"
+unsquashfs -d "$PRE_ISO_EXTRACT" "$NEW_SQUASH"
+test -x "$PRE_ISO_EXTRACT/usr/lib/aarel/mmonolithd.py"
+test -x "$PRE_ISO_EXTRACT/usr/lib/aarel/llerad.py"
+test -f "$PRE_ISO_EXTRACT/etc/aarel-release"
+SQUASH_SHA256="$(sha256sum "$NEW_SQUASH" | awk '{print $1}')"
+
 cat > "$ISO_INFO" <<'INFO'
-AArel OS Linux Preview amd64 — MMonolith / Forge
-Derivative base: Kubuntu 26.04 LTS (Ubuntu 26.04 LTS)
+AArel MMonolith OS Final amd64 — MMonolith / LLera / Forge
 INFO
 
-rm -f "$OUT_ISO" "$OUT_ISO.sha256"
+rm -f "$PUBLISH_TMP" "$PUBLISH_TMP.sha256"
 
 # Load the official image, replace only AArel-owned/live-root payloads, and ask
 # xorriso to replay the original El Torito + System Area boot equipment. This
 # avoids hand-reconstructing fragile BIOS/UEFI boot flags.
 xorriso \
   -indev "$BASE_ISO" \
-  -outdev "$OUT_ISO" \
+  -outdev "$PUBLISH_TMP" \
   -overwrite on \
-  -volid AAREL_OS_PREVIEW \
-  -map "$NEW_SQUASH" /casper/filesystem.squashfs \
-  -map "$MANIFEST" /casper/filesystem.manifest \
-  -map "$FS_SIZE" /casper/filesystem.size \
+  -volid AAREL_MMONOLITH \
+  -map "$NEW_SQUASH" "$ISO_SQUASH_PATH" \
+  -map "$MANIFEST" /casper/minimal.manifest \
+  -map "$FS_SIZE" /casper/minimal.size \
   -map "$ISO_INFO" /.disk/info \
   -boot_image any replay \
   -compliance no_emul_toc \
   -padding included \
   -commit
 
+sync "$PUBLISH_TMP"
+EMBEDDED_SQUASH="$WORK_DIR/filesystem.from-final-iso.squashfs"
+xorriso -osirrox on -indev "$PUBLISH_TMP" -extract "$ISO_SQUASH_PATH" "$EMBEDDED_SQUASH"
+EMBEDDED_SHA256="$(sha256sum "$EMBEDDED_SQUASH" | awk '{print $1}')"
+test "$SQUASH_SHA256" = "$EMBEDDED_SHA256" || {
+  echo "embedded squashfs hash differs from generated squashfs" >&2
+  exit 1
+}
+POST_ISO_EXTRACT="$WORK_DIR/embedded-squashfs-full-test"
+unsquashfs -d "$POST_ISO_EXTRACT" "$EMBEDDED_SQUASH"
+test -x "$POST_ISO_EXTRACT/usr/lib/aarel/mmonolithd.py"
+test -x "$POST_ISO_EXTRACT/usr/lib/aarel/llerad.py"
+xorriso -indev "$PUBLISH_TMP" -report_el_torito plain > "$WORK_DIR/aarel-el-torito.txt" 2>&1
+xorriso -indev "$PUBLISH_TMP" -find "$ISO_SQUASH_PATH" -exec lsdl -- > "$WORK_DIR/aarel-payload.txt" 2>&1
+
+# Publish only a structurally proven, complete image. The previous known-good
+# release remains untouched throughout construction and verification.
+mv -f "$PUBLISH_TMP" "$OUT_ISO"
 sha256sum "$OUT_ISO" | tee "$OUT_ISO.sha256"
-xorriso -indev "$OUT_ISO" -report_el_torito plain > "$WORK_DIR/aarel-el-torito.txt" 2>&1
-xorriso -indev "$OUT_ISO" -find /casper/filesystem.squashfs -exec lsdl -- > "$WORK_DIR/aarel-payload.txt" 2>&1
+cp "$MANIFEST" "$(dirname "$OUT_ISO")/AArel-MMonolith-OS-filesystem.manifest"
 
 printf 'AArel ISO created: %s\n' "$OUT_ISO"
 printf 'SHA256: %s\n' "$OUT_ISO.sha256"

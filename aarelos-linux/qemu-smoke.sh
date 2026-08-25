@@ -56,7 +56,7 @@ for _ in $(seq 1 60); do
 done
 [[ -S "$MON" ]] || { echo "QEMU monitor did not appear" >&2; exit 1; }
 
-# The official Kubuntu menu waits 30 seconds. Select its default entry so the
+# The archive image menu waits before selecting its default entry, so the
 # smoke deadline measures OS startup rather than an avoidable boot-menu delay.
 sleep "$BOOT_SELECT_WAIT"
 python3 - "$MON" <<'PY'
@@ -69,8 +69,8 @@ time.sleep(1)
 print(s.recv(4096).decode(errors="replace"))
 PY
 
-# Kubuntu's live environment intentionally stops at a Try/Install chooser.
-# Wake its headless Qt surface, focus "Try Kubuntu", and activate it. On a
+# The live environment may stop at a Try/Install chooser. Wake its headless
+# surface, focus the live-session choice, and activate it. On a
 # fresh chooser the focus order is language, network, then Try.
 sleep "$LIVE_PROMPT_WAIT"
 python3 - "$MON" <<'PY'

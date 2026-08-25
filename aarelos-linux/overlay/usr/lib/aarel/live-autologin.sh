@@ -17,7 +17,7 @@ if [ -z "$live_user" ]; then
     exit 1
 fi
 
-# Kubuntu 26.04 can leave the home directory behind when user-setup-apply fails
+# Casper can leave the home directory behind when user-setup-apply fails
 # in a remastered image. Repair only the ephemeral Casper system; this service
 # is skipped entirely after installation.
 if ! getent passwd "$live_user" >/dev/null; then
@@ -32,6 +32,6 @@ install -d -m 0755 /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/99-aarel-live-autologin.conf <<EOF
 [Autologin]
 Relogin=false
-Session=kubuntu-live-environment.desktop
+Session=plasma.desktop
 User=$live_user
 EOF

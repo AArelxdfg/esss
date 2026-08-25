@@ -122,6 +122,12 @@ rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/tmp/"* "$ROOTFS/var/tmp/"*
 install -m 0644 "$WORK_DIR/cdrom.sources" \
   "$ROOTFS/etc/apt/sources.list.d/cdrom.sources"
 
+# Kubuntu's Calamares automirror module writes the installed deb822 source and
+# then unconditionally removes this legacy path. Keep an empty compatibility
+# file in the live root so that final cleanup is idempotent on deb822-only APT
+# images instead of aborting an otherwise successful installation.
+: > "$ROOTFS/etc/apt/sources.list"
+
 chroot "$ROOTFS" dpkg-query -W --showformat='${Package} ${Version}\n' | sort > "$MANIFEST"
 du -sx --block-size=1 "$ROOTFS" | cut -f1 > "$FS_SIZE"
 

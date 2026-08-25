@@ -71,6 +71,27 @@ chmod 0755 "$ROOTFS/usr/sbin/policy-rc.d"
 rm -f "$ROOTFS/etc/resolv.conf"
 cp -L /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
+# The Kubuntu live root carries a file:/cdrom APT source. That source is valid only
+# while booted from the original media and breaks remaster chroot package installs.
+# Replace all live-media sources with the official Ubuntu network archives before
+# apt is invoked, including deb822 .sources files.
+mkdir -p "$ROOTFS/etc/apt/sources.list.d"
+rm -f "$ROOTFS/etc/apt/sources.list"
+find "$ROOTFS/etc/apt/sources.list.d" -maxdepth 1 -type f -delete
+cat > "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" <<'SOURCES'
+Types: deb
+URIs: http://archive.ubuntu.com/ubuntu/
+Suites: resolute resolute-updates resolute-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: http://security.ubuntu.com/ubuntu/
+Suites: resolute-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+SOURCES
+
 mount --rbind /dev "$ROOTFS/dev"; mount --make-rslave "$ROOTFS/dev"; MOUNTED+=("$ROOTFS/dev")
 mount -t proc proc "$ROOTFS/proc"; MOUNTED+=("$ROOTFS/proc")
 mount --rbind /sys "$ROOTFS/sys"; mount --make-rslave "$ROOTFS/sys"; MOUNTED+=("$ROOTFS/sys")

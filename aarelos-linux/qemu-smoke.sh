@@ -136,6 +136,10 @@ PY
 
 if command -v tesseract >/dev/null 2>&1; then
   tesseract "$PNG" "$EVIDENCE/runtime-ocr" >/dev/null 2>"$EVIDENCE/tesseract.log" || true
+  if grep -Eiq 'Something went wrong|Hide log|subiquity/' "$EVIDENCE/runtime-ocr.txt"; then
+    echo "live boot reached an installer failure screen" >&2
+    exit 1
+  fi
   if grep -Eiq 'Username|Password' "$EVIDENCE/runtime-ocr.txt"; then
     echo "live boot stopped at an interactive login prompt" >&2
     exit 1

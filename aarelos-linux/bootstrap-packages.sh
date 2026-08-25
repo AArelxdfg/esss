@@ -68,4 +68,9 @@ chmod 0755 /usr/lib/aarel/*.sh /usr/lib/aarel/*.py /usr/bin/mmonolithctl /usr/bi
 systemctl enable NetworkManager.service sddm.service aarel-live-autologin.service \
   aarel-flathub.service llera.service mmonolith.service || true
 
+# The archive desktop root already selects another display manager. systemctl
+# deliberately refuses to replace an existing display-manager.service alias,
+# so make the AArel Plasma choice explicit after package installation.
+ln -sfn /usr/lib/systemd/system/sddm.service /etc/systemd/system/display-manager.service
+
 printf 'AArel package bootstrap complete.\n'

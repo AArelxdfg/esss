@@ -3,11 +3,11 @@
 ## 2026-08-25 final-release continuation
 
 - CURRENT HEAD AT SPRINT START: `683682f2b6b0a8a2fc6141d88f3635e61073b215`
-- LAST PASS GATE: official 26.04 archive base SHA-256 verification (`487f87faaf547ea30e0aba4d5b53346292571256b25333a978db1692bcee9dd2`)
-- FIRST FAIL GATE: new archive base extraction initially expected legacy `/casper/filesystem.squashfs`
-- EXACT ERROR: `Cannot determine attributes of (ISO) source file '/casper/filesystem.squashfs': No such file or directory`
-- ROOT CAUSE/FIX: 26.04 desktop media uses layered `/casper/minimal.squashfs`; builder now replaces and fully verifies that actual payload path
-- ACTIVE GATE: first clean no-flavour-base build is installing the explicitly selected KDE/AArel package set in isolated build `20260825T190550Z-335`
+- LAST PASS GATE: generated and ISO-extracted SquashFS full decompression; embedded/source SHA-256 equality; zero SquashFS errors under QEMU/OVMF
+- FIRST FAIL GATE: QEMU live UI reached the archive installer's `Something went wrong` screen instead of AArel Plasma
+- EXACT ERROR: `Failed to enable unit: File '/etc/systemd/system/display-manager.service' already exists and is a symlink to /lib/systemd/system/gdm3.service`
+- ROOT CAUSE/FIX: the archive root's existing display-manager alias prevented `systemctl enable sddm`; bootstrap now atomically selects SDDM after package installation, and visual smoke explicitly rejects installer-failure text
+- ACTIVE GATE: rebuild exact ISO after display-manager alias fix, then repeat QEMU/OVMF live-desktop gate
 - WORKFLOW RUN ID: local release build (no GitHub run created yet)
 - NEXT AGENT START HERE: poll WSL build session/process; if it exited, read the first exact error. The build is rooted at `/root/.cache/aarelos-linux/builds/20260825T190550Z-335`. Do not reuse or mutate that rootfs while compression is active.
 

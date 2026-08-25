@@ -32,6 +32,6 @@ install -d -m 0755 /etc/sddm.conf.d
 cat > /etc/sddm.conf.d/99-aarel-live-autologin.conf <<EOF
 [Autologin]
 Relogin=false
-Session=plasma.desktop
+Session=aarel.desktop
 User=$live_user
 EOF

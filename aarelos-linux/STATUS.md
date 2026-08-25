@@ -4,10 +4,10 @@
 
 - CURRENT HEAD AT SPRINT START: `683682f2b6b0a8a2fc6141d88f3635e61073b215`
 - LAST PASS GATE: generated and ISO-extracted SquashFS full decompression; embedded/source SHA-256 equality; zero SquashFS errors under QEMU/OVMF
-- FIRST FAIL GATE: QEMU live UI reached the archive installer's `Something went wrong` screen instead of AArel Plasma
-- EXACT ERROR: `Failed to enable unit: File '/etc/systemd/system/display-manager.service' already exists and is a symlink to /lib/systemd/system/gdm3.service`
-- ROOT CAUSE/FIX: the archive root's existing display-manager alias prevented `systemctl enable sddm`; bootstrap now atomically selects SDDM after package installation, and visual smoke explicitly rejects installer-failure text
-- ACTIVE GATE: rebuild exact ISO after display-manager alias fix, then repeat QEMU/OVMF live-desktop gate
+- FIRST FAIL GATE: after selecting SDDM, QEMU produced a uniform black display
+- EXACT ERROR: configured `Session=plasma.desktop`, but the root contained only `/usr/share/wayland-sessions/ubuntu.desktop`
+- ROOT CAUSE/FIX: the explicitly installed Plasma package set provides `startplasma-wayland` but no session descriptor; AArel now ships its own `aarel.desktop` Wayland session and selects it for live autologin
+- ACTIVE GATE: regenerate exact ISO with AArel session descriptor, then repeat QEMU/OVMF live-desktop gate
 - WORKFLOW RUN ID: local release build (no GitHub run created yet)
 - NEXT AGENT START HERE: poll WSL build session/process; if it exited, read the first exact error. The build is rooted at `/root/.cache/aarelos-linux/builds/20260825T190550Z-335`. Do not reuse or mutate that rootfs while compression is active.
 

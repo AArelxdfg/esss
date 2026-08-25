@@ -114,7 +114,7 @@ du -sx --block-size=1 "$ROOTFS" | cut -f1 > "$FS_SIZE"
 mksquashfs "$ROOTFS" "$NEW_SQUASH" -noappend -comp zstd -Xcompression-level 15 -processors "$(nproc)"
 
 cat > "$ISO_INFO" <<'INFO'
-AArel OS Linux Preview amd64 — Monolith / Forge
+AArel OS Linux Preview amd64 — MMonolith / Forge
 Derivative base: Kubuntu 26.04 LTS (Ubuntu 26.04 LTS)
 INFO
 

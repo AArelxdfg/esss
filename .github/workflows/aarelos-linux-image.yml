@@ -30,8 +30,11 @@ jobs:
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y \
-            curl xorriso squashfs-tools rsync qemu-system-x86 ovmf \
+            acl curl xorriso squashfs-tools rsync qemu-system-x86 ovmf \
             imagemagick tesseract-ocr python3 python3-pil
+          if [[ -e /dev/kvm ]]; then
+            sudo setfacl -m "u:${USER}:rw" /dev/kvm
+          fi
 
       - name: Build genuine AArel hybrid ISO
         shell: bash
@@ -56,15 +59,20 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set +e
+          set -euo pipefail
           mkdir -p AArelOS-Linux-Preview
-          cp -f AArelOS-Linux-Preview-amd64.iso* AArelOS-Linux-Preview/ 2>/dev/null || true
+          if [[ -s AArelOS-Linux-Preview-amd64.iso ]]; then
+            cp -f --reflink=never AArelOS-Linux-Preview-amd64.iso AArelOS-Linux-Preview/
+            (cd AArelOS-Linux-Preview && sha256sum AArelOS-Linux-Preview-amd64.iso > AArelOS-Linux-Preview-amd64.iso.sha256)
+            (cd AArelOS-Linux-Preview && sha256sum -c AArelOS-Linux-Preview-amd64.iso.sha256)
+          fi
           cp -a aarelos-linux-evidence AArelOS-Linux-Preview/ 2>/dev/null || true
           cp -f aarelos-linux/ONE_DAY_PIVOT.md AArelOS-Linux-Preview/ 2>/dev/null || true
           echo "## AArel OS Linux ISO" >> "$GITHUB_STEP_SUMMARY"
           find AArelOS-Linux-Preview -maxdepth 2 -type f -printf '%p %s bytes\n' | sort >> "$GITHUB_STEP_SUMMARY"
-          if [[ -d /mnt/c/Users/arelx/Desktop ]]; then
+          if [[ -s AArelOS-Linux-Preview/AArelOS-Linux-Preview-amd64.iso && -d /mnt/c/Users/arelx/Desktop ]]; then
             rm -rf /mnt/c/Users/arelx/Desktop/AArelOS-Linux-Preview
-            cp -a AArelOS-Linux-Preview /mnt/c/Users/arelx/Desktop/
+            cp -a --reflink=never AArelOS-Linux-Preview /mnt/c/Users/arelx/Desktop/
+            (cd /mnt/c/Users/arelx/Desktop/AArelOS-Linux-Preview && sha256sum -c AArelOS-Linux-Preview-amd64.iso.sha256)
             echo "Copied to C:\\Users\\arelx\\Desktop\\AArelOS-Linux-Preview" >> "$GITHUB_STEP_SUMMARY"
           fi

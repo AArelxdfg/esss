@@ -1,5 +1,16 @@
 Types: deb
-URIs: file:/cdrom/
+URIs: file:///cdrom
 Suites: resolute
-Components: main restricted
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+Components: restricted main
+Check-Date: no
+Signed-By:
+ -----BEGIN PGP PUBLIC KEY BLOCK-----
+ .
+ mDMEaelsohYJKwYBBAHaRw8BAQdADzWboH++xazYLlWQxYISJNOUuCszsEAe1VYx
+ nLM7jge0N1VidW50dSBJU08gT25lLVRpbWUgU2lnbmluZyBLZXkgPG5vb25lQG5v
+ d2hlcmUuaW52YWxpZD6IkAQTFgoAOBYhBMkhD5X1BsLOt6XOLnY5Ww9wQSNXBQJp
+ 6WyiAhsDBQsJCAcCBhUKCQgLAgQWAgMBAh4BAheAAAoJEHY5Ww9wQSNX8RoA/27S
+ Kam2m7SKuzIAEspjiEKeYdambKTi98Yug5Y2GYAXAP9QHQnUQ98z6JVbssqonB38
+ byRzy0N6HN/734u/VvmmAQ==
+ =EyCt
+ -----END PGP PUBLIC KEY BLOCK-----

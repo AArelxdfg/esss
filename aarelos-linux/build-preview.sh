@@ -57,6 +57,11 @@ rm -rf "$ROOTFS" "$OLD_SQUASH" "$NEW_SQUASH"
 xorriso -osirrox on -indev "$BASE_ISO" -extract /casper/filesystem.squashfs "$OLD_SQUASH"
 unsquashfs -d "$ROOTFS" "$OLD_SQUASH"
 
+# Preserve the base ISO's one-time inline signing key. It is intentionally not
+# part of the general Ubuntu archive keyring and is required by Calamares when
+# it installs the matching EFI boot packages from the live medium.
+install -m 0644 "$ROOTFS/etc/apt/sources.list.d/cdrom.sources" "$WORK_DIR/cdrom.sources"
+
 # AArel-owned files are a clean overlay; base package licenses remain untouched.
 rsync -aHAX --chown=root:root --chmod=D755,F644 "$SCRIPT_DIR/overlay/" "$ROOTFS/"
 install -m 0755 "$SCRIPT_DIR/bootstrap-packages.sh" "$ROOTFS/tmp/aarel-bootstrap-packages.sh"
@@ -114,7 +119,7 @@ rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/tmp/"* "$ROOTFS/var/tmp/"*
 # Calamares temporarily uses the live-media repository to guarantee that the
 # matching signed EFI GRUB and shim packages are available during installation.
 # It removes this source from the installed target itself.
-install -m 0644 "$SCRIPT_DIR/overlay/etc/apt/sources.list.d/cdrom.sources" \
+install -m 0644 "$WORK_DIR/cdrom.sources" \
   "$ROOTFS/etc/apt/sources.list.d/cdrom.sources"
 
 chroot "$ROOTFS" dpkg-query -W --showformat='${Package} ${Version}\n' | sort > "$MANIFEST"

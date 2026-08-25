@@ -116,6 +116,12 @@ MOUNTED=()
 rm -f "$ROOTFS/usr/sbin/policy-rc.d" "$ROOTFS/tmp/aarel-bootstrap-packages.sh"
 rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/tmp/"* "$ROOTFS/var/tmp/"*
 
+# cups-filters enables three legacy parallel-port modules unconditionally.
+# parport_pc can block systemd-modules-load for minutes on modern q35 systems
+# without a parallel controller. CUPS retains USB and network printer support;
+# applicable kernel modules are loaded automatically from hardware aliases.
+rm -f "$ROOTFS/etc/modules-load.d/cups-filters.conf"
+
 # Calamares temporarily uses the live-media repository to guarantee that the
 # matching signed EFI GRUB and shim packages are available during installation.
 # It removes this source from the installed target itself.

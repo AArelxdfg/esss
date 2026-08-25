@@ -56,4 +56,4 @@ fi
 systemctl --user restart plasma-plasmashell.service >/dev/null 2>&1 || true
 
 touch "$MARKER"
-printf 'AArel Monolith visual profile applied.\n'
+printf 'MMonolith visual profile applied.\n'

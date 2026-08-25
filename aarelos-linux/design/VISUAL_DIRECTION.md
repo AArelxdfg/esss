@@ -1,4 +1,4 @@
-# AArel OS — Monolith Visual Direction
+# AArel OS — MMonolith Visual Direction
 
 AArel OS uses an original **Obsidian Glass** language: near-black graphite surfaces, cool moonlight accents, restrained translucency, floating geometry and high-density developer ergonomics. It must feel premium and technical, never childish, gamer-themed, or like a direct Windows/macOS copy.
 

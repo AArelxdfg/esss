@@ -1,0 +1,6 @@
+# Official derivative base pinned for AArel OS Linux Preview builds.
+LOCK_BASE_DISTRIBUTION="Kubuntu 26.04 LTS"
+LOCK_BASE_FILENAME="kubuntu-26.04-desktop-amd64.iso"
+LOCK_BASE_URL="https://cdimage.ubuntu.com/kubuntu/releases/26.04/release/kubuntu-26.04-desktop-amd64.iso"
+LOCK_BASE_SHA256="95ce9cf68f13015b9a88bd1ef86fcf7eda77c99979fda48c69e28aa0a84f88ac"
+LOCK_VERIFICATION="SHA-256 verified before every extraction"

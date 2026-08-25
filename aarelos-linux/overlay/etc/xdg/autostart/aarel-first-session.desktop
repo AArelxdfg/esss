@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=AArel Monolith First Session
+Name=MMonolith First Session
 Comment=Apply AArel OS visual and workspace defaults once
 Exec=/usr/lib/aarel/apply-visual.sh
 OnlyShowIn=KDE;

@@ -2,8 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_URL="${AAREL_BASE_URL:-https://cdimage.ubuntu.com/kubuntu/releases/26.04/release/kubuntu-26.04-desktop-amd64.iso}"
-BASE_SHA256="${AAREL_BASE_SHA256:-95ce9cf68f13015b9a88bd1ef86fcf7eda77c99979fda48c69e28aa0a84f88ac}"
+# shellcheck source=BASE.lock
+source "$SCRIPT_DIR/BASE.lock"
+BASE_URL="${AAREL_BASE_URL:-$LOCK_BASE_URL}"
+BASE_SHA256="${AAREL_BASE_SHA256:-$LOCK_BASE_SHA256}"
 CACHE_DIR="${AAREL_CACHE:-$HOME/.cache/aarelos-linux}"
 WORK_DIR="${AAREL_WORK:-$CACHE_DIR/work}"
 BASE_ISO="${AAREL_BASE_ISO:-$CACHE_DIR/kubuntu-26.04-desktop-amd64.iso}"

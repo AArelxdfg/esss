@@ -3,7 +3,7 @@
 ## Goal
 Ship a real installable AArel OS developer preview in one day by using Kubuntu 26.04 LTS as the hardware/kernel/userspace foundation while keeping AArel product identity, Forge workflow, LLera services, policy boundaries, branding and release gates.
 
-This is a deliberate product pivot, not a claim that AArel Monolith remains a standalone kernel.
+This is a deliberate product pivot, not a claim that MMonolith is a standalone kernel.
 
 ## Foundation
 - Base: Kubuntu 26.04 LTS (Ubuntu 26.04 LTS)
@@ -15,7 +15,7 @@ This is a deliberate product pivot, not a claim that AArel Monolith remains a st
 
 ## AArel ownership layer
 - AArel OS branding and release identity
-- AArel Monolith: system/session orchestration layer, NOT the Linux kernel
+- MMonolith: system/session orchestration layer, NOT the Linux kernel
 - Forge: AArel developer workspace, launcher and developer-first defaults
 - LLera: policy-gated native service; no arbitrary shell bypass
 - AArel theme: dark visual system, wallpaper, boot splash, login/session defaults, panel/dock layout
@@ -43,7 +43,7 @@ This is a deliberate product pivot, not a claim that AArel Monolith remains a st
 - Do not wait for native AArel replacements before shipping; replace components incrementally after the preview exists.
 
 ## Visual priority
-The first-day build treats visual identity as a release gate, not decoration. The canonical direction is `aarelos-linux/design/VISUAL_DIRECTION.md`; the image must ship AArel Monolith colors, wallpaper, floating Plasma surfaces and Forge terminal defaults from the source overlay.
+The first-day build treats visual identity as a release gate, not decoration. The canonical direction is `aarelos-linux/design/VISUAL_DIRECTION.md`; the image must ship MMonolith colors, wallpaper, floating Plasma surfaces and Forge terminal defaults from the source overlay.
 
 ## 24-hour acceptance gates
 The build can be called `AArel OS Linux Preview` only if all of the following pass:
@@ -63,6 +63,6 @@ The build can be called `AArel OS Linux Preview` only if all of the following pa
 
 ## Product split
 - `AArel OS`: fast production/product track based on Kubuntu 26.04 LTS.
-- `AArel Monolith Research`: preserve the independent Serenity-based/native work as a long-term research track. Nothing is deleted.
+- `MMonolith Research`: preserve the independent Serenity-based/native work as a long-term research track. Nothing is deleted.
 
 This split gives AArel a usable system now without throwing away the independent OS work.

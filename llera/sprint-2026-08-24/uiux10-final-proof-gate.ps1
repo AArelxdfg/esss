@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory)][string]$TextScale100Report,
     [Parameter(Mandatory)][string]$TextScale150Report,
     [Parameter(Mandatory)][string]$TextScale200Report,
+    [Parameter(Mandatory)][string]$WindowPlacementReport,
     [string]$ExpectedCandidate = 'V5.4.0 MONOLITH AURORA UX',
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'artifacts')
 )
@@ -31,7 +32,16 @@ foreach($t in $textReports){
     $textEvidence+=@{percent=[int]$t.expected;reportSha256=Sha $t.path;screenshotSha256=$shot}
 }
 if($screens.Count-ne3){ Fail '100/150/200% text-scale proof must contain three distinct physical screenshots.' }
-$result=[ordered]@{schema=2;product='LLera UIUX 10/10 Final Proof Gate';candidate=$ExpectedCandidate;checkedAt=(Get-Date).ToUniversalTime().ToString('o');computer=[string]$r.computer;score=100;verdict='PASS';executableSha256=$releaseSha;policy=@{requireReleaseGrade100=$true;requireRuntimeContinuity100=$true;requireSamePhysicalWindowsHost=$true;requireSameExecutableAcrossAllPhysicalProof=$true;requireThreeRuntimeBoundViewportCaptures=$true;requireWindowsTextScale100_150_200=$true;requireDistinctTextScaleScreenshots=$true;allowWarnings=$false};evidence=@{releaseGradeReportSha256=Sha $ReleaseGradeReport;runtimeContinuityReportSha256=Sha $RuntimeContinuityReport;matrixBindings=@($c.bindings|ForEach-Object{@{matrixCase=$_.matrixCase;screenshotSha256=$_.screenshotSha256;physicalReportSha256=$_.physicalReportSha256;identityReportSha256=$_.identityReportSha256}});textScale=$textEvidence}}
+$p=Read-Json $WindowPlacementReport
+if($p.product-ne'LLera UIUX 10/10 Windows Placement Audit' -or $p.verdict-ne'PASS' -or [int]$p.score-ne100){ Fail 'Windows placement evidence is not strict 100/100.' }
+if(@($p.failures).Count-ne0 -or @($p.warnings).Count-ne0){ Fail 'Windows placement evidence contains warnings or failures.' }
+if([string]$p.computer-ne[string]$r.computer){ Fail 'Windows placement evidence must come from the same physical Windows host.' }
+if([string]$p.process.sha256-ne$releaseSha){ Fail 'Windows placement audit used a different LLera executable.' }
+if(@($p.cases).Count-ne3){ Fail 'Windows placement proof must contain left-half, right-half and work-area-max cases.' }
+$placementShots=New-Object System.Collections.Generic.HashSet[string]
+foreach($name in @('left-half','right-half','workarea-max')){ $case=@($p.cases|Where-Object{$_.name-eq$name}); if($case.Count-ne1 -or $case[0].insideWorkingArea-ne$true -or $case[0].responsive-ne$true -or $case[0].hung-ne$false){ Fail "Invalid placement evidence for $name." }; $s=[string]$case[0].screenshot.sha256; if($s-notmatch'^[0-9a-f]{64}$'){Fail "Malformed placement screenshot hash for $name."}; [void]$placementShots.Add($s) }
+if($placementShots.Count-ne3){ Fail 'Placement proof must contain three distinct physical screenshots.' }
+$result=[ordered]@{schema=3;product='LLera UIUX 10/10 Final Proof Gate';candidate=$ExpectedCandidate;checkedAt=(Get-Date).ToUniversalTime().ToString('o');computer=[string]$r.computer;score=100;verdict='PASS';executableSha256=$releaseSha;policy=@{requireReleaseGrade100=$true;requireRuntimeContinuity100=$true;requireSamePhysicalWindowsHost=$true;requireSameExecutableAcrossAllPhysicalProof=$true;requireThreeRuntimeBoundViewportCaptures=$true;requireWindowsTextScale100_150_200=$true;requireDistinctTextScaleScreenshots=$true;requireWindowsPlacement100=$true;requireLeftRightWorkAreaPlacement=$true;requireTaskbarWorkAreaContainment=$true;requireDistinctPlacementScreenshots=$true;allowWarnings=$false};evidence=@{releaseGradeReportSha256=Sha $ReleaseGradeReport;runtimeContinuityReportSha256=Sha $RuntimeContinuityReport;windowPlacementReportSha256=Sha $WindowPlacementReport;matrixBindings=@($c.bindings|ForEach-Object{@{matrixCase=$_.matrixCase;screenshotSha256=$_.screenshotSha256;physicalReportSha256=$_.physicalReportSha256;identityReportSha256=$_.identityReportSha256}});textScale=$textEvidence;windowPlacement=@($p.cases|ForEach-Object{@{name=$_.name;screenshotSha256=$_.screenshot.sha256;actual=$_.actual}})}}
 New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 $out=Join-Path $OutputDirectory ("uiux10-final-proof-{0}.json" -f (Get-Date -Format 'yyyyMMdd-HHmmss')); $result|ConvertTo-Json -Depth 10|Set-Content -LiteralPath $out -Encoding UTF8; $sha=Sha $out; "$sha  $(Split-Path -Leaf $out)"|Set-Content -LiteralPath "$out.sha256" -Encoding ASCII
-Write-Host 'PASS: LLera UI/UX strict physical proof = 100/100 with viewport, immutable runtime, and Windows text-scale evidence.'; Write-Host "Executable SHA-256: $releaseSha"; Write-Host "Evidence: $out"; Write-Host "SHA-256: $sha"; exit 0
+Write-Host 'PASS: LLera UI/UX strict physical proof = 100/100 with viewport, immutable runtime, text scale and Windows placement evidence.'; Write-Host "Executable SHA-256: $releaseSha"; Write-Host "Evidence: $out"; Write-Host "SHA-256: $sha"; exit 0

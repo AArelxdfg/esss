@@ -2,3 +2,4 @@ Types: deb
 URIs: file:/cdrom/
 Suites: resolute
 Components: main restricted
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg

@@ -50,5 +50,10 @@ if [[ -n "$QDBUS" ]]; then
   "$QDBUS" org.kde.plasmashell /PlasmaShell refreshCurrentShell >/dev/null 2>&1 || true
 fi
 
+# Plasma 6 does not reliably instantiate newly-created containments until the
+# shell reloads. Restart its user unit once after writing the first-session
+# layout so the branded panel and wallpaper are visible immediately.
+systemctl --user restart plasma-plasmashell.service >/dev/null 2>&1 || true
+
 touch "$MARKER"
 printf 'AArel Monolith visual profile applied.\n'

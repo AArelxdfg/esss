@@ -46,6 +46,10 @@ apt-get install -y --no-install-recommends \
   wine64 winetricks \
   rsync squashfs-tools xorriso isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin
 
+# The upstream onboarding window obscures the branded first-session layout.
+# AArel provides its own desktop defaults and launchers, so it is not installed.
+apt-get purge -y plasma-welcome || true
+
 # Flatpak is additive. Failure to reach Flathub during an offline ISO build is
 # not allowed to make the image unreproducible; a system service retries it on
 # the installed machine once networking is online.

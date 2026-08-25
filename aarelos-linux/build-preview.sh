@@ -122,6 +122,10 @@ rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/tmp/"* "$ROOTFS/var/tmp/"*
 # applicable kernel modules are loaded automatically from hardware aliases.
 rm -f "$ROOTFS/etc/modules-load.d/cups-filters.conf"
 
+# Do not seed upstream Kubuntu/KFocus web shortcuts onto each user's desktop.
+rm -f "$ROOTFS/etc/skel/Desktop/org.kfocus.web.howtos.desktop" \
+  "$ROOTFS/etc/skel/Desktop/org.kubuntu.web.home.desktop"
+
 # Calamares temporarily uses the live-media repository to guarantee that the
 # matching signed EFI GRUB and shim packages are available during installation.
 # It removes this source from the installed target itself.

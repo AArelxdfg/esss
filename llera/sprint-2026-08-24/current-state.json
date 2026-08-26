@@ -1,6 +1,6 @@
 {
-  "schema": 4,
-  "captured_at": "2026-08-26T11:34:19+03:00",
+  "schema": 5,
+  "captured_at": "2026-08-26T12:48:53+03:00",
   "sprint": "MONOLITH OMEGA full restore",
   "baseline": {
     "version": "5.3.5",
@@ -48,27 +48,39 @@
   "restore_gates": {
     "behavior_contract": "llera/sprint-2026-08-24/monolith-parity-contract.json",
     "behavior_gate": "llera/sprint-2026-08-24/monolith-parity-gate.js",
-    "gate_self_test": "PASS",
     "historical_minimum_tool_registry": 56,
-    "restore_target_tool_registry": 62,
-    "canonical_tool_families_tracked": 6,
-    "canonical_tool_markers_tracked": 36,
-    "critical_behavior_markers_tracked": 15
+    "restore_target_tool_registry": 62
+  },
+  "reconstructed_source": {
+    "root": "llera/reconstructed-monolith",
+    "runtime_lifecycle": "llera/reconstructed-monolith/src/runtime-lifecycle.js",
+    "runtime_lifecycle_test": "llera/reconstructed-monolith/test/runtime-lifecycle.test.js",
+    "restored_contracts": [
+      "single llama.cpp runtime ownership",
+      "model switch stop-before-start",
+      "tracked abortable inference tasks",
+      "CRITICAL host-pressure preemption of low-priority inference",
+      "interactive inference preservation during pressure preemption",
+      "explicit runtime recovery transitions",
+      "desired-model retention across failed start/recovery",
+      "generation counter across process replacement"
+    ],
+    "test_execution_status": "test source committed; present environment could not clone GitHub into local container because outbound DNS resolution is unavailable, so no new runtime PASS claim is made"
   },
   "hard_blockers": [
     "Exact V5.3.5 source archive bytes are still unavailable; only the known source SHA-256 and build report are present.",
     "Exact V5.4 source archive bytes are still unavailable; only the known source SHA-256 and build report are present.",
-    "Current connected GitHub repository does not contain the LLera runtime source tree.",
     "Physical Windows/GPU/pagefile/local-GGUF V5.3.5/V5.4 stress validation has not been independently re-run in the present restore environment.",
     "Stable update manifest must not be advanced until a verified publishable candidate and signing material exist."
   ],
   "new_this_turn": [
-    "Re-searched File Library for exact V5.3.5 and V5.4 source archives by filename and known SHA-256; exact source bytes remain unavailable.",
-    "Re-inspected GitHub sprint tree; runtime source remains absent and stable.json was not modified.",
-    "Added a machine-executable MONOLITH behavioral parity contract instead of relying on UI similarity.",
-    "Added a Node parity gate that requires all canonical tool families, critical behavior markers, and at least the historically verified 56-tool registry before passing.",
-    "Parity gate self-test passed with 56 registry entries, 36 canonical tool markers across six families, and 15 critical behavior markers.",
-    "The gate separately reports the 62-tool restore target and does not mislabel 56-tool historical parity as the final 62-tool target."
+    "Re-searched File Library by exact V5.3.5/V5.4 source filenames and known SHA-256 values; exact source bytes remain unavailable.",
+    "Re-inspected GitHub repository tree/history; no original V5.3.5/V5.4 runtime source tree was recovered.",
+    "Created the first reconstructed MONOLITH runtime source module rather than another UI/demo shell.",
+    "Implemented single-runtime model lifecycle, stop-before-start model switching, tracked abortable inference, CRITICAL pressure preemption and explicit recovery state transitions.",
+    "Hardened recovery so the desired model survives a failed start and remains recoverable.",
+    "Added deterministic runtime-lifecycle test source covering duplicate-start prevention, pressure preemption, model switching and recovery generation behavior.",
+    "Did not modify stable.json and did not publish a release."
   ],
   "release_policy": {
     "modify_stable_manifest": false,

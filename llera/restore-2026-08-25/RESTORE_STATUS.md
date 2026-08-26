@@ -19,12 +19,21 @@ Restored in this build:
 - Web search results explicitly tagged UNTRUSTED_WEB_RESULT before model context.
 - Read-only signed-update-manifest check surface.
 
-Current parity evidence:
-- Historical V2 contract documented 34 tools, including filesystem, terminal/background jobs, Windows app control, desktop control, browser, web and cyber sidecar.
-- Historical V3 contract documented 50 unique AGENT_TOOLS plus persistent missions, verifier, time travel, vault, doctor/bench and developer bridge.
-- This reconstruction now exposes 44 tools; it is materially closer, but is not claimed to equal the historical 50/62-tool surface yet.
+Reconstructed-source parity track:
+- Historical V2 contract documented 34 tools.
+- Historical V4 contract documented a 56-unique-tool hardening gate; reconstructed-monolith now preserves a 56-tool registry while the packaged restore beta still exposes 44 named broker tools.
+- `src/evidence-ledger.js` now binds evidence IDs to mission, step, target and SHA-256, rejects digest mismatches, and supports post-action binding verification.
+- `src/dual-verifier.js` now requires evidence plus independent Strict and Adversarial check sets, each with a default 0.62 minimum score.
+- Deterministic evidence/verifier tests cover valid binding, target mismatch, tampering, digest mismatch, dual-verifier PASS and rejection paths.
 
-Build verification this turn:
+Latest deterministic source verification:
+- evidence + dual verifier test PASS.
+- Node syntax check PASS for both restored modules.
+- evidence-ledger.js SHA-256: f0bcd0799b1188623834825a1440e2e11a15e20e77b01a70bfdada9db7b17466
+- dual-verifier.js SHA-256: 388c6bfc417561fbbcbf00ed5f1c2e971d77def5a224355b6d142b606eba7851
+- evidence-verifier.test.js SHA-256: a19c4e92e7611ca27de9fbc7c0dd7632ffe7bd3dfde84636940dea8d88e3bdb1
+
+Previous packaged build verification:
 - GOOS=windows GOARCH=amd64 go vet PASS.
 - Windows x64 GUI cross-build PASS; PE32+ x86-64.
 - restore catalog contract PASS: 44/44 unique tools and safety/web markers.
@@ -32,4 +41,4 @@ Build verification this turn:
 - Source ZIP SHA-256: c7acd0ec4a48bd0557794b796b53673cc997ce95bcdec0a92844d3c6c16ff6e9
 
 Important limitation:
-The exact 2026 V5.3.5/V5.4 source archive bytes are still unavailable. This build reconstructs behavior from verified build reports and the original LLera source lineage found in the private repository. It must not be represented as byte-for-byte V5.4 or as physically Windows/GPU validated until that evidence exists.
+The exact 2026 V5.3.5/V5.4 source archive bytes are still unavailable. The V5.4 report records source ZIP SHA-256 b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471, but the matching source archive has not been recovered from File Library or GitHub. This build reconstructs behavior from verified build reports and the original LLera source lineage. It must not be represented as byte-for-byte V5.4, full parity, or physically Windows/GPU validated until that evidence exists.

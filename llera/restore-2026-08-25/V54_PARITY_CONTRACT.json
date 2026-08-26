@@ -1,0 +1,86 @@
+{
+  "contract": "LLera MONOLITH OMEGA functional parity",
+  "baseline_policy": {
+    "deprecated_product_baselines": ["Recovery", "Native demo"],
+    "visual_target": "MONOLITH Workspace screenshot",
+    "functional_sources": [
+      "LLera_V5_3_5_EVIDENCE_LEDGER_BUILD_REPORT.md",
+      "LLera_V5_4_0_AURORA_UX_BUILD_REPORT.md"
+    ]
+  },
+  "exact_artifact_identities": {
+    "v5_3_5": {
+      "installer_sha256": "1852b9c116fca9c4107e814b556956028d4732f4f04a00f606908d47667b9d2e",
+      "source_zip_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097"
+    },
+    "v5_4_0": {
+      "installer_sha256": "0304fc6586a0002b2c327ee113dfa9348a220e83668ebbb5aa3c1ef405fd969a",
+      "source_zip_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471"
+    }
+  },
+  "verified_contract": {
+    "runtime": [
+      "local llama.cpp lifecycle",
+      "abortable inference",
+      "single-runtime model switching",
+      "adaptive inference preemption under critical host pressure"
+    ],
+    "missions": [
+      "persistent missions",
+      "durable checkpoints",
+      "interrupted resume context"
+    ],
+    "agent_proof": [
+      "stable tool+argument anti-loop fingerprinting",
+      "material-action verification debt",
+      "structured evidence IDs",
+      "target bindings",
+      "SHA-256 result bindings",
+      "strict verifier",
+      "adversarial verifier"
+    ],
+    "evolution": [
+      "Outcome Memory",
+      "Skill Evolution",
+      "Failure Doctrine",
+      "Integrity Sentinel"
+    ],
+    "vision": [
+      "Vision sidecar/runtime",
+      "image/file/screen input",
+      "Windows OCR fallback"
+    ],
+    "hostguard": [
+      "single llama runtime",
+      "Windows host pressure telemetry",
+      "adaptive download workers",
+      "Vision pressure guard",
+      "BelowNormal runtime priority"
+    ],
+    "update": [
+      "signed updater",
+      "integrity checks",
+      "download/progress/install/rollback lifecycle"
+    ],
+    "aurora_ui": [
+      "MONOLITH functional page structure preserved",
+      "AURORA visual system",
+      "Ctrl/Cmd+K command palette",
+      "focus-visible accessibility",
+      "reduced-motion support"
+    ]
+  },
+  "tool_surface": {
+    "historical_v3_verified_unique_tools": 50,
+    "reconstruction_last_verified_tools": 44,
+    "restore_target_tools": 62,
+    "rule": "Never reduce the restored tool catalog; add tools only with implementation and contract tests."
+  },
+  "claim_guard": {
+    "exact_v5_4_requires_source_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "windows_grade_requires_physical_windows_evidence": true,
+    "gpu_validated_requires_physical_gpu_evidence": true,
+    "release_publish_requires_signing_material": true,
+    "stable_json_must_not_be_modified_before_publishable_candidate": true
+  }
+}

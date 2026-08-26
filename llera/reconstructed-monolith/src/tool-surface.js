@@ -16,7 +16,8 @@ const RESTORED_MONOLITH_TOOLS = [
   'browser_reload','browser_close','browser_extract','browser_download',
   'clipboard_read','clipboard_write','window_list','window_move_resize',
   'outcome_search','autonomy_status','knowledge_graph_search','skill_search',
-  'snapshot_create','snapshot_restore','llera_doctor','llera_bench'
+  'snapshot_create','snapshot_restore','llera_doctor','llera_bench',
+  'vision_analyze_image','vision_ocr_screen','evidence_record','evidence_verify','update_status','host_pressure_status'
 ];
 
 const MATERIAL_TOOLS = new Set([
@@ -28,7 +29,8 @@ const MATERIAL_TOOLS = new Set([
 const OBSERVATION_TOOLS = new Set([
   'list_dir','read_file','search_files','read_text_range','file_stat','path_exists','hash_file','process_status','list_processes','read_process_output',
   'list_apps','ui_snapshot','desktop_screenshot','browser_snapshot','browser_extract','web_get','web_search','search_cyber_core','system_info',
-  'clipboard_read','window_list','outcome_search','autonomy_status','knowledge_graph_search','skill_search','llera_doctor','llera_bench'
+  'clipboard_read','window_list','outcome_search','autonomy_status','knowledge_graph_search','skill_search','llera_doctor','llera_bench',
+  'vision_analyze_image','vision_ocr_screen','evidence_record','evidence_verify','update_status','host_pressure_status'
 ]);
 
 function stable(value) {

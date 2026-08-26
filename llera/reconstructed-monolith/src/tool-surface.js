@@ -45,6 +45,12 @@ function fingerprint(tool, args = {}) {
   return crypto.createHash('sha256').update(JSON.stringify([tool, stable(args)])).digest('hex');
 }
 
+function persistedOk(entry) {
+  if (typeof entry.ok === 'boolean') return entry.ok;
+  const outcome = String(entry.outcome || '').toLowerCase();
+  return ['success','succeeded','ok','observed','verified','completed'].includes(outcome);
+}
+
 class ToolExecutionGuard {
   constructor({maxSameFailure = 2} = {}) {
     this.maxSameFailure = maxSameFailure;
@@ -53,9 +59,45 @@ class ToolExecutionGuard {
   }
 
   restore(toolTrace = []) {
-    this.history = toolTrace.map(x => ({...x}));
-    const open = [...this.history].reverse().find(x => x.material && !x.verifiedBy);
-    this.verificationDebt = open ? {fingerprint: open.fingerprint, tool: open.tool, at: open.at} : null;
+    this.history = [];
+    this.verificationDebt = null;
+
+    for (const raw of toolTrace) {
+      if (!raw || !raw.tool) continue;
+      const cls = this.classify(raw.tool);
+      const fp = raw.fingerprint || raw.argumentsHash || fingerprint(raw.tool, raw.args || raw.arguments || {});
+      const entry = {
+        ...raw,
+        fingerprint: fp,
+        ok: persistedOk(raw),
+        material: typeof raw.material === 'boolean' ? raw.material : cls.material,
+        observation: typeof raw.observation === 'boolean'
+          ? raw.observation
+          : (Boolean(raw.verification) || cls.observation)
+      };
+      this.history.push(entry);
+
+      if (entry.material && entry.ok) {
+        this.verificationDebt = {fingerprint: entry.fingerprint, tool: entry.tool, at: entry.at || null};
+      }
+
+      if (entry.observation && entry.ok && this.verificationDebt && !entry.material) {
+        const debt = this.verificationDebt;
+        const material = [...this.history].reverse().find(
+          x => x.fingerprint === debt.fingerprint && x.material && x.ok
+        );
+        if (material) {
+          material.verifiedBy = entry.fingerprint;
+          entry.verifies = debt.fingerprint;
+        }
+        this.verificationDebt = null;
+      }
+    }
+
+    return {
+      restored: this.history.length,
+      verificationDebt: this.verificationDebt ? {...this.verificationDebt} : null
+    };
   }
 
   classify(tool) {

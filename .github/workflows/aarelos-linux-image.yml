@@ -46,6 +46,13 @@ jobs:
             AAREL_OUT="$GITHUB_WORKSPACE/AArelOS-Linux-Preview-amd64.iso" \
             bash aarelos-linux/build-preview.sh
 
+      - name: Replace upstream boot-menu branding
+        shell: bash
+        run: |
+          set -euxo pipefail
+          bash aarelos-linux/brand-boot-menu.sh AArelOS-Linux-Preview-amd64.iso
+          sha256sum -c AArelOS-Linux-Preview-amd64.iso.sha256
+
       - name: UEFI QEMU screenshot smoke test
         shell: bash
         env:
@@ -54,6 +61,15 @@ jobs:
         run: |
           set -euxo pipefail
           bash aarelos-linux/qemu-smoke.sh AArelOS-Linux-Preview-amd64.iso
+
+      - name: Legacy BIOS QEMU screenshot smoke test
+        shell: bash
+        env:
+          AAREL_LEGACY_BOOT_WAIT: '210'
+          AAREL_EVIDENCE_LEGACY: aarelos-linux-evidence-legacy
+        run: |
+          set -euxo pipefail
+          bash aarelos-linux/qemu-legacy-smoke.sh AArelOS-Linux-Preview-amd64.iso
 
       - name: Publish local delivery bundle
         if: always()
@@ -67,9 +83,10 @@ jobs:
             (cd AArelOS-Linux-Preview && sha256sum -c AArelOS-Linux-Preview-amd64.iso.sha256)
           fi
           cp -a aarelos-linux-evidence AArelOS-Linux-Preview/ 2>/dev/null || true
+          cp -a aarelos-linux-evidence-legacy AArelOS-Linux-Preview/ 2>/dev/null || true
           cp -f aarelos-linux/ONE_DAY_PIVOT.md AArelOS-Linux-Preview/ 2>/dev/null || true
           echo "## AArel OS Linux ISO" >> "$GITHUB_STEP_SUMMARY"
-          find AArelOS-Linux-Preview -maxdepth 2 -type f -printf '%p %s bytes\n' | sort >> "$GITHUB_STEP_SUMMARY"
+          find AArelOS-Linux-Preview -maxdepth 3 -type f -printf '%p %s bytes\n' | sort >> "$GITHUB_STEP_SUMMARY"
           if [[ -s AArelOS-Linux-Preview/AArelOS-Linux-Preview-amd64.iso && -d /mnt/c/Users/arelx/Desktop ]]; then
             rm -rf /mnt/c/Users/arelx/Desktop/AArelOS-Linux-Preview
             cp -a --reflink=never AArelOS-Linux-Preview /mnt/c/Users/arelx/Desktop/

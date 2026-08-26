@@ -44,6 +44,7 @@ apt-get install -y --no-install-recommends \
   python3 python3-pip nodejs npm rustc cargo \
   podman qemu-system-x86 ovmf \
   wine64 winetricks \
+  calamares calamares-settings-ubuntu-common calamares-settings-ubuntu-unity \
   rsync squashfs-tools xorriso isolinux syslinux-common grub-pc-bin grub-efi-amd64-bin
 
 # AArel is assembled from individual archive packages and does not inherit a

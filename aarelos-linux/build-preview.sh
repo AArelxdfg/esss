@@ -128,6 +128,54 @@ MOUNTED=()
 rm -f "$ROOTFS/usr/sbin/policy-rc.d" "$ROOTFS/tmp/aarel-bootstrap-packages.sh"
 rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/tmp/"* "$ROOTFS/var/tmp/"*
 
+# The archive's common Calamares machinery is retained, but all flavour UI is
+# replaced with AArel-owned identity.  Keep this after package installation so
+# package payloads cannot overwrite the release branding or launcher.
+rm -rf "$ROOTFS/etc/calamares/branding/ubuntuunity"
+install -d -m 0755 "$ROOTFS/etc/calamares/branding/aarel"
+install -m 0644 "$ROOTFS/usr/share/wallpapers/AArelMonolith/contents/images/3840x2160.svg" \
+  "$ROOTFS/etc/calamares/branding/aarel/welcome.svg"
+cat > "$ROOTFS/etc/calamares/branding/aarel/branding.desc" <<'BRANDING'
+---
+componentName: aarel
+windowExpanding: normal
+strings:
+    productName:         AArel MMonolith OS
+    shortProductName:    AArel
+    version:             Preview
+    shortVersion:        Preview
+    versionedName:       AArel MMonolith OS Preview
+    shortVersionedName:  AArel Preview
+    bootloaderEntryName: AArel MMonolith OS
+    productUrl:          https://github.com/AArelxdfg/esss
+images:
+    productLogo:         "welcome.svg"
+    productIcon:         "welcome.svg"
+    productWelcome:      "welcome.svg"
+style:
+   SidebarBackground:    "#090d18"
+   SidebarText:          "#FFFFFF"
+   SidebarTextCurrent:   "#FFFFFF"
+BRANDING
+sed -i 's/^branding: .*/branding: aarel/' "$ROOTFS/etc/calamares/settings.conf"
+rm -f "$ROOTFS/usr/share/applications/ubuntu-unity-calamares.desktop" \
+  "$ROOTFS/usr/share/applications/calamares-launch-oem.desktop" \
+  "$ROOTFS/usr/share/icons/hicolor/scalable/apps/ubuntu-unity-installer.svg"
+cat > "$ROOTFS/usr/share/applications/aarel-installer.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install AArel MMonolith OS
+GenericName=AArel Installer
+Comment=Install AArel MMonolith OS on this computer
+Exec=sudo /usr/bin/calamares-launch-normal
+Icon=system-software-install
+Terminal=false
+StartupNotify=true
+Categories=Qt;System;
+Keywords=installer;calamares;system;AArel;
+DESKTOP
+
 # cups-filters enables three legacy parallel-port modules unconditionally.
 # parport_pc can block systemd-modules-load for minutes on modern q35 systems
 # without a parallel controller. CUPS retains USB and network printer support;

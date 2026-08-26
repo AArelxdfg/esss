@@ -11,6 +11,7 @@ class RuntimeLifecycle {
     this.now = now;
     this.state = 'stopped';
     this.model = null;
+    this.desiredModel = null;
     this.pid = null;
     this.generation = 0;
     this.activeInference = new Map();
@@ -23,6 +24,7 @@ class RuntimeLifecycle {
     return {
       state: this.state,
       model: this.model,
+      desiredModel: this.desiredModel,
       pid: this.pid,
       generation: this.generation,
       activeInference: [...this.activeInference.values()].map(x => ({ id: x.id, priority: x.priority, startedAt: x.startedAt })),
@@ -47,10 +49,10 @@ class RuntimeLifecycle {
 
   async ensureRunning(model, reason = 'ensure') {
     if (!model) throw new Error('model is required');
+    this.desiredModel = model;
     if (this.state === 'ready' && this.model === model) return this.snapshot();
 
-    // MONOLITH contract: one inference runtime only. A model switch always tears down the old process first.
-    if (this.state === 'ready' && this.model !== model) await this.stop(`model-switch:${this.model}->${model}`);
+    if (this.state === 'ready' && this.model !== model) await this.stop(`model-switch:${this.model}->${model}`, { preserveDesiredModel: true });
     if (this.state === 'starting') throw new Error('runtime start already in progress');
     if (this.state === 'stopping') throw new Error('runtime stop in progress');
     if (this.state === 'failed') this._transition('recovering', reason);
@@ -77,7 +79,7 @@ class RuntimeLifecycle {
     }
   }
 
-  async stop(reason = 'stop') {
+  async stop(reason = 'stop', { preserveDesiredModel = false } = {}) {
     if (this.state === 'stopped') return this.snapshot();
     if (!['ready', 'failed', 'starting'].includes(this.state)) throw new Error(`cannot stop from ${this.state}`);
     this._transition('stopping', reason);
@@ -86,6 +88,7 @@ class RuntimeLifecycle {
       this.pid = null;
       this.model = null;
       this.activeInference.clear();
+      if (!preserveDesiredModel) this.desiredModel = null;
       this._transition('stopped', reason);
       return this.snapshot();
     } catch (err) {
@@ -111,8 +114,6 @@ class RuntimeLifecycle {
   async applyHostPressure(level) {
     const normalized = String(level || '').toUpperCase();
     if (normalized !== 'CRITICAL') return { level: normalized, aborted: [] };
-
-    // V5.3.5 contract: low-priority council/verifier work is preemptible before interactive work.
     const victims = [...this.activeInference.values()]
       .filter(t => t.priority === 'low')
       .sort((a, b) => a.startedAt - b.startedAt);
@@ -127,15 +128,15 @@ class RuntimeLifecycle {
 
   async recover(reason = 'health-failure') {
     if (!['ready', 'failed'].includes(this.state)) throw new Error(`cannot recover from ${this.state}`);
-    const desiredModel = this.model;
+    const desiredModel = this.desiredModel || this.model;
     if (!desiredModel) throw new Error('no desired model to recover');
-    if (this.state === 'ready') this._transition('recovering', reason);
-    else this._transition('recovering', reason);
+    this._transition('recovering', reason);
 
     if (this.pid) {
       try { await this.stopBackend({ pid: this.pid, model: this.model }); } catch (_) { /* best-effort cleanup */ }
     }
     this.pid = null;
+    this.model = null;
     this.activeInference.clear();
     this.recoveryCount += 1;
     return this.ensureRunning(desiredModel, `recovery:${reason}`);

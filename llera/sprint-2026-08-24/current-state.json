@@ -1,6 +1,6 @@
 {
-  "schema": 5,
-  "captured_at": "2026-08-26T12:48:53+03:00",
+  "schema": 6,
+  "captured_at": "2026-08-26T13:44:18+03:00",
   "sprint": "MONOLITH OMEGA full restore",
   "baseline": {
     "version": "5.3.5",
@@ -55,6 +55,8 @@
     "root": "llera/reconstructed-monolith",
     "runtime_lifecycle": "llera/reconstructed-monolith/src/runtime-lifecycle.js",
     "runtime_lifecycle_test": "llera/reconstructed-monolith/test/runtime-lifecycle.test.js",
+    "mission_engine": "llera/reconstructed-monolith/src/mission-engine.js",
+    "mission_engine_test": "llera/reconstructed-monolith/test/mission-engine.test.js",
     "restored_contracts": [
       "single llama.cpp runtime ownership",
       "model switch stop-before-start",
@@ -63,9 +65,16 @@
       "interactive inference preservation during pressure preemption",
       "explicit runtime recovery transitions",
       "desired-model retention across failed start/recovery",
-      "generation counter across process replacement"
+      "generation counter across process replacement",
+      "persistent Conversation/Work Mode missions",
+      "dependency-aware mission goal graph",
+      "durable checkpoints",
+      "persistent tool trace",
+      "interrupted active-step normalization on process restart",
+      "explicit mission resume count and attempt accounting",
+      "mission cycle rejection and step-attempt budgets"
     ],
-    "test_execution_status": "test source committed; present environment could not clone GitHub into local container because outbound DNS resolution is unavailable, so no new runtime PASS claim is made"
+    "test_execution_status": "runtime and mission deterministic test sources are committed; present execution container still cannot resolve raw.githubusercontent.com, so no new local Node PASS claim is made for these reconstructed tests"
   },
   "hard_blockers": [
     "Exact V5.3.5 source archive bytes are still unavailable; only the known source SHA-256 and build report are present.",
@@ -74,12 +83,14 @@
     "Stable update manifest must not be advanced until a verified publishable candidate and signing material exist."
   ],
   "new_this_turn": [
-    "Re-searched File Library by exact V5.3.5/V5.4 source filenames and known SHA-256 values; exact source bytes remain unavailable.",
-    "Re-inspected GitHub repository tree/history; no original V5.3.5/V5.4 runtime source tree was recovered.",
-    "Created the first reconstructed MONOLITH runtime source module rather than another UI/demo shell.",
-    "Implemented single-runtime model lifecycle, stop-before-start model switching, tracked abortable inference, CRITICAL pressure preemption and explicit recovery state transitions.",
-    "Hardened recovery so the desired model survives a failed start and remains recoverable.",
-    "Added deterministic runtime-lifecycle test source covering duplicate-start prevention, pressure preemption, model switching and recovery generation behavior.",
+    "Re-searched File Library by exact V5.3.5/V5.4 source filenames and known SHA-256 values; exact source bytes remain unavailable and V5.4 source is still represented by its build-report hash only.",
+    "Re-inspected GitHub history and current reconstructed source before making changes.",
+    "Added a persistent MissionEngine for Conversation and Work Mode with explicit durable persistence adapters.",
+    "Restored dependency-aware mission steps, mission budgets, checkpoints, toolTrace persistence, active-step tracking and resume counters.",
+    "Added process-restart repair: a mission killed mid-step returns as interrupted, the running step is normalized back to pending, attempt count/tool trace/checkpoints are preserved, and resume is explicit rather than silently restarting work.",
+    "Added cycle rejection and dependency readiness guards to prevent permanently stuck goal graphs.",
+    "Added deterministic mission-engine test source covering restart recovery, checkpoint retention, trace retention, dependency ordering, completion and cycle rejection.",
+    "Tried to execute the committed test from the container; outbound DNS to raw.githubusercontent.com is still unavailable, so no fabricated test PASS is recorded.",
     "Did not modify stable.json and did not publish a release."
   ],
   "release_policy": {

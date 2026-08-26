@@ -6,6 +6,11 @@ on:
     paths:
       - 'aarelos-linux/**'
       - '.github/workflows/aarelos-linux-image.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'aarelos-linux/**'
+      - '.github/workflows/aarelos-linux-image.yml'
   workflow_dispatch:
 
 jobs:

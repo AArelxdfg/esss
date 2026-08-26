@@ -1,0 +1,21 @@
+{
+  "milestone": "release-candidate-truth-gate",
+  "date": "2026-08-27",
+  "source_sha256": "cb85c8bd3047639058378310b777e71a002fdc077c0a3af7af26d09756bb65b2",
+  "test_sha256": "2fed9b75ab3947e27f3ab4756fc552357bdf7604f6512355b3f765bb2442b99f",
+  "test_result": "PASS",
+  "exact_source_search": {
+    "v5_3_5_expected_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_expected_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "file_library_exact_bytes_found": false,
+    "github_hash_matches_found": false
+  },
+  "claims": {
+    "exact_v5_4": false,
+    "publishable_candidate": false,
+    "physical_windows_validated": false,
+    "physical_gpu_validated": false
+  },
+  "stable_json_modified": false,
+  "release_published": false
+}

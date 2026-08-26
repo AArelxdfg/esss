@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "contract": "LLera MONOLITH OMEGA behavioral restore gate",
+  "baseline": {
+    "historicalMinimumAgentTools": 56,
+    "targetAgentTools": 62,
+    "evidence": "V4 build report verifies test_hardening PASS with 56 unique tools; restore sprint target remains 62"
+  },
+  "requiredToolFamilies": {
+    "filesystem": ["list_dir","read_file","write_file","apply_patch","search_files","make_dir","copy_path","move_path","delete_path"],
+    "terminal_process": ["run_command","start_process","process_status","process_stop"],
+    "windows_apps_ui": ["list_apps","launch_app","focus_app","ui_snapshot","ui_invoke","close_app","desktop_screenshot","mouse_click","keyboard_type","key_press"],
+    "browser_web": ["browser_open","browser_google","browser_snapshot","browser_click","browser_type","browser_back","browser_show","web_get","web_search"],
+    "knowledge_system": ["search_cyber_core","system_info"],
+    "cognition": ["outcome_search","autonomy_status"]
+  },
+  "requiredBehaviorMarkers": ["verificationDebt","strictVerifier","adversarial","evidenceId","sha256","checkpoint","toolTrace","hostPressure","single-runtime","preempt","vision","ocr","rollback","signed","update"],
+  "claimBoundaries": {"exactV54":false,"fullParity":false,"physicalWindowsValidated":false}
+}

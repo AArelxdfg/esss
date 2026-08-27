@@ -47,6 +47,16 @@ class RuntimeLifecycle {
     this.state = next;
   }
 
+  async _cleanupStartedBackend({ pid, model, reason }) {
+    if (!pid) return { attempted: false, stopped: false, error: null };
+    try {
+      await this.stopBackend({ pid, model, reason });
+      return { attempted: true, stopped: true, error: null };
+    } catch (err) {
+      return { attempted: true, stopped: false, error: String(err?.message || err) };
+    }
+  }
+
   async ensureRunning(model, reason = 'ensure') {
     if (!model) throw new Error('model is required');
     this.desiredModel = model;
@@ -59,22 +69,32 @@ class RuntimeLifecycle {
     if (this.state === 'recovering') this._transition('starting', reason);
     else if (this.state === 'stopped') this._transition('starting', reason);
 
+    let started = null;
     try {
-      const result = await this.startBackend({ model, generation: this.generation + 1 });
-      if (!result || !result.pid) throw new Error('runtime start returned no pid');
-      this.pid = result.pid;
+      started = await this.startBackend({ model, generation: this.generation + 1 });
+      if (!started || !started.pid) throw new Error('runtime start returned no pid');
+      this.pid = started.pid;
       this.model = model;
-      this.generation += 1;
+
       const ok = await this.healthBackend({ pid: this.pid, model: this.model });
       if (!ok) throw new Error('runtime health check failed');
+
+      this.generation += 1;
       this.lastError = null;
       this._transition('ready', reason);
       return this.snapshot();
     } catch (err) {
-      this.lastError = String(err?.message || err);
+      const cleanup = await this._cleanupStartedBackend({
+        pid: started && started.pid ? started.pid : this.pid,
+        model,
+        reason: 'failed-start-cleanup'
+      });
+      const baseError = String(err?.message || err);
+      this.lastError = cleanup.error ? `${baseError}; cleanup failed: ${cleanup.error}` : baseError;
       this.pid = null;
       this.model = null;
-      this._transition('failed', 'start-failed');
+      this.activeInference.clear();
+      this._transition('failed', cleanup.error ? 'start-failed-cleanup-failed' : 'start-failed-cleaned');
       throw err;
     }
   }
@@ -107,16 +127,12 @@ class RuntimeLifecycle {
     return task;
   }
 
-  completeInference(id) {
-    return this.activeInference.delete(id);
-  }
+  completeInference(id) { return this.activeInference.delete(id); }
 
   async applyHostPressure(level) {
     const normalized = String(level || '').toUpperCase();
     if (normalized !== 'CRITICAL') return { level: normalized, aborted: [] };
-    const victims = [...this.activeInference.values()]
-      .filter(t => t.priority === 'low')
-      .sort((a, b) => a.startedAt - b.startedAt);
+    const victims = [...this.activeInference.values()].filter(t => t.priority === 'low').sort((a, b) => a.startedAt - b.startedAt);
     const aborted = [];
     for (const task of victims) {
       await task.abort('host-pressure-critical');
@@ -131,7 +147,6 @@ class RuntimeLifecycle {
     const desiredModel = this.desiredModel || this.model;
     if (!desiredModel) throw new Error('no desired model to recover');
     this._transition('recovering', reason);
-
     if (this.pid) {
       try { await this.stopBackend({ pid: this.pid, model: this.model }); } catch (_) { /* best-effort cleanup */ }
     }

@@ -1,5 +1,16 @@
 # AArel MMonolith OS release status
 
+## 2026-08-27 final-brand continuation handoff
+
+- CURRENT HEAD: `fa17cea` (`aarelos-linux-one-day`, pushed to origin)
+- LAST PASS GATE: installer-restored candidate source/ISO-embedded SquashFS SHA-256 equality plus complete 399,737-object pre/post extraction; Calamares binary, AArel installer launcher and `branding: aarel` verified inside the ISO
+- FIRST FAIL GATE: VirtualBox early boot visual gate showed the stock orange Ubuntu BGRT fallback mark
+- EXACT ERROR: after patching AArel Plymouth/GRUB/initramfs generation, WSL global block I/O stalled `dpkg` in `submit_bio_wait`; `wsl --terminate Ubuntu` and `wsl --shutdown --force` never returned, and Windows refused `Stop-Process vmmemWSL` with `Access denied`
+- ACTIVE FIX: commit `fa17cea` replaces `bgrt-fallback.png` with the AArel mark, removes the upstream text theme, regenerates initramfs and maps AArel GRUB configs plus the regenerated initrd into the ISO
+- WORKFLOW RUN ID: local build ID `final-brand-20260827` (interrupted by wedged WSL VM; no GitHub workflow created)
+- STORAGE RECOVERY: removed only obsolete `final-installer-20260826` workspace and its failed 8.7 GB candidate; C: free space recovered from 9 GB to 41 GB before the concurrent build reduced it to about 24 GB
+- NEXT AGENT START HERE: reboot Windows (administrator termination of `vmmemWSL` is otherwise required), confirm Ubuntu mounts read-write, delete only the incomplete `/root/.cache/aarelos-linux/builds/final-brand-20260827`, then rerun `build-preview.sh` from `fa17cea`; repeat full embedded SquashFS, fresh VirtualBox early-boot/live/installer/ISO-free install and QEMU/OVMF gates. Do not release the `4bb16cbc...` candidate because its early boot branding failed.
+
 ## 2026-08-26 GitHub preview release candidate
 
 - CURRENT BRANCH: `aarelos-linux-one-day`

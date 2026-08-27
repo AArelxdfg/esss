@@ -51,6 +51,58 @@ function persistedOk(entry) {
   return ['success','succeeded','ok','observed','verified','completed'].includes(outcome);
 }
 
+function normalizePath(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return value.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '').toLowerCase();
+}
+
+function verificationScope(tool, args = {}) {
+  args = args || {};
+  const pathValue = args.path || args.file || args.filePath || args.targetPath || args.destination || args.source;
+  const normalizedPath = normalizePath(pathValue);
+  if (normalizedPath) return `path:${normalizedPath}`;
+
+  const pid = args.pid ?? args.processId;
+  if (pid !== undefined && pid !== null && String(pid) !== '') return `process:${String(pid)}`;
+
+  const windowId = args.windowId ?? args.hwnd;
+  if (windowId !== undefined && windowId !== null && String(windowId) !== '') return `window:${String(windowId)}`;
+
+  const browserId = args.tabId ?? args.pageId ?? args.browserId;
+  if (browserId !== undefined && browserId !== null && String(browserId) !== '') return `browser:${String(browserId)}`;
+
+  const url = args.url || args.href;
+  if (typeof url === 'string' && url.trim()) {
+    try {
+      const parsed = new URL(url);
+      return `url:${parsed.origin}${parsed.pathname}`.toLowerCase();
+    } catch {
+      return `url:${url.trim().toLowerCase()}`;
+    }
+  }
+
+  if (tool === 'clipboard_write' || tool === 'clipboard_read') return 'clipboard:system';
+  if (tool === 'snapshot_restore' || tool === 'snapshot_create') {
+    const id = args.snapshotId || args.id || args.name;
+    return id ? `snapshot:${String(id)}` : 'snapshot:latest';
+  }
+  return null;
+}
+
+function explicitVerificationFingerprint(entry) {
+  return entry && (entry.verifiesFingerprint || entry.verifies || entry.verificationOf || entry.materialFingerprint) || null;
+}
+
+function observationVerifiesDebt(entry, debt) {
+  if (!entry || !debt || !entry.observation || !entry.ok || entry.material) return false;
+  const explicit = explicitVerificationFingerprint(entry);
+  if (explicit) return explicit === debt.fingerprint;
+  const entryScope = entry.scope || verificationScope(entry.tool, entry.args || entry.arguments || {});
+  if (debt.scope && entryScope) return debt.scope === entryScope;
+  if (debt.scope && !entryScope) return false;
+  return Boolean(entry.verification === true);
+}
+
 class ToolExecutionGuard {
   constructor({maxSameFailure = 2} = {}) {
     this.maxSameFailure = maxSameFailure;
@@ -61,72 +113,57 @@ class ToolExecutionGuard {
   restore(toolTrace = []) {
     this.history = [];
     this.verificationDebt = null;
-
     for (const raw of toolTrace) {
       if (!raw || !raw.tool) continue;
       const cls = this.classify(raw.tool);
-      const fp = raw.fingerprint || raw.argumentsHash || fingerprint(raw.tool, raw.args || raw.arguments || {});
+      const rawArgs = raw.args || raw.arguments || {};
+      const fp = raw.fingerprint || raw.argumentsHash || fingerprint(raw.tool, rawArgs);
       const entry = {
         ...raw,
+        args: rawArgs,
         fingerprint: fp,
         ok: persistedOk(raw),
         material: typeof raw.material === 'boolean' ? raw.material : cls.material,
-        observation: typeof raw.observation === 'boolean'
-          ? raw.observation
-          : (Boolean(raw.verification) || cls.observation)
+        observation: typeof raw.observation === 'boolean' ? raw.observation : (Boolean(raw.verification) || cls.observation),
+        scope: raw.scope || verificationScope(raw.tool, rawArgs)
       };
       this.history.push(entry);
-
       if (entry.material && entry.ok) {
-        this.verificationDebt = {fingerprint: entry.fingerprint, tool: entry.tool, at: entry.at || null};
+        this.verificationDebt = { fingerprint: entry.fingerprint, tool: entry.tool, scope: entry.scope || null, at: entry.at || null };
       }
-
-      if (entry.observation && entry.ok && this.verificationDebt && !entry.material) {
+      if (observationVerifiesDebt(entry, this.verificationDebt)) {
         const debt = this.verificationDebt;
-        const material = [...this.history].reverse().find(
-          x => x.fingerprint === debt.fingerprint && x.material && x.ok
-        );
-        if (material) {
-          material.verifiedBy = entry.fingerprint;
-          entry.verifies = debt.fingerprint;
-        }
+        const material = [...this.history].reverse().find(x => x.fingerprint === debt.fingerprint && x.material && x.ok);
+        if (material) { material.verifiedBy = entry.fingerprint; entry.verifies = debt.fingerprint; }
         this.verificationDebt = null;
       }
     }
-
-    return {
-      restored: this.history.length,
-      verificationDebt: this.verificationDebt ? {...this.verificationDebt} : null
-    };
+    return { restored: this.history.length, verificationDebt: this.verificationDebt ? {...this.verificationDebt} : null };
   }
 
-  classify(tool) {
-    return {
-      material: MATERIAL_TOOLS.has(tool),
-      observation: OBSERVATION_TOOLS.has(tool)
-    };
-  }
+  classify(tool) { return { material: MATERIAL_TOOLS.has(tool), observation: OBSERVATION_TOOLS.has(tool) }; }
 
   decide(tool, args = {}) {
     if (!RESTORED_MONOLITH_TOOLS.includes(tool)) return {allow:false, reason:'unknown_tool'};
     const fp = fingerprint(tool, args);
     const cls = this.classify(tool);
+    const scope = verificationScope(tool, args);
     const same = this.history.filter(x => x.fingerprint === fp);
     const failures = same.filter(x => x.ok === false).length;
     if (failures >= this.maxSameFailure) return {allow:false, reason:'anti_loop_same_failure', fingerprint:fp};
     const last = same.at(-1);
     if (last && last.ok === true && !cls.observation) return {allow:false, reason:'anti_loop_recent_success', fingerprint:fp};
     if (this.verificationDebt && cls.material) return {allow:false, reason:'verification_debt_open', fingerprint:fp};
-    return {allow:true, fingerprint:fp, ...cls};
+    return {allow:true, fingerprint:fp, scope, ...cls};
   }
 
-  record(tool, args, {ok, resultSummary='', at = new Date().toISOString()} = {}) {
+  record(tool, args, {ok, resultSummary='', at = new Date().toISOString(), verifiesFingerprint = null, verification = false} = {}) {
     const decision = this.decide(tool, args);
     if (!decision.allow) return {...decision, recorded:false};
-    const entry = {tool, args:stable(args), fingerprint:decision.fingerprint, ok:Boolean(ok), material:decision.material, observation:decision.observation, resultSummary, at};
+    const entry = { tool, args:stable(args), fingerprint:decision.fingerprint, ok:Boolean(ok), material:decision.material, observation:decision.observation, scope:decision.scope || null, resultSummary, at, verification:Boolean(verification), verifiesFingerprint:verifiesFingerprint || null };
     this.history.push(entry);
-    if (entry.material && entry.ok) this.verificationDebt = {fingerprint: entry.fingerprint, tool, at};
-    if (entry.observation && entry.ok && this.verificationDebt) {
+    if (entry.material && entry.ok) this.verificationDebt = {fingerprint: entry.fingerprint, tool, scope: entry.scope || null, at};
+    if (observationVerifiesDebt(entry, this.verificationDebt)) {
       const debt = this.verificationDebt;
       const material = [...this.history].reverse().find(x => x.fingerprint === debt.fingerprint && x.material);
       if (material) material.verifiedBy = entry.fingerprint;
@@ -136,16 +173,7 @@ class ToolExecutionGuard {
     return {...entry, recorded:true};
   }
 
-  canFinalize() {
-    return !this.verificationDebt;
-  }
+  canFinalize() { return !this.verificationDebt; }
 }
 
-module.exports = {
-  HISTORICAL_V2_TOOLS,
-  RESTORED_MONOLITH_TOOLS,
-  MATERIAL_TOOLS,
-  OBSERVATION_TOOLS,
-  fingerprint,
-  ToolExecutionGuard
-};
+module.exports = { HISTORICAL_V2_TOOLS, RESTORED_MONOLITH_TOOLS, MATERIAL_TOOLS, OBSERVATION_TOOLS, fingerprint, verificationScope, observationVerifiesDebt, ToolExecutionGuard };

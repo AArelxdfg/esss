@@ -1,0 +1,22 @@
+'use strict';
+const assert=require('assert'),crypto=require('crypto'),fs=require('fs').promises,os=require('os'),path=require('path');
+const {Readable}=require('stream');
+const {SignedUpdateLifecycle,stableStringify,parseContentRange}=require('../src/signed-update-lifecycle');
+const headers=v=>({get:n=>v[String(n).toLowerCase()]??null});
+(async()=>{
+ const tmp=await fs.mkdtemp(path.join(os.tmpdir(),'llera-updater-hardening-'));
+ const {publicKey,privateKey}=crypto.generateKeyPairSync('ed25519');
+ const bytes=Buffer.from('LLera new signed MONOLITH build');
+ const manifest={product:'LLera MONOLITH OMEGA',version:'restore-0.2.0',artifact:{url:'https://updates.invalid/llera.bin',size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')}};
+ const signature=crypto.sign(null,Buffer.from(stableStringify(manifest)),privateKey).toString('base64');
+ assert.deepStrictEqual(parseContentRange(`bytes 7-${bytes.length-1}/${bytes.length}`),{start:7,end:bytes.length-1,total:bytes.length});
+ let mode='good';
+ const fetchImpl=async(_url,opts={})=>{const range=opts.headers&&opts.headers.Range;if(!range)return{ok:true,status:200,headers:headers({'content-length':String(bytes.length)}),body:Readable.from([bytes])};const offset=Number(range.match(/bytes=(\d+)-/)[1]);if(mode==='wrong-range')return{ok:true,status:206,headers:headers({'content-range':`bytes 0-${bytes.length-1}/${bytes.length}`}),body:Readable.from([bytes])};if(mode==='overrun')return{ok:true,status:206,headers:headers({'content-range':`bytes ${offset}-${bytes.length-1}/${bytes.length}`}),body:Readable.from([Buffer.concat([bytes.subarray(offset),Buffer.from('EXTRA')])])};return{ok:true,status:206,headers:headers({'content-range':`bytes ${offset}-${bytes.length-1}/${bytes.length}`}),body:Readable.from([bytes.subarray(offset)])};};
+ const lifecycle=new SignedUpdateLifecycle({rootDir:tmp,publicKey,fetchImpl}); assert.equal(lifecycle.verifySignedManifest(manifest,signature).verified,true); await lifecycle.init();
+ const part=path.join(lifecycle.paths.downloads,`${manifest.version}.bin.part`); await fs.writeFile(part,bytes.subarray(0,7)); const good=await lifecycle.downloadArtifact(manifest,{resume:true}); assert.equal(good.sha256,manifest.artifact.sha256);
+ const unsafe={...manifest,version:'../escape'}, unsafeSig=crypto.sign(null,Buffer.from(stableStringify(unsafe)),privateKey).toString('base64'); assert.throws(()=>lifecycle.verifySignedManifest(unsafe,unsafeSig),/version unsafe/);
+ const insecure={...manifest,version:'restore-0.2.1',artifact:{...manifest.artifact,url:'http://updates.invalid/llera.bin'}}, insecureSig=crypto.sign(null,Buffer.from(stableStringify(insecure)),privateKey).toString('base64'); assert.throws(()=>lifecycle.verifySignedManifest(insecure,insecureSig),/must use https/);
+ mode='wrong-range'; await fs.rm(good.path,{force:true}); await fs.writeFile(part,bytes.subarray(0,7)); await assert.rejects(lifecycle.downloadArtifact(manifest,{resume:true}),/content-range mismatch/); await assert.rejects(fs.stat(part),/ENOENT/);
+ mode='overrun'; await fs.writeFile(part,bytes.subarray(0,7)); await assert.rejects(lifecycle.downloadArtifact(manifest,{resume:true}),/exceeded signed size/);
+ console.log('signed updater resume hardening PASS',{contentRangeBinding:true,signedSizeOverrunBlocked:true,safeVersionPaths:true,httpsOnlyArtifact:true});
+})().catch(e=>{console.error(e);process.exit(1)});

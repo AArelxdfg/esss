@@ -39,7 +39,7 @@ if [[ ${EUID} -ne 0 ]]; then
   exit 1
 fi
 
-for c in curl sha256sum xorriso unsquashfs mksquashfs rsync chroot mount umount flock findmnt; do need "$c"; done
+for c in curl sha256sum xorriso unsquashfs mksquashfs rsync chroot mount umount flock findmnt convert; do need "$c"; done
 
 mkdir -p "$CACHE_DIR" "$WORK_ROOT" "$(dirname "$OUT_ISO")"
 exec 9>"$LOCK_FILE"
@@ -176,6 +176,19 @@ Categories=Qt;System;
 Keywords=installer;calamares;system;AArel;
 DESKTOP
 
+# The stock BGRT fallback is an upstream orange logo and is visible on VMs
+# whose firmware supplies no OEM image. Replace it, remove upstream text-theme
+# identity, and regenerate the initramfs so the live boot uses the AArel mark.
+convert -background none \
+  "$ROOTFS/usr/share/plymouth/themes/aarel/aarel-mark.svg" \
+  "$ROOTFS/usr/share/plymouth/themes/spinner/bgrt-fallback.png"
+sed -i \
+  -e 's/Font=Ubuntu 12/Font=Inter 12/' \
+  -e 's/TitleFont=Ubuntu Light 30/TitleFont=Inter 30/' \
+  "$ROOTFS/usr/share/plymouth/themes/bgrt/bgrt.plymouth"
+rm -rf "$ROOTFS/usr/share/plymouth/themes/ubuntu-text"
+chroot "$ROOTFS" update-initramfs -u -k all
+
 # cups-filters enables three legacy parallel-port modules unconditionally.
 # parport_pc can block systemd-modules-load for minutes on modern q35 systems
 # without a parallel controller. CUPS retains USB and network printer support;
@@ -236,6 +249,9 @@ xorriso \
   -map "$MANIFEST" /casper/minimal.manifest \
   -map "$FS_SIZE" /casper/minimal.size \
   -map "$ISO_INFO" /.disk/info \
+  -map "$SCRIPT_DIR/overlay/boot/grub/grub.cfg" /boot/grub/grub.cfg \
+  -map "$SCRIPT_DIR/overlay/boot/grub/loopback.cfg" /boot/grub/loopback.cfg \
+  -map "$ROOTFS/boot/initrd.img" /casper/initrd \
   -boot_image any replay \
   -compliance no_emul_toc \
   -padding included \

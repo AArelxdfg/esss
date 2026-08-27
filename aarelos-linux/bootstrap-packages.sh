@@ -38,7 +38,7 @@ apt-get install -y --no-install-recommends \
   plasma-desktop plasma-workspace kwin-wayland sddm \
   konsole dolphin systemsettings plasma-systemmonitor kdeconnect \
   network-manager pipewire wireplumber \
-  papirus-icon-theme fonts-inter fonts-jetbrains-mono \
+  papirus-icon-theme fonts-inter fonts-jetbrains-mono imagemagick \
   flatpak plasma-discover plasma-discover-backend-flatpak \
   git curl wget bash build-essential cmake ninja-build pkg-config \
   python3 python3-pip nodejs npm rustc cargo \

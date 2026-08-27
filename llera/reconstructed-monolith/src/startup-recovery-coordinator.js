@@ -8,8 +8,12 @@ class MonolithStartupRecoveryCoordinator {
     if(typeof resolveDesiredModel!=='function') throw new Error('resolveDesiredModel is required');
     this.missionEngine=missionEngine; this.runtime=runtime; this.recoverySnapshots=recoverySnapshots; this.watchdog=watchdog; this.resolveDesiredModel=resolveDesiredModel; this.onSafeMode=onSafeMode; this.history=[];
   }
-  async start(){
+  async watchdogPosture(){
     const profile=this.watchdog?await this.watchdog.launchProfile():{mode:'normal'};
+    return {safeMode:profile.mode==='safe',profile:{...profile}};
+  }
+  async start(){
+    const posture=await this.watchdogPosture(); const profile=posture.profile;
     const missionState=await this.missionEngine.init(); const missions=this.missionEngine.listMissions();
     const interrupted=missions.filter(m=>m&&m.status==='interrupted'); const recovery=[];
     for(const mission of interrupted){
@@ -17,7 +21,7 @@ class MonolithStartupRecoveryCoordinator {
       try{ const r=await this.recoverySnapshots.restore({missionId:mission.id}); recovery.push({missionId:mission.id,restored:true,...r}); }
       catch(e){ recovery.push({missionId:mission.id,restored:false,reason:String(e&&e.message||e)}); }
     }
-    if(profile.mode==='safe'){
+    if(posture.safeMode){
       if(this.onSafeMode) await this.onSafeMode({profile,interrupted,recovery});
       const result={ok:true,safeMode:true,runtimeStarted:false,profile:{...profile},interruptedMissions:interrupted.map(m=>m.id),recovery,missionState}; this.history.push(result); return JSON.parse(JSON.stringify(result));
     }

@@ -21,9 +21,14 @@ const { SignedUpdateLifecycle, stableStringify } = require('../src/signed-update
   let rangeSeen = false;
   const fetchImpl = async (_url, opts = {}) => {
     const range = opts.headers && opts.headers.Range;
-    let body = newBytes; let status = 200;
-    if (range) { rangeSeen = true; const n = Number(range.match(/bytes=(\d+)-/)[1]); body = newBytes.subarray(n); status = 206; }
-    return { ok: true, status, body: Readable.from([body]) };
+    let body = newBytes; let status = 200; const map = {};
+    if (range) {
+      rangeSeen = true;
+      const n = Number(range.match(/bytes=(\d+)-/)[1]);
+      body = newBytes.subarray(n); status = 206;
+      map['content-range'] = `bytes ${n}-${newBytes.length - 1}/${newBytes.length}`;
+    }
+    return { ok: true, status, headers: { get: name => map[String(name).toLowerCase()] || null }, body: Readable.from([body]) };
   };
   const lifecycle = new SignedUpdateLifecycle({ rootDir: tmp, publicKey, fetchImpl, onProgress: e => progress.push(e) });
   assert.equal(lifecycle.verifySignedManifest(manifest, signature).verified, true);

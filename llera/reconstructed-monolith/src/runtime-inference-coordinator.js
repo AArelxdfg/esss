@@ -13,6 +13,7 @@ class RuntimeInferenceCoordinator {
     this.runtime = runtime;
     this.governor = governor;
     this.active = new Map();
+    this.completed = [];
   }
 
   begin({ id, className = 'interactive', requestedTokens = null, abort } = {}) {
@@ -48,12 +49,30 @@ class RuntimeInferenceCoordinator {
     const runtimeRemoved = this.runtime.completeInference(id);
     const governorRemoved = this.governor.complete(id);
     const localRemoved = this.active.delete(id);
+    if (runtimeRemoved || governorRemoved || localRemoved) this.completed.push({ id, reason: 'completed' });
     return Boolean(runtimeRemoved || governorRemoved || localRemoved);
+  }
+
+  reconcileRuntimeAborts(ids = [], { reason = 'host-pressure-preempted' } = {}) {
+    const unique = [...new Set((ids || []).filter(Boolean))];
+    const reconciled = [];
+    for (const id of unique) {
+      const local = this.active.get(id) || null;
+      const governorRemoved = this.governor.complete(id);
+      const localRemoved = this.active.delete(id);
+      if (governorRemoved || localRemoved) {
+        const entry = { id, reason, className: local && local.className || null };
+        this.completed.push(entry);
+        reconciled.push(entry);
+      }
+    }
+    return reconciled;
   }
 
   snapshot() {
     return {
       active: [...this.active.values()].map(x => ({ ...x })),
+      completed: this.completed.slice(-100).map(x => ({ ...x })),
       governor: typeof this.governor.snapshot === 'function' ? this.governor.snapshot() : null,
       runtime: typeof this.runtime.snapshot === 'function' ? this.runtime.snapshot() : null
     };

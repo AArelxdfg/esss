@@ -13,8 +13,9 @@ class SoakRecoveryGate {
     if (!model || !missionId) throw new Error('model and missionId are required');
     if (!Number.isInteger(cycles) || cycles < 5) throw new Error('cycles must be an integer >= 5');
     const startedAt = this.now();
-    const report = { schema: 1, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
-      pressureEvents: 0, missionResumes: 0, watchdogSafeModeEvents: 0, evidenceChecks: 0, failures: [] };
+    const report = { schema: 2, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
+      pressureEvents: 0, missionResumes: 0, watchdogSafeModeEvents: 0, evidenceChecks: 0,
+      watchdogStabilityCommitted: false, failures: [] };
     await this.runtime.ensureRunning(model, 'soak-start');
 
     for (let i = 1; i <= cycles; i++) {
@@ -61,6 +62,7 @@ class SoakRecoveryGate {
     report.durationMs = report.finishedAt - startedAt;
     report.finalRuntime = finalRuntime;
     report.finalMissionStatus = finalMission ? finalMission.status : 'missing';
+
     const gates = {
       completedAllCycles: report.completedCycles === cycles,
       runtimeReady: Boolean(finalRuntime && finalRuntime.state === 'ready'),
@@ -70,7 +72,37 @@ class SoakRecoveryGate {
       noWatchdogSafeMode: report.watchdogSafeModeEvents === 0,
       missionPreserved: Boolean(finalMission),
       noFailures: report.failures.length === 0,
+      watchdogStabilityCommitted: false,
     };
+
+    const stabilityEligible = Object.entries(gates)
+      .filter(([name]) => name !== 'watchdogStabilityCommitted')
+      .every(([, value]) => Boolean(value));
+
+    if (stabilityEligible) {
+      if (typeof this.watchdog.markStable !== 'function') {
+        report.failures.push({
+          cycle: cycles,
+          message: 'watchdog markStable unavailable; refusing to clear stability debt',
+          at: this.now()
+        });
+      } else {
+        try {
+          const stableState = await this.watchdog.markStable();
+          report.watchdogStabilityCommitted = true;
+          report.watchdogStableState = stableState || null;
+          gates.watchdogStabilityCommitted = true;
+        } catch (error) {
+          report.failures.push({
+            cycle: cycles,
+            message: `watchdog stability commit failed: ${String(error && error.message || error)}`,
+            at: this.now()
+          });
+        }
+      }
+    }
+
+    gates.noFailures = report.failures.length === 0;
     report.gates = gates;
     report.pass = Object.values(gates).every(Boolean);
     return report;

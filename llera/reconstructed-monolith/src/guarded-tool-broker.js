@@ -48,7 +48,42 @@ class GuardedMonolithToolBroker {
       const result = SPECIAL_CAPABILITIES.has(tool)
         ? await this.capabilityBroker.invoke(tool, args, context)
         : await this.historicalExecutor(tool, args, context);
-      const trace = this.guard.record(tool, args, { ok:true, resultSummary:this.summarizeResult(result) });
+
+      const semanticOk = executionSucceeded(tool, result);
+      const trace = this.guard.record(tool, args, {
+        ok:semanticOk,
+        resultSummary:this.summarizeResult(result)
+      });
+
+      if (!semanticOk) {
+        const error = semanticFailureMessage(tool, result);
+        const material = typeof decision.material === 'boolean' ? decision.material : Boolean(trace && trace.material);
+        let failure = null;
+        if (this.failureDoctrine && typeof this.failureDoctrine.recordFailure === 'function') {
+          failure = this.failureDoctrine.recordFailure({
+            missionId: context.missionId || 'unscoped-mission',
+            stepId: context.stepId || 'unscoped-step',
+            tool,
+            args,
+            error:new Error(error),
+            material
+          });
+          if (trace && trace.recorded) trace.failure = failure;
+        }
+        return {
+          ok:false,
+          blocked:false,
+          semanticFailure:true,
+          error,
+          result,
+          trace,
+          failure,
+          recovery: failure ? { ...failure.decision } : null,
+          verificationDebt:this.guard.verificationDebt ? { ...this.guard.verificationDebt } : null,
+          canFinalize:this.guard.canFinalize()
+        };
+      }
+
       return { ok:true, blocked:false, result, trace,
         verificationDebt:this.guard.verificationDebt ? { ...this.guard.verificationDebt } : null,
         canFinalize:this.guard.canFinalize() };
@@ -77,6 +112,25 @@ class GuardedMonolithToolBroker {
   }
 }
 
+function executionSucceeded(tool, result) {
+  if (!result || typeof result !== 'object') return true;
+  if (result.ok === false || result.success === false) return false;
+
+  const status = String(result.status || result.state || '').trim().toLowerCase();
+  if (['failed','failure','error','errored','rejected'].includes(status)) return false;
+
+  if (tool === 'evidence_verify' && result.verified === false) return false;
+  return true;
+}
+
+function semanticFailureMessage(tool, result) {
+  if (result && typeof result === 'object') {
+    const detail = result.error || result.message || result.reason || result.status || result.state;
+    if (detail) return `${tool} reported failure: ${String(detail).slice(0,240)}`;
+  }
+  return `${tool} reported an unsuccessful result`;
+}
+
 function defaultSummary(value) {
   if (value == null) return String(value);
   if (typeof value === 'string') return value.slice(0,240);
@@ -84,4 +138,4 @@ function defaultSummary(value) {
   catch { return Object.prototype.toString.call(value); }
 }
 
-module.exports = { SPECIAL_CAPABILITIES, GuardedMonolithToolBroker };
+module.exports = { SPECIAL_CAPABILITIES, GuardedMonolithToolBroker, executionSucceeded };

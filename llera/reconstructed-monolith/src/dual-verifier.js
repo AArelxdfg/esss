@@ -3,9 +3,16 @@
 const { evidenceId } = require('./evidence-ledger');
 
 class DualVerifier {
-  constructor({strictThreshold = 0.62, adversarialThreshold = 0.62} = {}) {
+  constructor({
+    strictThreshold = 0.62,
+    adversarialThreshold = 0.62,
+    minEvidenceCoverage = 1,
+    requireEvidenceRefs = true
+  } = {}) {
     this.strictThreshold = strictThreshold;
     this.adversarialThreshold = adversarialThreshold;
+    this.minEvidenceCoverage = minEvidenceCoverage;
+    this.requireEvidenceRefs = requireEvidenceRefs;
   }
 
   verify({claim, evidence = [], strictChecks = [], adversarialChecks = []}) {
@@ -19,10 +26,21 @@ class DualVerifier {
     const ids = evidence.map(e => e.id);
     if (new Set(ids).size !== ids.length) return {ok:false, reason:'duplicate_evidence_id'};
 
-    const strict = this.#score(strictChecks);
-    const adversarial = this.#score(adversarialChecks);
-    const evidenceCoverage = 1;
-    const ok = strict.score >= this.strictThreshold && adversarial.score >= this.adversarialThreshold;
+    const knownIds = new Set(ids);
+    const strict = this.#score(strictChecks, knownIds);
+    const adversarial = this.#score(adversarialChecks, knownIds);
+    const strictCoverage = this.#coverage(strict.checks, knownIds);
+    const adversarialCoverage = this.#coverage(adversarial.checks, knownIds);
+    const evidenceCoverage = Math.min(strictCoverage, adversarialCoverage);
+
+    const coverageOk =
+      strictCoverage >= this.minEvidenceCoverage &&
+      adversarialCoverage >= this.minEvidenceCoverage;
+
+    const ok =
+      coverageOk &&
+      strict.score >= this.strictThreshold &&
+      adversarial.score >= this.adversarialThreshold;
 
     return {
       ok,
@@ -30,8 +48,15 @@ class DualVerifier {
       strict,
       adversarial,
       evidenceCoverage,
+      coverage: {
+        strict: strictCoverage,
+        adversarial: adversarialCoverage,
+        required: this.minEvidenceCoverage
+      },
       evidenceIds: ids,
-      reason: ok ? 'dual_verifier_pass' : 'dual_verifier_reject'
+      reason: ok
+        ? 'dual_verifier_pass'
+        : (!coverageOk ? 'evidence_coverage_reject' : 'dual_verifier_reject')
     };
   }
 
@@ -52,14 +77,32 @@ class DualVerifier {
     return {ok:true};
   }
 
-  #score(checks) {
-    if (!Array.isArray(checks) || checks.length === 0) return {score:0, passed:0, total:0, failures:['no_checks']};
-    const normalized = checks.map((c, i) => ({
-      name: c && c.name ? c.name : `check_${i+1}`,
-      ok: Boolean(c && c.ok),
-      weight: Number.isFinite(c && c.weight) && c.weight > 0 ? c.weight : 1,
-      detail: c && c.detail ? String(c.detail) : ''
-    }));
+  #score(checks, knownIds) {
+    if (!Array.isArray(checks) || checks.length === 0) {
+      return {score:0, passed:0, total:0, failures:['no_checks'], checks:[]};
+    }
+
+    const normalized = checks.map((c, i) => {
+      const refs = Array.isArray(c && c.evidenceIds)
+        ? [...new Set(c.evidenceIds.filter(Boolean).map(String))]
+        : [];
+      const unknownEvidenceIds = refs.filter(id => !knownIds.has(id));
+      const missingEvidenceRefs = this.requireEvidenceRefs && refs.length === 0;
+      const bindingOk = !missingEvidenceRefs && unknownEvidenceIds.length === 0;
+      const declaredOk = Boolean(c && c.ok);
+
+      return {
+        name: c && c.name ? c.name : `check_${i+1}`,
+        ok: declaredOk && bindingOk,
+        declaredOk,
+        weight: Number.isFinite(c && c.weight) && c.weight > 0 ? c.weight : 1,
+        detail: c && c.detail ? String(c.detail) : '',
+        evidenceIds: refs,
+        unknownEvidenceIds,
+        bindingOk
+      };
+    });
+
     const totalWeight = normalized.reduce((s, c) => s + c.weight, 0);
     const passedWeight = normalized.filter(c => c.ok).reduce((s, c) => s + c.weight, 0);
     return {
@@ -69,6 +112,18 @@ class DualVerifier {
       failures: normalized.filter(c => !c.ok).map(c => c.name),
       checks: normalized
     };
+  }
+
+  #coverage(checks, knownIds) {
+    if (knownIds.size === 0) return 0;
+    const referenced = new Set();
+    for (const check of checks || []) {
+      if (!check.ok) continue;
+      for (const id of check.evidenceIds || []) {
+        if (knownIds.has(id)) referenced.add(id);
+      }
+    }
+    return referenced.size / knownIds.size;
   }
 }
 

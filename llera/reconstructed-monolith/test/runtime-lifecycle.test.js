@@ -27,7 +27,6 @@ async function run() {
   assert.equal(starts.length, 1);
   assert.equal(health.length, 1);
 
-  // Idempotent ensure must not launch a duplicate llama.cpp process.
   await runtime.ensureRunning('qwen3-next-80b-q4km');
   assert.equal(starts.length, 1);
 
@@ -37,10 +36,10 @@ async function run() {
 
   const pressure = await runtime.applyHostPressure('CRITICAL');
   assert.deepEqual(pressure.aborted, ['council-1', 'adversarial-1']);
+  assert.deepEqual(pressure.failures, []);
   assert.deepEqual(aborted, ['council-1', 'adversarial-1']);
   assert.deepEqual(runtime.snapshot().activeInference.map(x => x.id), ['interactive-1']);
 
-  // Model switching must stop the old runtime before starting the replacement.
   await runtime.ensureRunning('gpt-oss-20b-mxfp4');
   assert.equal(stops.length, 1);
   assert.equal(stops[0].model, 'qwen3-next-80b-q4km');
@@ -58,7 +57,6 @@ async function run() {
   assert.equal(starts.length, 3);
   assert.equal(stops.length, 2);
 
-  // Lifecycle must have recorded explicit recovery transitions, not silently swapped state.
   const pairs = runtime.transitionLog.map(x => `${x.from}->${x.to}`);
   assert(pairs.includes('ready->recovering'));
   assert(pairs.includes('recovering->starting'));

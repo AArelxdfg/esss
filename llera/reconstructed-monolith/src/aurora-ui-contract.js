@@ -146,9 +146,11 @@ class AuroraUIContract {
     const key = String(event.key || '').toLowerCase();
     const modifier = Boolean(event.ctrlKey || event.metaKey);
     if (modifier && key === 'k') {
-      return this.palette.open
-        ? { handled: true, action: 'close', state: this.closePalette() }
-        : { handled: true, action: 'open', state: this.openPalette({ returnFocusTo: event.focusOrigin || 'composer' }) };
+      const action = this.palette.open ? 'close' : 'open';
+      const state = this.palette.open
+        ? this.closePalette()
+        : this.openPalette({ returnFocusTo: event.focusOrigin || 'composer' });
+      return { ...state, handled: true, action };
     }
     if (!this.palette.open) return { handled: false };
 

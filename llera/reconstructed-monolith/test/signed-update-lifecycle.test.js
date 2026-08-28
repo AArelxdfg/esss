@@ -45,10 +45,13 @@ const { SignedUpdateLifecycle, stableStringify } = require('../src/signed-update
   const activated = await lifecycle.activateStaged(manifest, staged);
   assert.equal((await fs.readFile(activated.currentFile)).toString(), newBytes.toString());
   assert.equal(activated.backupAvailable, true);
+  assert.match(activated.backupSha256, /^[a-f0-9]{64}$/);
+  const journal = await lifecycle.readJournal();
+  assert.equal(journal.backupSha256, crypto.createHash('sha256').update(oldBytes).digest('hex'));
   const rolled = await lifecycle.rollback();
   assert.equal((await fs.readFile(rolled.currentFile)).toString(), oldBytes.toString());
   assert(progress.some(x => x.phase === 'download'));
   assert(progress.some(x => x.phase === 'activated'));
   assert(progress.some(x => x.phase === 'rolled-back'));
-  console.log('signed updater lifecycle PASS', { resume: rangeSeen, progressEvents: progress.length, rollback: true });
+  console.log('signed updater lifecycle PASS', { resume: rangeSeen, progressEvents: progress.length, rollback: true, backupBound: true });
 })().catch(err => { console.error(err); process.exit(1); });

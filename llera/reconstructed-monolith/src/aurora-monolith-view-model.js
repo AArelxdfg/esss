@@ -19,7 +19,7 @@ class AuroraMonolithViewModel {
     const activity = normalizeActivity(this.activitySource ? await this.activitySource() : []);
     const activeMission = missions.find(m => m.status === 'running') || missions.find(m => m.status === 'interrupted') || missions.find(m => m.status === 'pending') || null;
     const model = {
-      schema: 5401,
+      schema: 5402,
       product: 'LLera MONOLITH OMEGA reconstructed',
       exactHistoricalV54: false,
       navigation: this.ui.getNavigationState(),
@@ -41,6 +41,12 @@ class AuroraMonolithViewModel {
 
   async activateSurface(surface) { this.ui.setSurface(surface); return this.snapshot(); }
   async handleShortcut(event) { const result = this.ui.handleShortcut(event); const model = await this.snapshot(); return { result, model }; }
+  async handleNavigationKey(event) {
+    if (typeof this.ui.handleNavigationKey !== 'function') return { result: { handled: false }, model: await this.snapshot() };
+    const result = this.ui.handleNavigationKey(event);
+    const model = await this.snapshot();
+    return { result, model };
+  }
   statusStrip(model = this.lastSnapshot) {
     if (!model) return null;
     const r = model.surfaces.systemModels.runtime, p = model.surfaces.systemModels.pressure, w = model.surfaces.work;

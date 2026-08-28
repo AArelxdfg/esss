@@ -39,8 +39,65 @@ class WindowsInstallLifecycle {
     ]);
   }
 
+  async recoverInterruptedInstall() {
+    await this.init();
+    const journal = await this._readJournal();
+    if (!journal) {
+      await this._cleanupTemps();
+      return { recovered: false, reason: 'no-journal' };
+    }
+
+    const current = path.join(this.paths.app, 'LLera.exe');
+    const backup = path.join(this.paths.backup, 'LLera.previous.exe');
+
+    if (journal.state === 'activated-pending-self-test') {
+      await this.stopApp();
+      let restoredPrevious = false;
+
+      if (journal.hadCurrent !== false && await exists(backup)) {
+        if (journal.previousSha256) {
+          const backupDigest = await sha256File(backup);
+          if (backupDigest.toLowerCase() !== String(journal.previousSha256).toLowerCase()) {
+            throw new Error('rollback backup integrity mismatch during interrupted-install recovery');
+          }
+        }
+        const rollbackTmp = `${current}.rollback`;
+        await fsp.copyFile(backup, rollbackTmp);
+        await fsp.rename(rollbackTmp, current);
+        restoredPrevious = true;
+      } else {
+        await fsp.rm(current, { force: true });
+      }
+
+      await this._cleanupTemps();
+      await this._journal({
+        state: 'rolled-back-interrupted-install',
+        version: journal.version || null,
+        restoredPrevious,
+        previousSha256: journal.previousSha256 || null
+      });
+      return { recovered: true, action: 'rollback', restoredPrevious };
+    }
+
+    if (journal.state === 'staged') {
+      await this._cleanupTemps();
+      const preservedCurrent = await exists(current);
+      await this._journal({
+        state: 'abandoned-staged-install',
+        version: journal.version || null,
+        preservedCurrent
+      });
+      return { recovered: true, action: 'discard-staged', preservedCurrent };
+    }
+
+    await this._cleanupTemps();
+    return { recovered: false, reason: 'journal-terminal', state: journal.state };
+  }
+
   async install({ payloadPath, expectedSha256, version, selfTestTimeoutMs = 5000 }) {
     await this.init();
+    await this.recoverInterruptedInstall();
+
     if (!/^[a-f0-9]{64}$/i.test(expectedSha256 || '')) throw new Error('expectedSha256 invalid');
     if (!version) throw new Error('version required');
     if (!await exists(payloadPath)) throw new Error('payload missing');
@@ -50,22 +107,42 @@ class WindowsInstallLifecycle {
 
     const current = path.join(this.paths.app, 'LLera.exe');
     const backup = path.join(this.paths.backup, 'LLera.previous.exe');
-    const staged = path.join(this.paths.staging, `LLera-${version}.exe`);
+    const staged = path.join(this.paths.staging, `LLera-${sanitizeVersion(version)}.exe`);
     const hadCurrent = await exists(current);
+    let previousSha256 = null;
 
     if (hadCurrent) {
       await this.stopApp();
+      previousSha256 = await sha256File(current);
       await fsp.copyFile(current, backup);
+      const backupDigest = await sha256File(backup);
+      if (backupDigest !== previousSha256) throw new Error('rollback backup integrity mismatch');
     }
+
     await fsp.copyFile(payloadPath, staged);
     const stagedDigest = await sha256File(staged);
     if (stagedDigest !== actual) throw new Error('staging integrity mismatch');
-    await this._journal({ state: 'staged', version, staged, sha256: stagedDigest, hadCurrent });
+
+    await this._journal({
+      state: 'staged',
+      version,
+      stagedSha256: stagedDigest,
+      hadCurrent,
+      previousSha256
+    });
 
     const tmp = `${current}.new`;
     await fsp.copyFile(staged, tmp);
     await fsp.rename(tmp, current);
-    await this._journal({ state: 'activated-pending-self-test', version, current, backup: hadCurrent ? backup : null, sha256: stagedDigest });
+
+    await this._journal({
+      state: 'activated-pending-self-test',
+      version,
+      hadCurrent,
+      sha256: stagedDigest,
+      previousSha256
+    });
+
     await this.launchApp({ executable: current, selfTest: true });
 
     let healthy = false;
@@ -79,17 +156,33 @@ class WindowsInstallLifecycle {
     if (!healthy) {
       await this.stopApp();
       if (hadCurrent && await exists(backup)) {
+        const backupDigest = await sha256File(backup);
+        if (previousSha256 && backupDigest !== previousSha256) {
+          throw new Error('rollback backup integrity mismatch after self-test failure');
+        }
         const rollbackTmp = `${current}.rollback`;
         await fsp.copyFile(backup, rollbackTmp);
         await fsp.rename(rollbackTmp, current);
       } else {
         await fsp.rm(current, { force: true });
       }
-      await this._journal({ state: 'rolled-back-self-test-failure', version, restoredPrevious: hadCurrent });
+      await this._cleanupTemps();
+      await this._journal({
+        state: 'rolled-back-self-test-failure',
+        version,
+        restoredPrevious: hadCurrent,
+        previousSha256
+      });
       throw new Error('installed-app self-test failed; rollback completed');
     }
 
-    await this._journal({ state: 'installed-verified', version, current, sha256: stagedDigest });
+    await this._cleanupTemps();
+    await this._journal({
+      state: 'installed-verified',
+      version,
+      sha256: stagedDigest,
+      previousSha256
+    });
     return { current, version, sha256: stagedDigest, verified: true };
   }
 
@@ -97,6 +190,7 @@ class WindowsInstallLifecycle {
     await this.stopApp();
     await fsp.rm(this.paths.app, { recursive: true, force: true });
     await fsp.rm(this.paths.staging, { recursive: true, force: true });
+    await fsp.rm(this.paths.backup, { recursive: true, force: true });
     if (!keepUserData) {
       await fsp.rm(path.join(this.rootDir, 'data'), { recursive: true, force: true });
       await fsp.rm(path.join(this.rootDir, 'models'), { recursive: true, force: true });
@@ -105,9 +199,37 @@ class WindowsInstallLifecycle {
     return { uninstalled: true, keepUserData: !!keepUserData };
   }
 
+  async _cleanupTemps() {
+    const current = path.join(this.paths.app, 'LLera.exe');
+    await Promise.all([
+      fsp.rm(`${current}.new`, { force: true }),
+      fsp.rm(`${current}.rollback`, { force: true }),
+      fsp.rm(`${this.paths.journal}.tmp`, { force: true }),
+    ]);
+  }
+
+  async _readJournal() {
+    if (!await exists(this.paths.journal)) return null;
+    let parsed;
+    try {
+      parsed = JSON.parse(await fsp.readFile(this.paths.journal, 'utf8'));
+    } catch {
+      throw new Error('install journal corrupt; refusing unsafe install/recovery');
+    }
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.state !== 'string') {
+      throw new Error('install journal invalid; refusing unsafe install/recovery');
+    }
+    return parsed;
+  }
+
   async _journal(value) {
+    await fsp.mkdir(path.dirname(this.paths.journal), { recursive: true });
     const tmp = `${this.paths.journal}.tmp`;
-    await fsp.writeFile(tmp, JSON.stringify({ ...value, at: new Date().toISOString() }, null, 2));
+    await fsp.writeFile(
+      tmp,
+      JSON.stringify({ ...value, at: new Date(this.now()).toISOString() }, null, 2),
+      'utf8'
+    );
     await fsp.rename(tmp, this.paths.journal);
   }
 }
@@ -179,4 +301,15 @@ class CrashLoopWatchdog {
   }
 }
 
-module.exports = { WindowsInstallLifecycle, CrashLoopWatchdog, sha256File };
+function sanitizeVersion(value) {
+  const safe = String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+  if (!safe || safe === '.' || safe === '..') throw new Error('version invalid');
+  return safe;
+}
+
+module.exports = {
+  WindowsInstallLifecycle,
+  CrashLoopWatchdog,
+  sha256File,
+  sanitizeVersion
+};

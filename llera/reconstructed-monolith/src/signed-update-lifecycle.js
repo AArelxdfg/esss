@@ -122,17 +122,44 @@ class SignedUpdateLifecycle {
     await this.init(); const version = safeVersionSegment(manifest.version);
     const currentFile=path.join(this.paths.current,'LLera.bin'), backupFile=path.join(this.paths.backup,'LLera.previous.bin');
     await fsp.mkdir(this.paths.current,{recursive:true}); await fsp.mkdir(this.paths.backup,{recursive:true});
-    let hadCurrent=false; try { await fsp.access(currentFile); hadCurrent=true; await fsp.copyFile(currentFile,backupFile); } catch {}
+    let hadCurrent=false, backupSha256=null;
+    try {
+      await fsp.access(currentFile);
+      hadCurrent=true;
+      await fsp.copyFile(currentFile,backupFile);
+      backupSha256=await sha256File(backupFile);
+    } catch {}
     const tmp=`${currentFile}.new`; await fsp.copyFile(stagedPath,tmp); const digest=await sha256File(tmp);
     if (digest.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) { await fsp.rm(tmp,{force:true}); throw new Error('activation integrity mismatch'); }
-    await fsp.rename(tmp,currentFile); await this._writeJournal({state:'activated',version,currentFile,backupFile:hadCurrent?backupFile:null,sha256:digest});
-    this.onProgress({phase:'activated',percent:100,version}); return {currentFile,backupAvailable:hadCurrent};
+    await fsp.rename(tmp,currentFile);
+    await this._writeJournal({
+      state:'activated',version,currentFile,
+      backupFile:hadCurrent?backupFile:null,
+      backupSha256:hadCurrent?backupSha256:null,
+      sha256:digest
+    });
+    this.onProgress({phase:'activated',percent:100,version}); return {currentFile,backupAvailable:hadCurrent,backupSha256};
   }
   async rollback() {
-    const journal=await this.readJournal(); if(!journal||journal.state!=='activated'||!journal.backupFile) throw new Error('rollback unavailable');
-    const currentFile=journal.currentFile, backupDigest=await sha256File(journal.backupFile), tmp=`${currentFile}.rollback`;
-    await fsp.copyFile(journal.backupFile,tmp); await fsp.rename(tmp,currentFile);
-    await this._writeJournal({state:'rolled-back',fromVersion:journal.version,currentFile,restoredSha256:backupDigest});
+    const journal=await this.readJournal();
+    if(!journal||journal.state!=='activated'||!journal.backupFile) throw new Error('rollback unavailable');
+    if(!/^[a-f0-9]{64}$/i.test(String(journal.backupSha256 || ''))) throw new Error('rollback backup digest unavailable');
+    const currentFile=journal.currentFile, backupDigest=await sha256File(journal.backupFile);
+    if (backupDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
+      throw new Error('rollback backup integrity mismatch');
+    }
+    const tmp=`${currentFile}.rollback`;
+    await fsp.copyFile(journal.backupFile,tmp);
+    const tmpDigest=await sha256File(tmp);
+    if (tmpDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
+      await fsp.rm(tmp,{force:true});
+      throw new Error('rollback copy integrity mismatch');
+    }
+    await fsp.rename(tmp,currentFile);
+    await this._writeJournal({
+      state:'rolled-back',fromVersion:journal.version,currentFile,
+      restoredSha256:backupDigest,expectedBackupSha256:journal.backupSha256
+    });
     this.onProgress({phase:'rolled-back',percent:100}); return {currentFile,restoredSha256:backupDigest};
   }
   async readJournal() { try { return JSON.parse(await fsp.readFile(this.paths.journal,'utf8')); } catch { return null; } }

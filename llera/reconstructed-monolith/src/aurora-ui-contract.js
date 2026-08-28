@@ -333,7 +333,7 @@ class AuroraUIContract {
         a11y.navigationKeyboardOperable &&
         rovingTabIndexValid &&
         tabSemanticsValid,
-      schema: 542,
+      schema: 541,
       surfaces: REQUIRED_SURFACES.length,
       paletteCommands: PALETTE_COMMANDS.length,
       layout,

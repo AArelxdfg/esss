@@ -28,11 +28,25 @@ class HostguardRuntimeCoordinator {
     if (policy.pressure !== this.lastApplied.pressure) {
       const pressureResult = await this.runtime.applyHostPressure(policy.pressure);
       const aborted = Array.isArray(pressureResult && pressureResult.aborted) ? [...pressureResult.aborted] : [];
-      actions.push({ type: 'runtime-pressure', pressure: policy.pressure, aborted });
+      const failures = Array.isArray(pressureResult && pressureResult.failures)
+        ? pressureResult.failures.map(x => ({ id: x && x.id || null, error: String(x && x.error || 'unknown preemption failure') }))
+        : [];
+      const degraded = Boolean(pressureResult && pressureResult.degraded) || failures.length > 0;
+      actions.push({ type: 'runtime-pressure', pressure: policy.pressure, aborted, failures, degraded });
+
       if (this.inferenceCoordinator && aborted.length) {
         const reconciled = this.inferenceCoordinator.reconcileRuntimeAborts(aborted, { reason: `host-pressure-${policy.pressure}` });
         actions.push({ type: 'inference-reconcile', pressure: policy.pressure, reconciled: reconciled.map(x => x.id) });
       }
+
+      if (failures.length) {
+        actions.push({
+          type: 'inference-preemption-degraded',
+          pressure: policy.pressure,
+          failures: failures.map(x => ({ ...x }))
+        });
+      }
+
       this.lastApplied.pressure = policy.pressure;
     }
 

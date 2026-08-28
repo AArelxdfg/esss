@@ -15,6 +15,10 @@ function jaccard(a, b) {
 function stableId(prefix, seed) {
   return `${prefix}_${crypto.createHash('sha256').update(String(seed)).digest('hex').slice(0, 20)}`;
 }
+function normalizeEvidenceIds(values) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.filter(Boolean).map(v => String(v)))];
+}
 
 class OutcomeMemory {
   constructor({ load, save, now = () => Date.now() } = {}) {
@@ -45,13 +49,31 @@ class OutcomeMemory {
     this._requireLoaded();
     if (!missionId || !goal) throw new Error('missionId and goal are required');
     if (!['completed', 'failed', 'partial'].includes(status)) throw new Error('invalid outcome status');
-    const verified = verification.strict === true && verification.adversarial === true && Number(verification.confidence || 0) >= 0.62;
+
+    const verificationEvidenceIds = normalizeEvidenceIds(verification.evidenceIds);
+    const verified =
+      verification.strict === true &&
+      verification.adversarial === true &&
+      Number(verification.confidence || 0) >= 0.62 &&
+      verificationEvidenceIds.length > 0;
+
     const at = this.now();
     const record = {
-      id: stableId('outcome', `${missionId}:${at}:${goal}:${status}`), missionId, goal, status, summary,
+      id: stableId('outcome', `${missionId}:${at}:${goal}:${status}`),
+      missionId,
+      goal,
+      status,
+      summary,
       failurePattern: failurePattern ? String(failurePattern) : null,
-      tags: [...new Set(tags.map(v => String(v).toLowerCase()))], verified,
-      verification: { strict: verification.strict === true, adversarial: verification.adversarial === true, confidence: Number(verification.confidence || 0), evidenceIds: [...(verification.evidenceIds || [])] }, at
+      tags: [...new Set(tags.map(v => String(v).toLowerCase()))],
+      verified,
+      verification: {
+        strict: verification.strict === true,
+        adversarial: verification.adversarial === true,
+        confidence: Number(verification.confidence || 0),
+        evidenceIds: verificationEvidenceIds
+      },
+      at
     };
     this.state.outcomes.push(record);
     await this._persist();
@@ -92,18 +114,61 @@ class OutcomeMemory {
 
   async proposeSkill({ missionId, name, description, procedure, evidenceIds = [], verification = {} } = {}) {
     this._requireLoaded();
-    if (!missionId || !name || !description || !Array.isArray(procedure) || procedure.length === 0) throw new Error('missionId/name/description/procedure are required');
+    if (!missionId || !name || !description || !Array.isArray(procedure) || procedure.length === 0) {
+      throw new Error('missionId/name/description/procedure are required');
+    }
+
     const sourceOutcome = [...this.state.outcomes].reverse().find(o => o.missionId === missionId);
-    if (!sourceOutcome || sourceOutcome.status !== 'completed' || !sourceOutcome.verified) throw new Error('skill candidates require a verified completed mission outcome');
-    const verified = verification.strict === true && verification.adversarial === true && Number(verification.confidence || 0) >= 0.62;
-    if (!verified) throw new Error('skill candidate requires strict + adversarial verification at >=0.62 confidence');
-    if (!evidenceIds.length) throw new Error('skill candidate requires bound evidence');
+    if (!sourceOutcome || sourceOutcome.status !== 'completed' || !sourceOutcome.verified) {
+      throw new Error('skill candidates require a verified completed mission outcome');
+    }
+
+    const verified =
+      verification.strict === true &&
+      verification.adversarial === true &&
+      Number(verification.confidence || 0) >= 0.62;
+    if (!verified) {
+      throw new Error('skill candidate requires strict + adversarial verification at >=0.62 confidence');
+    }
+
+    const candidateEvidenceIds = normalizeEvidenceIds(evidenceIds);
+    if (!candidateEvidenceIds.length) throw new Error('skill candidate requires bound evidence');
+
+    const sourceEvidenceIds = normalizeEvidenceIds(sourceOutcome.verification && sourceOutcome.verification.evidenceIds);
+    if (!sourceEvidenceIds.length) {
+      throw new Error('verified source outcome has no persisted evidence provenance');
+    }
+
+    const sourceEvidence = new Set(sourceEvidenceIds);
+    const foreignEvidenceIds = candidateEvidenceIds.filter(id => !sourceEvidence.has(id));
+    if (foreignEvidenceIds.length) {
+      throw new Error(`skill candidate evidence is not derived from source outcome: ${foreignEvidenceIds.join(',')}`);
+    }
+
+    const verifierEvidenceIds = normalizeEvidenceIds(verification.evidenceIds);
+    if (verifierEvidenceIds.length) {
+      const verifierEvidence = new Set(verifierEvidenceIds);
+      const unverifiedCandidateEvidence = candidateEvidenceIds.filter(id => !verifierEvidence.has(id));
+      if (unverifiedCandidateEvidence.length) {
+        throw new Error(`skill candidate evidence was not covered by skill verification: ${unverifiedCandidateEvidence.join(',')}`);
+      }
+    }
+
     const at = this.now();
     const candidate = {
-      id: stableId('skill_candidate', `${missionId}:${name}:${at}`), missionId, name, description,
-      procedure: clone(procedure), evidenceIds: [...evidenceIds], sourceOutcomeId: sourceOutcome.id,
-      trust: 'candidate-only', executable: false, approvalRequired: true,
-      verificationConfidence: Number(verification.confidence), at
+      id: stableId('skill_candidate', `${missionId}:${name}:${at}`),
+      missionId,
+      name,
+      description,
+      procedure: clone(procedure),
+      evidenceIds: candidateEvidenceIds,
+      sourceOutcomeId: sourceOutcome.id,
+      sourceEvidenceIds,
+      trust: 'candidate-only',
+      executable: false,
+      approvalRequired: true,
+      verificationConfidence: Number(verification.confidence),
+      at
     };
     this.state.skillCandidates.push(candidate);
     await this._persist();

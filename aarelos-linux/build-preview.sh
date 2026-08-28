@@ -197,6 +197,18 @@ sed -i \
   "$ROOTFS/usr/share/plymouth/themes/bgrt/bgrt.plymouth"
 rm -rf "$ROOTFS/usr/share/plymouth/themes/ubuntu-text"
 chroot "$ROOTFS" update-initramfs -u -k all
+# Ubuntu's initramfs tooling writes a versioned image.  The upstream archive
+# may not provide the convenience initrd.img symlink in a remaster chroot, but
+# the live GRUB configuration deliberately loads the stable /casper/initrd
+# path.  Select the newest generic initrd explicitly and make that mapping
+# impossible to omit.
+INITRD_SOURCE="$(find "$ROOTFS/boot" -maxdepth 1 -type f -name 'initrd.img-*-generic' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
+[[ -n "$INITRD_SOURCE" && -s "$INITRD_SOURCE" ]] || {
+  echo "no generated generic initrd found under $ROOTFS/boot" >&2
+  exit 1
+}
+ln -sfn "$(basename "$INITRD_SOURCE")" "$ROOTFS/boot/initrd.img"
+test -s "$ROOTFS/boot/initrd.img"
 
 # cups-filters enables three legacy parallel-port modules unconditionally.
 # parport_pc can block systemd-modules-load for minutes on modern q35 systems
@@ -280,6 +292,11 @@ test -x "$POST_ISO_EXTRACT/usr/lib/aarel/mmonolithd.py"
 test -x "$POST_ISO_EXTRACT/usr/lib/aarel/llerad.py"
 xorriso -indev "$PUBLISH_TMP" -report_el_torito plain > "$WORK_DIR/aarel-el-torito.txt" 2>&1
 xorriso -indev "$PUBLISH_TMP" -find "$ISO_SQUASH_PATH" -exec lsdl -- > "$WORK_DIR/aarel-payload.txt" 2>&1
+xorriso -indev "$PUBLISH_TMP" -find /casper/initrd -exec lsdl -- > "$WORK_DIR/aarel-initrd-payload.txt" 2>&1
+grep -q '/casper/initrd' "$WORK_DIR/aarel-initrd-payload.txt" || {
+  echo "final ISO is missing /casper/initrd" >&2
+  exit 1
+}
 
 # Publish only a structurally proven, complete image. The previous known-good
 # release remains untouched throughout construction and verification.

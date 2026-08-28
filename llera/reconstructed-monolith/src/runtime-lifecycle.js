@@ -209,15 +209,34 @@ class RuntimeLifecycle {
 
   async applyHostPressure(level) {
     const normalized = String(level || '').toUpperCase();
-    if (normalized !== 'CRITICAL') return { level: normalized, aborted: [] };
-    const victims = [...this.activeInference.values()].filter(t => t.priority === 'low').sort((a, b) => a.startedAt - b.startedAt);
+    if (normalized !== 'CRITICAL') return { level: normalized, aborted: [], failures: [] };
+
+    const victims = [...this.activeInference.values()]
+      .filter(t => t.priority === 'low')
+      .sort((a, b) => a.startedAt - b.startedAt || String(a.id).localeCompare(String(b.id)));
+
     const aborted = [];
+    const failures = [];
+
     for (const task of victims) {
-      await task.abort('host-pressure-critical');
-      this.activeInference.delete(task.id);
-      aborted.push(task.id);
+      try {
+        await task.abort('host-pressure-critical');
+        this.activeInference.delete(task.id);
+        aborted.push(task.id);
+      } catch (err) {
+        // A broken abort callback must not prevent later low-priority inference
+        // from being preempted. Keep the failed victim registered so the caller
+        // can reconcile/retry it explicitly instead of silently losing state.
+        failures.push({ id: task.id, error: String(err?.message || err) });
+      }
     }
-    return { level: normalized, aborted };
+
+    return {
+      level: normalized,
+      aborted,
+      failures,
+      degraded: failures.length > 0
+    };
   }
 
   async recover(reason = 'health-failure') {

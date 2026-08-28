@@ -11,6 +11,8 @@ const FAILURE_CLASS = Object.freeze({
   EXTERNAL: 'external',
 });
 
+const FAILURE_CLASSES = new Set(Object.values(FAILURE_CLASS));
+
 function stableFingerprint(value) {
   const seen = new WeakSet();
   const normalize = (input) => {
@@ -26,12 +28,41 @@ function stableFingerprint(value) {
   return crypto.createHash('sha256').update(JSON.stringify(normalize(value))).digest('hex');
 }
 
+function failureEventSeal(event) {
+  return stableFingerprint({
+    missionId: event.missionId,
+    stepId: event.stepId,
+    tool: event.tool,
+    argsFingerprint: event.argsFingerprint,
+    failureClass: event.failureClass,
+    fingerprint: event.fingerprint,
+    material: Boolean(event.material),
+    message: String(event.message || ''),
+    at: event.at,
+  });
+}
+
+function structurallyValidFailure(event) {
+  return Boolean(
+    event &&
+    typeof event === 'object' &&
+    event.missionId &&
+    event.stepId &&
+    event.tool &&
+    FAILURE_CLASSES.has(event.failureClass) &&
+    /^[a-f0-9]{64}$/i.test(String(event.argsFingerprint || '')) &&
+    /^[a-f0-9]{64}$/i.test(String(event.fingerprint || '')) &&
+    Number.isFinite(Number(event.at))
+  );
+}
+
 class FailureDoctrine {
   constructor({ maxSameFailure = 2, maxTransientRetries = 3, clock = () => Date.now() } = {}) {
     this.maxSameFailure = maxSameFailure;
     this.maxTransientRetries = maxTransientRetries;
     this.clock = clock;
     this.history = [];
+    this.restoreDiagnostics = { restored: 0, legacyUnsealed: 0, rejected: 0 };
   }
 
   classify(error = {}) {
@@ -53,6 +84,7 @@ class FailureDoctrine {
       missionId, stepId, tool, argsFingerprint: stableFingerprint(args), failureClass, fingerprint,
       material: Boolean(material), message: String(error && error.message || error || ''), at: this.clock(),
     };
+    event.eventSeal = failureEventSeal(event);
     this.history.push(event);
     return { ...event, decision: this.decide(event) };
   }
@@ -74,10 +106,45 @@ class FailureDoctrine {
   }
 
   restore(toolTrace = []) {
+    const diagnostics = { restored: 0, legacyUnsealed: 0, rejected: 0 };
+
     for (const item of toolTrace) {
       if (!item || item.ok !== false || !item.failure) continue;
-      this.history.push({ ...item.failure });
+      const failure = item.failure;
+
+      if (!structurallyValidFailure(failure)) {
+        diagnostics.rejected += 1;
+        continue;
+      }
+
+      if (failure.eventSeal) {
+        if (!/^[a-f0-9]{64}$/i.test(String(failure.eventSeal)) ||
+            failureEventSeal(failure) !== String(failure.eventSeal).toLowerCase()) {
+          diagnostics.rejected += 1;
+          continue;
+        }
+      } else {
+        diagnostics.legacyUnsealed += 1;
+      }
+
+      const restored = {
+        missionId: String(failure.missionId),
+        stepId: String(failure.stepId),
+        tool: String(failure.tool),
+        argsFingerprint: String(failure.argsFingerprint).toLowerCase(),
+        failureClass: failure.failureClass,
+        fingerprint: String(failure.fingerprint).toLowerCase(),
+        material: Boolean(failure.material),
+        message: String(failure.message || ''),
+        at: Number(failure.at),
+        eventSeal: failure.eventSeal ? String(failure.eventSeal).toLowerCase() : null,
+      };
+      this.history.push(restored);
+      diagnostics.restored += 1;
     }
+
+    this.restoreDiagnostics = diagnostics;
+    return { ...diagnostics };
   }
 
   summarize(missionId) {
@@ -90,4 +157,10 @@ class FailureDoctrine {
   }
 }
 
-module.exports = { FailureDoctrine, FAILURE_CLASS, stableFingerprint };
+module.exports = {
+  FailureDoctrine,
+  FAILURE_CLASS,
+  stableFingerprint,
+  failureEventSeal,
+  structurallyValidFailure,
+};

@@ -330,17 +330,23 @@ class CrashLoopWatchdog {
   async recordExit({ code, signal = null, planned = false } = {}) {
     const state = await this._read();
     const now = this.now();
+
+    state.crashes = (state.crashes || []).filter(ts => now - ts <= this.windowMs);
+
+    // A clean/planned process exit is not proof that the runtime completed a
+    // stability soak. Preserve crash-loop debt and safe-mode until markStable()
+    // is called by a verified stability path.
     if (planned || code === 0) {
-      state.crashes = [];
-      state.safeModeUntil = 0;
+      state.lastCleanExitAt = now;
+      state.lastExitPlanned = Boolean(planned);
       await this._write(state);
       return { action: 'none', state };
     }
-    state.crashes = (state.crashes || []).filter(ts => now - ts <= this.windowMs);
+
     state.crashes.push(now);
     let action = 'restart';
     if (state.crashes.length >= this.maxCrashes) {
-      state.safeModeUntil = now + this.cooldownMs;
+      state.safeModeUntil = Math.max(Number(state.safeModeUntil || 0), now + this.cooldownMs);
       action = 'safe-mode';
     }
     await this._write(state);
@@ -356,7 +362,7 @@ class CrashLoopWatchdog {
         disableBackgroundMissions: true,
         disableAutoModelLoad: true,
         inferenceConcurrency: 1,
-        reason: 'crash-loop',
+        reason: state.stateCorrupt ? 'watchdog-state-corrupt' : 'crash-loop',
       };
     }
     return { mode: 'normal' };
@@ -366,14 +372,45 @@ class CrashLoopWatchdog {
     const state = await this._read();
     state.crashes = [];
     state.safeModeUntil = 0;
+    state.stateCorrupt = false;
     state.lastStableAt = this.now();
     await this._write(state);
     return state;
   }
 
   async _read() {
-    try { return { crashes: [], safeModeUntil: 0, ...JSON.parse(await fsp.readFile(this.stateFile, 'utf8')) }; }
-    catch { return { crashes: [], safeModeUntil: 0 }; }
+    let raw;
+    try {
+      raw = await fsp.readFile(this.stateFile, 'utf8');
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return { crashes: [], safeModeUntil: 0, stateCorrupt: false };
+      return this._corruptState();
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const crashesValid = Array.isArray(parsed.crashes) && parsed.crashes.every(Number.isFinite);
+      const safeModeValid = Number.isFinite(Number(parsed.safeModeUntil || 0));
+      if (!parsed || typeof parsed !== 'object' || !crashesValid || !safeModeValid) return this._corruptState();
+      return {
+        ...parsed,
+        crashes: parsed.crashes.map(Number),
+        safeModeUntil: Number(parsed.safeModeUntil || 0),
+        stateCorrupt: Boolean(parsed.stateCorrupt),
+      };
+    } catch {
+      return this._corruptState();
+    }
+  }
+
+  _corruptState() {
+    const now = this.now();
+    return {
+      crashes: [],
+      safeModeUntil: now + this.cooldownMs,
+      stateCorrupt: true,
+      corruptionDetectedAt: now,
+    };
   }
 
   async _write(state) {

@@ -70,10 +70,52 @@ class AuroraUIContract {
   getNavigationState() {
     return REQUIRED_SURFACES.map((surface) => ({
       surface,
+      id: `nav-${surface}`,
+      role: 'tab',
       active: surface === this.activeSurface,
+      ariaSelected: surface === this.activeSurface,
+      ariaControls: `surface-${surface}`,
       ariaCurrent: surface === this.activeSurface ? 'page' : undefined,
       tabIndex: surface === this.activeSurface ? 0 : -1,
     }));
+  }
+
+  handleNavigationKey(event = {}) {
+    if (this.palette.open) return { handled: false, reason: 'palette-open' };
+
+    const key = String(event.key || '').toLowerCase();
+    const current = REQUIRED_SURFACES.indexOf(this.activeSurface);
+    let next = current;
+
+    if (key === 'arrowdown' || key === 'arrowright') {
+      next = (current + 1) % REQUIRED_SURFACES.length;
+    } else if (key === 'arrowup' || key === 'arrowleft') {
+      next = (current - 1 + REQUIRED_SURFACES.length) % REQUIRED_SURFACES.length;
+    } else if (key === 'home') {
+      next = 0;
+    } else if (key === 'end') {
+      next = REQUIRED_SURFACES.length - 1;
+    } else if (key === 'enter' || key === ' ') {
+      return {
+        handled: true,
+        action: 'activate',
+        surface: this.activeSurface,
+        focusTarget: `nav-${this.activeSurface}`,
+        state: this.getNavigationState(),
+      };
+    } else {
+      return { handled: false };
+    }
+
+    const surface = REQUIRED_SURFACES[next];
+    this.setSurface(surface);
+    return {
+      handled: true,
+      action: 'move-activate',
+      surface,
+      focusTarget: `nav-${surface}`,
+      state: this.getNavigationState(),
+    };
   }
 
   openPalette({ returnFocusTo = 'composer' } = {}) {
@@ -252,11 +294,14 @@ class AuroraUIContract {
       skipToComposer: true,
       keyboardPalette: 'Ctrl/Cmd+K',
       paletteNavigation: ['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', 'Escape', 'Tab'],
+      surfaceNavigation: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', 'Space'],
       focusVisible: true,
       reducedMotionRespected: true,
       minFocusRingPx: 2,
       activeNavigationUsesAriaCurrent: true,
       activeNavigationUsesRovingTabIndex: true,
+      navigationUsesTabSemantics: true,
+      navigationKeyboardOperable: true,
       composerHasExplicitDisabledState: true,
       composerHasAccessibleName: true,
       paletteIsModalDialog: true,
@@ -277,20 +322,25 @@ class AuroraUIContract {
     const rovingTabIndexValid =
       nav.filter(item => item.tabIndex === 0).length === 1 &&
       nav.find(item => item.tabIndex === 0)?.active === true;
+    const tabSemanticsValid =
+      nav.every(item => item.role === 'tab' && typeof item.ariaSelected === 'boolean' && item.ariaControls);
     return {
       ok: surfacesPresent &&
         a11y.focusVisible &&
         a11y.reducedMotionRespected &&
         a11y.paletteRestoresFocus &&
         a11y.liveRegionForStateChanges &&
-        rovingTabIndexValid,
-      schema: 541,
+        a11y.navigationKeyboardOperable &&
+        rovingTabIndexValid &&
+        tabSemanticsValid,
+      schema: 542,
       surfaces: REQUIRED_SURFACES.length,
       paletteCommands: PALETTE_COMMANDS.length,
       layout,
       motion,
       accessibility: a11y,
       rovingTabIndexValid,
+      tabSemanticsValid,
     };
   }
 }

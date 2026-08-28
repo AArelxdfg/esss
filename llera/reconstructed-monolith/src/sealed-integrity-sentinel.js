@@ -21,7 +21,7 @@ function atomicWrite(file, value) {
   fs.renameSync(tmp, file);
 }
 function norm(p) {
-  const out = String(p || '').trim().replace(/\\/g, '/');
+  const out = path.resolve(String(p || '').trim()).replace(/\\/g, '/');
   return process.platform === 'win32' ? out.toLowerCase() : out;
 }
 function baselineSeal(entry) {
@@ -77,9 +77,20 @@ class SealedIntegritySentinel {
   baseline(targetPath, metadata = {}) {
     if (!this.exists(targetPath)) throw new Error('SEALED_BASELINE_TARGET_MISSING');
     const target = norm(targetPath);
+    const digest = sha256(this.readFile(targetPath));
+    const existing = this.state.baselines[target];
+
+    // Baselines are trust anchors. Never let a routine baseline call silently bless
+    // changed bytes. Identical re-assertion is idempotent; all actual digest changes
+    // must pass through the explicit quarantine/release repair flow.
+    if (existing) {
+      if (existing.sha256 !== digest) throw new Error('SEALED_REBASELINE_REQUIRES_RELEASE');
+      return { ...existing, idempotent:true };
+    }
+
     const entry = {
       target,
-      sha256: sha256(this.readFile(targetPath)),
+      sha256: digest,
       role: String(metadata.role || 'protected'),
       createdAt: this.now(),
     };
@@ -100,6 +111,19 @@ class SealedIntegritySentinel {
   }
 
   raiseIncident(target, expectedSha256, actualSha256, reason) {
+    const existingQuarantine = this.state.quarantine[target];
+    const latest = this.state.incidents.at(-1);
+    if (existingQuarantine && latest &&
+        latest.target === target &&
+        latest.expectedSha256 === expectedSha256 &&
+        latest.actualSha256 === actualSha256 &&
+        latest.reason === reason) {
+      return {
+        ok:false, target, expectedSha256, actualSha256, reason,
+        quarantined:true, incidentId:latest.id, duplicateSuppressed:true
+      };
+    }
+
     const incident = {
       id:`integrity_${crypto.randomUUID()}`,
       target,

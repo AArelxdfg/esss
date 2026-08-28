@@ -96,6 +96,32 @@ class RuntimeLifecycle {
     }
   }
 
+  async drainActiveInference(reason = 'runtime-drain') {
+    const tasks = [...this.activeInference.values()]
+      .sort((a, b) => a.startedAt - b.startedAt || String(a.id).localeCompare(String(b.id)));
+    const drained = [];
+    const failures = [];
+
+    for (const task of tasks) {
+      try {
+        await task.abort(reason);
+        this.activeInference.delete(task.id);
+        drained.push(task.id);
+      } catch (err) {
+        failures.push({ id: task.id, error: String(err?.message || err) });
+      }
+    }
+
+    if (failures.length) {
+      const error = new Error(`inference drain failed: ${failures.map(x => x.id).join(', ')}`);
+      error.failures = failures;
+      error.drained = drained;
+      throw error;
+    }
+
+    return { reason, drained };
+  }
+
   async ensureRunning(model, reason = 'ensure') {
     if (!model) throw new Error('model is required');
 
@@ -103,7 +129,10 @@ class RuntimeLifecycle {
     this.desiredModel = model;
     if (this.state === 'ready' && this.model === model) return this.snapshot();
 
-    if (previousModel) await this.stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true });
+    if (previousModel) {
+      await this.drainActiveInference(`model-switch:${previousModel}->${model}`);
+      await this.stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true });
+    }
     if (this.state === 'starting') throw new Error('runtime start already in progress');
     if (this.state === 'stopping') throw new Error('runtime stop in progress');
     if (this.state === 'failed') this._transition('recovering', reason);

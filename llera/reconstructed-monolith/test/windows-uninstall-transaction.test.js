@@ -33,6 +33,8 @@ const { WindowsUninstallTransaction } = require('../src/windows-uninstall-transa
   assert.strictEqual(await fs.stat(path.join(root,'models')).then(()=>true,()=>false),false);
   assert.strictEqual(unregister,1);
   assert.strictEqual(stop,1, 'completed stop-app step must not repeat after restart');
+  assert.deepStrictEqual(shortcuts, ['desktop','start-menu','startup','startup','taskbar'],
+    'completed shortcut scopes must not replay after restart');
 
   const journal = JSON.parse(await fs.readFile(path.join(root,'uninstall-journal.json'),'utf8'));
   assert.strictEqual(journal.state,'uninstalled');
@@ -46,6 +48,7 @@ const { WindowsUninstallTransaction } = require('../src/windows-uninstall-transa
 
   console.log('MONOLITH resumable uninstall transaction PASS', {
     interruptedResume:true,
+    perScopeShortcutCheckpointing:true,
     idempotentCompletedSteps:true,
     independentDataModelRetention:true,
     staleIntegrationCleanup:true,

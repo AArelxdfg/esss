@@ -179,14 +179,7 @@ class MissionEngine {
 
   async checkpoint(missionId, payload = {}) {
     const mission = this._mission(missionId);
-    const checkpoint = {
-      id: stableId('checkpoint', `${mission.id}:${mission.checkpoints.length}:${this.now()}`),
-      at: this.now(),
-      status: mission.status,
-      currentStepId: mission.currentStepId,
-      completedStepIds: mission.steps.filter(s => s.status === 'completed').map(s => s.id),
-      payload: clone(payload)
-    };
+    const checkpoint = this._buildCheckpoint(mission, payload);
     mission.checkpoints.push(checkpoint);
     if (mission.currentStepId) this._step(mission, mission.currentStepId).checkpointId = checkpoint.id;
     mission.updatedAt = checkpoint.at;
@@ -199,17 +192,30 @@ class MissionEngine {
     if (mission.currentStepId !== stepId) throw new Error('step is not the active mission step');
     const step = this._step(mission, stepId);
     if (step.status !== 'running') throw new Error('step is not running');
-    const checkpoint = await this.checkpoint(missionId, { type: 'step-complete', stepId, result });
+
+    // Finalize the step and its durable checkpoint in one state mutation + one persistence write.
+    // This removes the historical crash window where a "step-complete" checkpoint could be
+    // persisted while the step itself was still marked running.
+    const completedAt = this.now();
     step.status = 'completed';
-    step.completedAt = this.now();
-    step.checkpointId = checkpoint.id;
+    step.completedAt = completedAt;
+    step.lastError = null;
     mission.currentStepId = null;
-    mission.updatedAt = this.now();
 
     if (mission.steps.every(s => s.status === 'completed')) {
       mission.status = 'completed';
-      mission.completedAt = this.now();
+      mission.completedAt = completedAt;
     }
+
+    const checkpoint = this._buildCheckpoint(mission, {
+      type: 'step-complete',
+      stepId,
+      result
+    });
+    step.checkpointId = checkpoint.id;
+    mission.checkpoints.push(checkpoint);
+    mission.updatedAt = checkpoint.at;
+
     await this._persist();
     return clone(mission);
   }
@@ -246,19 +252,60 @@ class MissionEngine {
     for (const id of this.state.order) {
       const mission = this.state.missions[id];
       if (!mission) continue;
+
       if (mission.status === 'running' || mission.currentStepId) {
         if (mission.currentStepId) {
           const step = mission.steps.find(s => s.id === mission.currentStepId);
           if (step && step.status === 'running') {
-            step.status = 'pending';
-            step.lastError = 'interrupted:process-restart';
+            const durableCompletion = [...(mission.checkpoints || [])]
+              .reverse()
+              .find(c =>
+                c &&
+                c.payload &&
+                c.payload.type === 'step-complete' &&
+                c.payload.stepId === step.id
+              );
+
+            // Compatibility recovery for legacy two-write completeStep():
+            // if the completion checkpoint reached disk before the final step-state write,
+            // replay the durable completion instead of executing the material step again.
+            if (durableCompletion) {
+              step.status = 'completed';
+              step.completedAt = step.completedAt || durableCompletion.at;
+              step.lastError = null;
+              step.checkpointId = durableCompletion.id;
+            } else {
+              step.status = 'pending';
+              step.lastError = 'interrupted:process-restart';
+            }
           }
         }
+
         mission.currentStepId = null;
-        mission.status = 'interrupted';
+
+        if (mission.steps.every(s => s.status === 'completed')) {
+          mission.status = 'completed';
+          mission.completedAt = mission.completedAt ||
+            Math.max(...mission.steps.map(s => Number(s.completedAt || 0))) ||
+            this.now();
+        } else {
+          mission.status = 'interrupted';
+        }
         mission.updatedAt = this.now();
       }
     }
+  }
+
+  _buildCheckpoint(mission, payload = {}) {
+    const at = this.now();
+    return {
+      id: stableId('checkpoint', `${mission.id}:${mission.checkpoints.length}:${at}`),
+      at,
+      status: mission.status,
+      currentStepId: mission.currentStepId,
+      completedStepIds: mission.steps.filter(s => s.status === 'completed').map(s => s.id),
+      payload: clone(payload)
+    };
   }
 
   _assertAcyclic(steps) {

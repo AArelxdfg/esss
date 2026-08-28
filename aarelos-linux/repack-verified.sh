@@ -17,6 +17,10 @@ install -D -m 0644 "$SOURCE_DIR/overlay/etc/X11/default-display-manager" \
   "$ROOTFS/etc/X11/default-display-manager"
 install -d -m 0755 "$ROOTFS/etc/systemd/user"
 ln -sfn /dev/null "$ROOTFS/etc/systemd/user/ubuntu-desktop-installer.service"
+INITRD_SOURCE="$(find "$ROOTFS/boot" -maxdepth 1 -type f -name 'initrd.img-*-generic' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
+[[ -n "$INITRD_SOURCE" && -s "$INITRD_SOURCE" ]] || { echo "generic initrd is missing" >&2; exit 1; }
+ln -sfn "$(basename "$INITRD_SOURCE")" "$ROOTFS/boot/initrd.img"
+test -s "$ROOTFS/boot/initrd.img"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 chroot "$ROOTFS" dpkg-query -W --showformat='${Package} ${Version}\n' | sort > "$WORK_DIR/filesystem.manifest"
@@ -32,11 +36,13 @@ xorriso -indev "$BASE_ISO" -outdev "$OUT_ISO.tmp" -overwrite on \
   -map "$WORK_DIR/filesystem.squashfs" /casper/minimal.squashfs \
   -map "$WORK_DIR/filesystem.manifest" /casper/minimal.manifest \
   -map "$WORK_DIR/filesystem.size" /casper/minimal.size \
+  -map "$ROOTFS/boot/initrd.img" /casper/initrd \
   -boot_image any replay -compliance no_emul_toc -padding included -commit
 xorriso -osirrox on -indev "$OUT_ISO.tmp" \
   -extract /casper/minimal.squashfs "$WORK_DIR/embedded.squashfs"
 test "$(sha256sum "$WORK_DIR/filesystem.squashfs" | awk '{print $1}')" = \
   "$(sha256sum "$WORK_DIR/embedded.squashfs" | awk '{print $1}')"
+xorriso -indev "$OUT_ISO.tmp" -find /casper/initrd -exec lsdl -- | grep -q '/casper/initrd'
 unsquashfs -d "$WORK_DIR/post-test" "$WORK_DIR/embedded.squashfs"
 test -f "$WORK_DIR/post-test/usr/share/wayland-sessions/aarel.desktop"
 mv -f "$OUT_ISO.tmp" "$OUT_ISO"

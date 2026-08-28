@@ -19,7 +19,7 @@ class AuroraMonolithViewModel {
     const activity = normalizeActivity(this.activitySource ? await this.activitySource() : []);
     const activeMission = missions.find(m => m.status === 'running') || missions.find(m => m.status === 'interrupted') || missions.find(m => m.status === 'pending') || null;
     const model = {
-      schema: 5402,
+      schema: 5401,
       product: 'LLera MONOLITH OMEGA reconstructed',
       exactHistoricalV54: false,
       navigation: this.ui.getNavigationState(),

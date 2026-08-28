@@ -17,15 +17,30 @@ const verifier = new DualVerifier();
 const pass = verifier.verify({
   claim:'material action produced expected target',
   evidence:[ev],
-  strictChecks:[{name:'target_exists',ok:true},{name:'sha_bound',ok:true},{name:'expected_state',ok:true}],
-  adversarialChecks:[{name:'tamper_attempt',ok:true},{name:'independent_observation',ok:true}]
+  strictChecks:[
+    {name:'target_exists',ok:true,evidenceIds:[ev.id]},
+    {name:'sha_bound',ok:true,evidenceIds:[ev.id]},
+    {name:'expected_state',ok:true,evidenceIds:[ev.id]}
+  ],
+  adversarialChecks:[
+    {name:'tamper_attempt',ok:true,evidenceIds:[ev.id]},
+    {name:'independent_observation',ok:true,evidenceIds:[ev.id]}
+  ]
 });
 assert.equal(pass.ok, true);
+assert.equal(pass.evidenceCoverage, 1);
 
 const reject = verifier.verify({
   claim:'weak claim', evidence:[ev],
-  strictChecks:[{name:'one',ok:true},{name:'two',ok:false},{name:'three',ok:false}],
-  adversarialChecks:[{name:'counterexample',ok:false},{name:'independent',ok:true}]
+  strictChecks:[
+    {name:'one',ok:true,evidenceIds:[ev.id]},
+    {name:'two',ok:false,evidenceIds:[ev.id]},
+    {name:'three',ok:false,evidenceIds:[ev.id]}
+  ],
+  adversarialChecks:[
+    {name:'counterexample',ok:false,evidenceIds:[ev.id]},
+    {name:'independent',ok:true,evidenceIds:[ev.id]}
+  ]
 });
 assert.equal(reject.ok, false);
 assert.equal(reject.reason, 'dual_verifier_reject');

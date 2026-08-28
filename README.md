@@ -44,6 +44,11 @@ a temporary file, verifies SHA-256 before publication, and writes the matching
 
 - VM: create a 64-bit UEFI VM with 4 CPUs, 4 GiB RAM, 40 GiB disk and attach
   `AArelOS-Linux-Preview-amd64.iso` as the optical drive.
+- VirtualBox: after the final Windows export, run
+  `aarelos-linux/tools/Create-AArel-MMonolith-VM.ps1`.  VirtualBox guest types
+  are compiled into VirtualBox itself, so the script truthfully uses `Other_64`
+  while applying the AArel MMonolith name and description; it never claims to
+  have registered an unsupported custom `AArel/MMonolith` host type.
 - QEMU smoke test:
   `sudo ./aarelos-linux/qemu-smoke.sh AArelOS-Linux-Preview-amd64.iso`
 - USB: write the ISO in raw/DD mode to the whole USB device, safely eject it,

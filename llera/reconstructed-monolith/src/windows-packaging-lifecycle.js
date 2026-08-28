@@ -53,7 +53,6 @@ class WindowsInstallLifecycle {
     const backup = path.join(this.paths.backup, 'LLera.previous.exe');
 
     if (String(journal.state).startsWith('repair-required-')) {
-      await this._cleanupTemps();
       return {
         recovered: false,
         blocked: true,
@@ -63,65 +62,79 @@ class WindowsInstallLifecycle {
       };
     }
 
+    if (journal.state === 'activation-replacing') {
+      await this.stopApp();
+      if (journal.hadCurrent !== false) {
+        const restored = await this._restorePreviousExecutable({
+          current,
+          backup,
+          expectedSha256: journal.previousSha256 || null,
+          journal,
+          repairReason: 'interrupted-activation'
+        });
+        if (!restored.ok) {
+          if (String(restored.result && restored.result.reason || '').startsWith('rollback-integrity:')) {
+            throw new Error('rollback backup integrity mismatch during interrupted-install recovery');
+          }
+          return restored.result;
+        }
+      } else {
+        await fsp.rm(current, { force: true });
+        await fsp.rm(`${current}.activation-old`, { force: true });
+      }
+
+      await this._cleanupTemps({ preserveActivationOld: false });
+      await this._journal({
+        state: 'rolled-back-interrupted-activation',
+        version: journal.version || null,
+        restoredPrevious: journal.hadCurrent !== false,
+        previousSha256: journal.previousSha256 || null
+      });
+      return {
+        recovered: true,
+        action: 'rollback-activation',
+        restoredPrevious: journal.hadCurrent !== false
+      };
+    }
+
     if (journal.state === 'activated-pending-self-test') {
       await this.stopApp();
 
-      if (journal.hadCurrent !== false && !await exists(backup)) {
-        const quarantine = await this._quarantineUnverifiedCurrent(current, journal);
-        await this._cleanupTemps();
-        await this._journal({
-          state: 'repair-required-missing-rollback',
-          version: journal.version || null,
-          hadCurrent: true,
-          previousSha256: journal.previousSha256 || null,
-          quarantinedCurrent: quarantine
-        });
-        return {
-          recovered: false,
-          blocked: true,
-          repairRequired: true,
-          reason: 'rollback-backup-missing',
-          quarantinedCurrent: quarantine
-        };
-      }
-
-      let restoredPrevious = false;
-
       if (journal.hadCurrent !== false) {
-        if (journal.previousSha256) {
-          const backupDigest = await sha256File(backup);
-          if (backupDigest.toLowerCase() !== String(journal.previousSha256).toLowerCase()) {
-            const quarantine = await this._quarantineUnverifiedCurrent(current, journal);
-            await this._journal({
-              state: 'repair-required-rollback-integrity',
-              version: journal.version || null,
-              hadCurrent: true,
-              previousSha256: journal.previousSha256,
-              quarantinedCurrent: quarantine
-            });
+        const restored = await this._restorePreviousExecutable({
+          current,
+          backup,
+          expectedSha256: journal.previousSha256 || null,
+          journal,
+          repairReason: 'interrupted-self-test'
+        });
+        if (!restored.ok) {
+          if (String(restored.result && restored.result.reason || '').startsWith('rollback-integrity:')) {
             throw new Error('rollback backup integrity mismatch during interrupted-install recovery');
           }
+          return restored.result;
         }
-        const rollbackTmp = `${current}.rollback`;
-        await fsp.copyFile(backup, rollbackTmp);
-        await fsp.rename(rollbackTmp, current);
-        restoredPrevious = true;
       } else {
         await fsp.rm(current, { force: true });
+        await fsp.rm(`${current}.activation-old`, { force: true });
       }
 
-      await this._cleanupTemps();
+      await this._cleanupTemps({ preserveActivationOld: false });
       await this._journal({
         state: 'rolled-back-interrupted-install',
         version: journal.version || null,
-        restoredPrevious,
+        restoredPrevious: journal.hadCurrent !== false,
         previousSha256: journal.previousSha256 || null
       });
-      return { recovered: true, action: 'rollback', restoredPrevious };
+      return {
+        recovered: true,
+        action: 'rollback',
+        restoredPrevious: journal.hadCurrent !== false
+      };
     }
 
     if (journal.state === 'staged') {
-      await this._cleanupTemps();
+      await this._cleanupTemps({ preserveActivationOld: false });
       const preservedCurrent = await exists(current);
       await this._journal({
         state: 'abandoned-staged-install',
@@ -131,7 +144,7 @@ class WindowsInstallLifecycle {
       return { recovered: true, action: 'discard-staged', preservedCurrent };
     }
 
-    await this._cleanupTemps();
+    await this._cleanupTemps({ preserveActivationOld: false });
     return { recovered: false, reason: 'journal-terminal', state: journal.state };
   }
 
@@ -175,9 +188,14 @@ class WindowsInstallLifecycle {
       previousSha256
     });
 
-    const tmp = `${current}.new`;
-    await fsp.copyFile(staged, tmp);
-    await fsp.rename(tmp, current);
+    await this._activateExecutable({
+      staged,
+      current,
+      version,
+      stagedSha256: stagedDigest,
+      hadCurrent,
+      previousSha256
+    });
 
     await this._journal({
       state: 'activated-pending-self-test',
@@ -200,43 +218,22 @@ class WindowsInstallLifecycle {
     if (!healthy) {
       await this.stopApp();
       if (hadCurrent) {
-        if (!await exists(backup)) {
-          const quarantine = await this._quarantineUnverifiedCurrent(current, {
-            version, sha256: stagedDigest, previousSha256, hadCurrent
-          });
-          await this._journal({
-            state: 'repair-required-missing-rollback',
-            version,
-            hadCurrent: true,
-            previousSha256,
-            quarantinedCurrent: quarantine
-          });
-          throw new Error('installed-app self-test failed; rollback backup missing; repair required');
+        const restored = await this._restorePreviousExecutable({
+          current,
+          backup,
+          expectedSha256: previousSha256,
+          journal: { version, sha256: stagedDigest, previousSha256, hadCurrent },
+          repairReason: 'self-test-failure'
+        });
+        if (!restored.ok) {
+          throw new Error(`installed-app self-test failed; ${restored.result.reason}; repair required`);
         }
-
-        const backupDigest = await sha256File(backup);
-        if (previousSha256 && backupDigest !== previousSha256) {
-          const quarantine = await this._quarantineUnverifiedCurrent(current, {
-            version, sha256: stagedDigest, previousSha256, hadCurrent
-          });
-          await this._journal({
-            state: 'repair-required-rollback-integrity',
-            version,
-            hadCurrent: true,
-            previousSha256,
-            quarantinedCurrent: quarantine
-          });
-          throw new Error('rollback backup integrity mismatch after self-test failure');
-        }
-
-        const rollbackTmp = `${current}.rollback`;
-        await fsp.copyFile(backup, rollbackTmp);
-        await fsp.rename(rollbackTmp, current);
       } else {
         await fsp.rm(current, { force: true });
+        await fsp.rm(`${current}.activation-old`, { force: true });
       }
 
-      await this._cleanupTemps();
+      await this._cleanupTemps({ preserveActivationOld: false });
       await this._journal({
         state: 'rolled-back-self-test-failure',
         version,
@@ -246,7 +243,12 @@ class WindowsInstallLifecycle {
       throw new Error('installed-app self-test failed; rollback completed');
     }
 
-    await this._cleanupTemps();
+    const activatedDigest = await sha256File(current);
+    if (activatedDigest !== stagedDigest) {
+      throw new Error('activated executable integrity changed before verification commit');
+    }
+
+    await this._cleanupTemps({ preserveActivationOld: false });
     await this._journal({
       state: 'installed-verified',
       version,
@@ -254,6 +256,130 @@ class WindowsInstallLifecycle {
       previousSha256
     });
     return { current, version, sha256: stagedDigest, verified: true };
+  }
+
+  async _activateExecutable({ staged, current, version, stagedSha256, hadCurrent, previousSha256 }) {
+    const tmp = `${current}.new`;
+    const displaced = `${current}.activation-old`;
+
+    await fsp.rm(tmp, { force: true });
+    await fsp.rm(displaced, { force: true });
+    await fsp.copyFile(staged, tmp);
+
+    const tmpDigest = await sha256File(tmp);
+    if (tmpDigest !== stagedSha256) throw new Error('activation temp integrity mismatch');
+
+    await this._journal({
+      state: 'activation-replacing',
+      version,
+      hadCurrent,
+      sha256: stagedSha256,
+      previousSha256
+    });
+
+    if (hadCurrent) {
+      await fsp.rename(current, displaced);
+      if (previousSha256) {
+        const displacedDigest = await sha256File(displaced);
+        if (displacedDigest !== previousSha256) {
+          if (!await exists(current)) {
+            try { await fsp.rename(displaced, current); } catch (_) {}
+          }
+          throw new Error('activation displaced executable integrity mismatch');
+        }
+      }
+    }
+
+    try {
+      await fsp.rename(tmp, current);
+    } catch (error) {
+      if (hadCurrent && await exists(displaced) && !await exists(current)) {
+        try { await fsp.rename(displaced, current); } catch (_) {}
+      }
+      throw error;
+    }
+
+    const currentDigest = await sha256File(current);
+    if (currentDigest !== stagedSha256) {
+      if (hadCurrent && await exists(displaced)) {
+        await fsp.rm(current, { force: true });
+        await fsp.rename(displaced, current);
+      } else {
+        await fsp.rm(current, { force: true });
+      }
+      throw new Error('activated executable integrity mismatch');
+    }
+  }
+
+  async _restorePreviousExecutable({ current, backup, expectedSha256, journal, repairReason }) {
+    const displaced = `${current}.activation-old`;
+    let source = null;
+
+    if (await exists(displaced)) source = displaced;
+    else if (await exists(backup)) source = backup;
+
+    if (!source) {
+      const quarantine = await this._quarantineUnverifiedCurrent(current, journal);
+      await this._journal({
+        state: 'repair-required-missing-rollback',
+        version: journal && journal.version || null,
+        hadCurrent: true,
+        previousSha256: expectedSha256 || null,
+        quarantinedCurrent: quarantine
+      });
+      return {
+        ok: false,
+        result: {
+          recovered: false,
+          blocked: true,
+          repairRequired: true,
+          reason: `rollback-backup-missing:${repairReason}`,
+          quarantinedCurrent: quarantine
+        }
+      };
+    }
+
+    const sourceDigest = await sha256File(source);
+    if (expectedSha256 && sourceDigest.toLowerCase() !== String(expectedSha256).toLowerCase()) {
+      const quarantine = await this._quarantineUnverifiedCurrent(current, journal);
+      await this._journal({
+        state: 'repair-required-rollback-integrity',
+        version: journal && journal.version || null,
+        hadCurrent: true,
+        previousSha256: expectedSha256,
+        quarantinedCurrent: quarantine
+      });
+      return {
+        ok: false,
+        result: {
+          recovered: false,
+          blocked: true,
+          repairRequired: true,
+          reason: `rollback-integrity:${repairReason}`,
+          quarantinedCurrent: quarantine
+        }
+      };
+    }
+
+    await fsp.rm(current, { force: true });
+
+    if (source === displaced) {
+      await fsp.rename(displaced, current);
+    } else {
+      const rollbackTmp = `${current}.rollback`;
+      await fsp.rm(rollbackTmp, { force: true });
+      await fsp.copyFile(source, rollbackTmp);
+      const tmpDigest = await sha256File(rollbackTmp);
+      if (tmpDigest !== sourceDigest) {
+        await fsp.rm(rollbackTmp, { force: true });
+        throw new Error('rollback temp integrity mismatch');
+      }
+      await fsp.rename(rollbackTmp, current);
+    }
+
+    const restoredDigest = await sha256File(current);
+    if (restoredDigest !== sourceDigest) throw new Error('restored executable integrity mismatch');
+    return { ok: true, sha256: restoredDigest };
   }
 
   async uninstall({ keepUserData = true } = {}) {
@@ -282,13 +408,15 @@ class WindowsInstallLifecycle {
     return { path: target, sha256: digest };
   }
 
-  async _cleanupTemps() {
+  async _cleanupTemps({ preserveActivationOld = false } = {}) {
     const current = path.join(this.paths.app, 'LLera.exe');
-    await Promise.all([
+    const targets = [
       fsp.rm(`${current}.new`, { force: true }),
       fsp.rm(`${current}.rollback`, { force: true }),
       fsp.rm(`${this.paths.journal}.tmp`, { force: true }),
-    ]);
+    ];
+    if (!preserveActivationOld) targets.push(fsp.rm(`${current}.activation-old`, { force: true }));
+    await Promise.all(targets);
   }
 
   async _readJournal() {
@@ -333,9 +461,6 @@ class CrashLoopWatchdog {
 
     state.crashes = (state.crashes || []).filter(ts => now - ts <= this.windowMs);
 
-    // A clean/planned process exit is not proof that the runtime completed a
-    // stability soak. Preserve crash-loop debt and safe-mode until markStable()
-    // is called by a verified stability path.
     if (planned || code === 0) {
       state.lastCleanExitAt = now;
       state.lastExitPlanned = Boolean(planned);

@@ -27,8 +27,15 @@ class AuroraUIContract {
     this.activeSurface = REQUIRED_SURFACES.includes(options.activeSurface)
       ? options.activeSurface
       : 'conversation';
-    this.palette = { open: false, query: '', activeIndex: 0 };
+    this.palette = {
+      open: false,
+      query: '',
+      activeIndex: 0,
+      returnFocusTo: null,
+      focusTarget: null,
+    };
     this.composer = { focused: false, value: '', canSend: false };
+    this.announcement = { message: '', politeness: 'polite', revision: 0 };
   }
 
   getMotionPolicy() {
@@ -56,6 +63,7 @@ class AuroraUIContract {
   setSurface(surface) {
     if (!REQUIRED_SURFACES.includes(surface)) throw new Error(`unknown MONOLITH surface: ${surface}`);
     this.activeSurface = surface;
+    this.announce(`${surface} opened`);
     return surface;
   }
 
@@ -64,20 +72,28 @@ class AuroraUIContract {
       surface,
       active: surface === this.activeSurface,
       ariaCurrent: surface === this.activeSurface ? 'page' : undefined,
+      tabIndex: surface === this.activeSurface ? 0 : -1,
     }));
   }
 
-  openPalette() {
+  openPalette({ returnFocusTo = 'composer' } = {}) {
     this.palette.open = true;
     this.palette.query = '';
     this.palette.activeIndex = 0;
+    this.palette.returnFocusTo = String(returnFocusTo || 'composer');
+    this.palette.focusTarget = 'aurora-command-search';
+    this.announce('Command palette opened');
     return this.getPaletteState();
   }
 
-  closePalette() {
+  closePalette({ restoreFocus = true } = {}) {
+    const returnFocusTo = this.palette.returnFocusTo || 'composer';
     this.palette.open = false;
     this.palette.query = '';
     this.palette.activeIndex = 0;
+    this.palette.focusTarget = restoreFocus ? returnFocusTo : null;
+    this.palette.returnFocusTo = null;
+    this.announce('Command palette closed');
     return this.getPaletteState();
   }
 
@@ -85,6 +101,7 @@ class AuroraUIContract {
     this.palette.query = String(query || '');
     const items = this.getPaletteItems();
     if (this.palette.activeIndex >= items.length) this.palette.activeIndex = 0;
+    this.announce(items.length === 1 ? '1 command available' : `${items.length} commands available`);
     return items;
   }
 
@@ -99,13 +116,29 @@ class AuroraUIContract {
 
   getPaletteState() {
     const items = this.getPaletteItems();
+    const active = items.length ? items[this.palette.activeIndex] : null;
     return {
       ...this.palette,
       role: 'dialog',
       ariaModal: true,
+      ariaLabel: 'MONOLITH command palette',
+      searchRole: 'combobox',
+      searchAriaExpanded: this.palette.open,
+      searchAriaControls: 'aurora-command-list',
+      searchAriaAutocomplete: 'list',
       listRole: 'listbox',
-      items,
-      activeDescendant: items.length ? `aurora-command-${items[this.palette.activeIndex].id}` : undefined,
+      listId: 'aurora-command-list',
+      items: items.map((item, index) => ({
+        ...item,
+        id: `aurora-command-${item.id}`,
+        role: 'option',
+        ariaSelected: index === this.palette.activeIndex,
+      })),
+      activeDescendant: active ? `aurora-command-${active.id}` : undefined,
+      emptyState: items.length ? null : {
+        role: 'status',
+        message: 'No matching commands',
+      },
     };
   }
 
@@ -113,13 +146,27 @@ class AuroraUIContract {
     const key = String(event.key || '').toLowerCase();
     const modifier = Boolean(event.ctrlKey || event.metaKey);
     if (modifier && key === 'k') {
-      return this.palette.open ? this.closePalette() : this.openPalette();
+      return this.palette.open
+        ? { handled: true, action: 'close', state: this.closePalette() }
+        : { handled: true, action: 'open', state: this.openPalette({ returnFocusTo: event.focusOrigin || 'composer' }) };
     }
     if (!this.palette.open) return { handled: false };
 
     const items = this.getPaletteItems();
     if (key === 'escape') return { handled: true, action: 'close', state: this.closePalette() };
-    if (!items.length) return { handled: false };
+    if (key === 'tab') {
+      return {
+        handled: true,
+        action: 'trap-focus',
+        focusTarget: 'aurora-command-search',
+      };
+    }
+    if (!items.length) {
+      if (key === 'enter' || key === 'arrowdown' || key === 'arrowup') {
+        return { handled: true, action: 'noop-empty', state: this.getPaletteState() };
+      }
+      return { handled: false };
+    }
 
     if (key === 'arrowdown') {
       this.palette.activeIndex = (this.palette.activeIndex + 1) % items.length;
@@ -129,11 +176,27 @@ class AuroraUIContract {
       this.palette.activeIndex = (this.palette.activeIndex - 1 + items.length) % items.length;
       return { handled: true, action: 'move', state: this.getPaletteState() };
     }
+    if (key === 'home') {
+      this.palette.activeIndex = 0;
+      return { handled: true, action: 'move', state: this.getPaletteState() };
+    }
+    if (key === 'end') {
+      this.palette.activeIndex = items.length - 1;
+      return { handled: true, action: 'move', state: this.getPaletteState() };
+    }
     if (key === 'enter') {
       const command = items[this.palette.activeIndex];
+      const focusAfterClose = this.palette.returnFocusTo || 'composer';
       this.setSurface(command.surface);
-      this.closePalette();
-      return { handled: true, action: 'activate', command, surface: this.activeSurface };
+      const closed = this.closePalette({ restoreFocus: false });
+      closed.focusTarget = focusAfterClose;
+      return {
+        handled: true,
+        action: 'activate',
+        command,
+        surface: this.activeSurface,
+        focusTarget: focusAfterClose,
+      };
     }
     return { handled: false };
   }
@@ -153,10 +216,32 @@ class AuroraUIContract {
     return {
       ...this.composer,
       role: 'textbox',
+      ariaLabel: 'Message LLera',
+      ariaMultiline: true,
       multiline: true,
       sendDisabled: !this.composer.canSend,
+      sendAriaDisabled: !this.composer.canSend,
       focusVisible: this.composer.focused,
       focusRingMinPx: 2,
+    };
+  }
+
+  announce(message, politeness = 'polite') {
+    this.announcement = {
+      message: String(message || ''),
+      politeness: politeness === 'assertive' ? 'assertive' : 'polite',
+      revision: this.announcement.revision + 1,
+    };
+    return this.getLiveRegionState();
+  }
+
+  getLiveRegionState() {
+    return {
+      role: 'status',
+      ariaLive: this.announcement.politeness,
+      ariaAtomic: true,
+      message: this.announcement.message,
+      revision: this.announcement.revision,
     };
   }
 
@@ -164,12 +249,19 @@ class AuroraUIContract {
     return {
       skipToComposer: true,
       keyboardPalette: 'Ctrl/Cmd+K',
-      paletteNavigation: ['ArrowUp', 'ArrowDown', 'Enter', 'Escape'],
+      paletteNavigation: ['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', 'Escape', 'Tab'],
       focusVisible: true,
       reducedMotionRespected: true,
       minFocusRingPx: 2,
       activeNavigationUsesAriaCurrent: true,
+      activeNavigationUsesRovingTabIndex: true,
       composerHasExplicitDisabledState: true,
+      composerHasAccessibleName: true,
+      paletteIsModalDialog: true,
+      paletteRestoresFocus: true,
+      paletteExposesActiveDescendant: true,
+      paletteHandlesEmptyResults: true,
+      liveRegionForStateChanges: true,
     };
   }
 
@@ -179,14 +271,24 @@ class AuroraUIContract {
     const a11y = this.getAccessibilityContract();
     const layout = this.getResponsiveLayout();
     const motion = this.getMotionPolicy();
+    const nav = this.getNavigationState();
+    const rovingTabIndexValid =
+      nav.filter(item => item.tabIndex === 0).length === 1 &&
+      nav.find(item => item.tabIndex === 0)?.active === true;
     return {
-      ok: surfacesPresent && a11y.focusVisible && a11y.reducedMotionRespected,
-      schema: 540,
+      ok: surfacesPresent &&
+        a11y.focusVisible &&
+        a11y.reducedMotionRespected &&
+        a11y.paletteRestoresFocus &&
+        a11y.liveRegionForStateChanges &&
+        rovingTabIndexValid,
+      schema: 541,
       surfaces: REQUIRED_SURFACES.length,
       paletteCommands: PALETTE_COMMANDS.length,
       layout,
       motion,
       accessibility: a11y,
+      rovingTabIndexValid,
     };
   }
 }

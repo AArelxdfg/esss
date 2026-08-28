@@ -6,6 +6,21 @@ const path = require('path');
 
 async function exists(p) { try { await fsp.access(p); return true; } catch { return false; } }
 
+const SHORTCUT_SCOPES = Object.freeze(['desktop', 'start-menu', 'startup', 'taskbar']);
+const CORE_STEPS = Object.freeze([
+  'stop-app',
+  ...SHORTCUT_SCOPES.map(scope => `remove-shortcut:${scope}`),
+  'remove-shortcuts',
+  'unregister-app',
+  'remove-app',
+  'remove-staging',
+  'remove-rollback',
+  'remove-quarantine',
+  'remove-data',
+  'remove-models',
+]);
+const ALLOWED_STEPS = new Set(CORE_STEPS);
+
 class WindowsUninstallTransaction {
   constructor({ rootDir, stopApp, removeShortcut, unregisterApp, now = () => Date.now() } = {}) {
     if (!rootDir) throw new Error('rootDir is required');
@@ -18,8 +33,13 @@ class WindowsUninstallTransaction {
   }
 
   async begin({ keepData = true, keepModels = true } = {}) {
+    const existing = await this._read();
+    if (existing && existing.state !== 'uninstalled') {
+      throw new Error('uninstall already in progress; resume existing intent instead of replacing it');
+    }
+
     const intent = {
-      schema: 1,
+      schema: 2,
       state: 'uninstall-intent',
       keepData: Boolean(keepData),
       keepModels: Boolean(keepModels),
@@ -42,9 +62,12 @@ class WindowsUninstallTransaction {
     await this._write(state);
 
     await this._step(state, 'stop-app', async () => this.stopApp());
-    await this._step(state, 'remove-shortcuts', async () => {
-      for (const scope of ['desktop', 'start-menu', 'startup', 'taskbar']) await this.removeShortcut(scope);
-    });
+
+    for (const scope of SHORTCUT_SCOPES) {
+      await this._step(state, `remove-shortcut:${scope}`, async () => this.removeShortcut(scope));
+    }
+    await this._step(state, 'remove-shortcuts', async () => {});
+
     await this._step(state, 'unregister-app', async () => this.unregisterApp());
     await this._step(state, 'remove-app', async () => fsp.rm(path.join(this.rootDir, 'app'), { recursive: true, force: true }));
     await this._step(state, 'remove-staging', async () => fsp.rm(path.join(this.rootDir, 'staging'), { recursive: true, force: true }));
@@ -73,10 +96,36 @@ class WindowsUninstallTransaction {
     let value;
     try { value = JSON.parse(await fsp.readFile(this.journal, 'utf8')); }
     catch { throw new Error('uninstall journal corrupt; refusing destructive recovery'); }
-    if (!value || typeof value !== 'object' || !Array.isArray(value.completed)) {
+
+    this._validateJournal(value);
+    return value;
+  }
+
+  _validateJournal(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error('uninstall journal invalid; refusing destructive recovery');
     }
-    return value;
+    if (value.schema !== 1 && value.schema !== 2) {
+      throw new Error('uninstall journal schema unsupported; refusing destructive recovery');
+    }
+    if (!['uninstall-intent', 'uninstalling', 'uninstalled'].includes(value.state)) {
+      throw new Error('uninstall journal state invalid; refusing destructive recovery');
+    }
+    if (typeof value.keepData !== 'boolean' || typeof value.keepModels !== 'boolean' || !Array.isArray(value.completed)) {
+      throw new Error('uninstall journal invalid; refusing destructive recovery');
+    }
+    const unique = new Set(value.completed);
+    if (unique.size !== value.completed.length || value.completed.some(step => typeof step !== 'string' || !ALLOWED_STEPS.has(step))) {
+      throw new Error('uninstall journal steps invalid; refusing destructive recovery');
+    }
+
+    if (value.schema === 2 && value.completed.includes('remove-shortcuts')) {
+      for (const scope of SHORTCUT_SCOPES) {
+        if (!value.completed.includes(`remove-shortcut:${scope}`)) {
+          throw new Error('uninstall journal shortcut completion inconsistent; refusing destructive recovery');
+        }
+      }
+    }
   }
 
   async _write(value) {
@@ -87,4 +136,4 @@ class WindowsUninstallTransaction {
   }
 }
 
-module.exports = { WindowsUninstallTransaction };
+module.exports = { WindowsUninstallTransaction, SHORTCUT_SCOPES };

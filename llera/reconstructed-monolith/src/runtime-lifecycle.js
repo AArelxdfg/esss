@@ -16,7 +16,9 @@ class RuntimeLifecycle {
     this.generation = 0;
     this.activeInference = new Map();
     this.lastError = null;
+    this.lastSwitchFailure = null;
     this.recoveryCount = 0;
+    this.switchRollbackCount = 0;
     this.transitionLog = [];
   }
 
@@ -29,7 +31,9 @@ class RuntimeLifecycle {
       generation: this.generation,
       activeInference: [...this.activeInference.values()].map(x => ({ id: x.id, priority: x.priority, startedAt: x.startedAt })),
       lastError: this.lastError,
-      recoveryCount: this.recoveryCount
+      lastSwitchFailure: this.lastSwitchFailure,
+      recoveryCount: this.recoveryCount,
+      switchRollbackCount: this.switchRollbackCount
     };
   }
 
@@ -57,12 +61,49 @@ class RuntimeLifecycle {
     }
   }
 
+  async _rollbackFailedSwitch({ previousModel, failedModel, originalError }) {
+    const switchFailure = String(originalError?.message || originalError);
+    this.lastSwitchFailure = {
+      from: previousModel,
+      to: failedModel,
+      error: switchFailure,
+      at: this.now(),
+      restored: false
+    };
+
+    try {
+      this.desiredModel = previousModel;
+      const restored = await this.ensureRunning(previousModel, `model-switch-rollback:${failedModel}->${previousModel}`);
+      this.desiredModel = failedModel;
+      this.switchRollbackCount += 1;
+      this.lastSwitchFailure = {
+        ...this.lastSwitchFailure,
+        restored: true,
+        restoredGeneration: restored.generation
+      };
+      this.lastError = switchFailure;
+      return restored;
+    } catch (rollbackError) {
+      this.desiredModel = failedModel;
+      const rollbackMessage = String(rollbackError?.message || rollbackError);
+      this.lastSwitchFailure = {
+        ...this.lastSwitchFailure,
+        restored: false,
+        rollbackError: rollbackMessage
+      };
+      this.lastError = `${switchFailure}; rollback failed: ${rollbackMessage}`;
+      throw rollbackError;
+    }
+  }
+
   async ensureRunning(model, reason = 'ensure') {
     if (!model) throw new Error('model is required');
+
+    const previousModel = this.state === 'ready' && this.model !== model ? this.model : null;
     this.desiredModel = model;
     if (this.state === 'ready' && this.model === model) return this.snapshot();
 
-    if (this.state === 'ready' && this.model !== model) await this.stop(`model-switch:${this.model}->${model}`, { preserveDesiredModel: true });
+    if (previousModel) await this.stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true });
     if (this.state === 'starting') throw new Error('runtime start already in progress');
     if (this.state === 'stopping') throw new Error('runtime stop in progress');
     if (this.state === 'failed') this._transition('recovering', reason);
@@ -95,6 +136,14 @@ class RuntimeLifecycle {
       this.model = null;
       this.activeInference.clear();
       this._transition('failed', cleanup.error ? 'start-failed-cleanup-failed' : 'start-failed-cleaned');
+
+      if (previousModel && !cleanup.error) {
+        try {
+          await this._rollbackFailedSwitch({ previousModel, failedModel: model, originalError: err });
+        } catch (_) {
+          // Preserve the original switch failure for the caller while state records rollback failure.
+        }
+      }
       throw err;
     }
   }

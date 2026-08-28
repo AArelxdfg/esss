@@ -16,6 +16,13 @@ sudo ./aarelos-linux/bootstrap-packages.sh
 sudo ./aarelos-linux/build-preview.sh
 ```
 
+Before a new full build, run `aarelos-linux/tools/aarel-build-guard.sh`.
+It checks the Windows-backed C: volume as well as the Linux workspace and
+blocks a build below 20 GiB of host free space unless an operator explicitly
+overrides it after reviewing storage.  The build writes a PID/build/output
+record next to its flock lock; observe a running build without killing it with
+`sudo aarelos-linux/tools/aarel-build-watchdog.sh PID`.
+
 The pinned base URL and SHA-256 are in `aarelos-linux/BASE.lock`.  For a
 verified repack of an already prepared isolated root filesystem:
 
@@ -27,6 +34,11 @@ The repack script fully extracts the generated SquashFS before authoring the
 ISO, extracts the embedded SquashFS back from the ISO, compares both SHA-256
 values, and fully extracts it again before atomically publishing the image.
 Build caches and ISO artifacts are intentionally excluded from Git.
+
+After a verified final build, export the only release artifact to Windows with
+`sudo aarelos-linux/tools/export-windows-iso.sh SOURCE_ISO`.  It copies through
+a temporary file, verifies SHA-256 before publication, and writes the matching
+`.sha256` sidecar in `C:\Users\arelx\Downloads`.
 
 ## Boot and installation
 

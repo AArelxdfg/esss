@@ -14,6 +14,7 @@ BASE_ISO="${AAREL_BASE_ISO:-$CACHE_DIR/$LOCK_BASE_FILENAME}"
 OUT_ISO="${AAREL_OUT:-$PWD/AArel-MMonolith-OS-Final-amd64.iso}"
 PUBLISH_TMP="${OUT_ISO}.tmp-$BUILD_ID"
 LOCK_FILE="$CACHE_DIR/release-build.lock"
+LOCK_META="$CACHE_DIR/release-build.lock.meta"
 ROOTFS="$WORK_DIR/rootfs"
 OLD_SQUASH="$WORK_DIR/filesystem.original.squashfs"
 NEW_SQUASH="$WORK_DIR/filesystem.squashfs"
@@ -30,6 +31,9 @@ if [[ "${1:-}" == "--check" ]]; then
     command -v "$c" >/dev/null 2>&1 || true
   done
   bash -n "$SCRIPT_DIR/bootstrap-packages.sh"
+  bash -n "$SCRIPT_DIR/tools/aarel-build-guard.sh"
+  bash -n "$SCRIPT_DIR/tools/aarel-build-watchdog.sh"
+  bash -n "$SCRIPT_DIR/tools/export-windows-iso.sh"
   echo "AAREL_REMIX_SCRIPT_GATE=PASS"
   exit 0
 fi
@@ -42,14 +46,19 @@ fi
 for c in curl sha256sum xorriso unsquashfs mksquashfs rsync chroot mount umount flock findmnt convert; do need "$c"; done
 
 mkdir -p "$CACHE_DIR" "$WORK_ROOT" "$(dirname "$OUT_ISO")"
+"$SCRIPT_DIR/tools/aarel-build-guard.sh"
 exec 9>"$LOCK_FILE"
 flock -n 9 || { echo "another AArel release build owns $LOCK_FILE" >&2; exit 1; }
+umask 077
+printf 'pid=%s\nbuild_id=%s\nstarted_utc=%s\nsource=%s\nout=%s\n' \
+  "$$" "$BUILD_ID" "$(date -u +%FT%TZ)" "$SCRIPT_DIR" "$OUT_ISO" > "$LOCK_META"
 
 cleanup() {
   set +e
   for ((i=${#MOUNTED[@]}-1; i>=0; --i)); do
     umount -R "${MOUNTED[$i]}" 2>/dev/null || umount -lf "${MOUNTED[$i]}" 2>/dev/null || true
   done
+  rm -f -- "$LOCK_META"
 }
 trap cleanup EXIT
 

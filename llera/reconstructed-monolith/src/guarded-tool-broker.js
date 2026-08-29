@@ -5,15 +5,21 @@ const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('./monoli
 const { FailureDoctrine } = require('./failure-doctrine');
 
 const SPECIAL_CAPABILITIES = new Set(Object.keys(CAPABILITY_TOOL_BINDINGS));
+const SENSITIVE_ACTION_TOOLS = new Set([
+  'move_path','delete_path','process_stop','launch_app','ui_invoke','close_app',
+  'mouse_click','keyboard_type','key_press','browser_click','browser_type','browser_download',
+  'clipboard_write','window_move_resize','snapshot_restore'
+]);
 
 class GuardedMonolithToolBroker {
-  constructor({ historicalExecutor, capabilityBroker, guard = new ToolExecutionGuard(), failureDoctrine = new FailureDoctrine(), summarizeResult } = {}) {
+  constructor({ historicalExecutor, capabilityBroker, guard = new ToolExecutionGuard(), failureDoctrine = new FailureDoctrine(), summarizeResult, actionAuthorizer = null } = {}) {
     if (typeof historicalExecutor !== 'function') throw new Error('historicalExecutor(tool,args,context) is required');
     this.historicalExecutor = historicalExecutor;
     this.capabilityBroker = capabilityBroker || new MonolithCapabilityBroker();
     this.guard = guard;
     this.failureDoctrine = failureDoctrine;
     this.summarizeResult = summarizeResult || defaultSummary;
+    this.actionAuthorizer = actionAuthorizer;
   }
 
   restore(toolTrace = []) {
@@ -32,6 +38,8 @@ class GuardedMonolithToolBroker {
     return {
       toolCount: RESTORED_MONOLITH_TOOLS.length,
       specializedCapabilityCount: SPECIAL_CAPABILITIES.size,
+      sensitiveActionCount: SENSITIVE_ACTION_TOOLS.size,
+      sensitiveActionAuthorizationPresent: typeof this.actionAuthorizer === 'function',
       capabilityCoverage,
       verificationDebt: this.guard.verificationDebt ? { ...this.guard.verificationDebt } : null,
       canFinalize: this.guard.canFinalize(),
@@ -41,12 +49,49 @@ class GuardedMonolithToolBroker {
     };
   }
 
+  async authorizeSensitiveAction(tool, args, context, decision) {
+    if (!SENSITIVE_ACTION_TOOLS.has(tool)) return { allow:true, required:false };
+    if (typeof this.actionAuthorizer !== 'function') {
+      return { allow:false, required:true, reason:'action_authorization_required' };
+    }
+    try {
+      const result = await this.actionAuthorizer({
+        tool,
+        args:{...args},
+        context:{...context},
+        material:Boolean(decision && decision.material),
+        category:'sensitive-action'
+      });
+      const allow = result === true || Boolean(result && result.allow === true);
+      return allow
+        ? { allow:true, required:true }
+        : { allow:false, required:true, reason:'action_authorization_denied' };
+    } catch (error) {
+      return { allow:false, required:true, reason:'action_authorization_error', error:String(error && error.message || error) };
+    }
+  }
+
   async invoke(tool, args = {}, context = {}) {
     const decision = this.guard.decide(tool, args);
     if (!decision.allow) {
       return { ok:false, blocked:true, reason:decision.reason, fingerprint:decision.fingerprint || null,
         verificationDebt:this.guard.verificationDebt ? { ...this.guard.verificationDebt } : null };
     }
+
+    const authorization = await this.authorizeSensitiveAction(tool, args, context, decision);
+    if (!authorization.allow) {
+      return {
+        ok:false,
+        blocked:true,
+        reason:authorization.reason,
+        authorizationRequired:Boolean(authorization.required),
+        authorizationError:authorization.error || null,
+        fingerprint:decision.fingerprint || null,
+        verificationDebt:this.guard.verificationDebt ? { ...this.guard.verificationDebt } : null,
+        canFinalize:this.guard.canFinalize()
+      };
+    }
+
     try {
       const result = SPECIAL_CAPABILITIES.has(tool)
         ? await this.capabilityBroker.invoke(tool, args, context)
@@ -141,4 +186,4 @@ function defaultSummary(value) {
   catch { return Object.prototype.toString.call(value); }
 }
 
-module.exports = { SPECIAL_CAPABILITIES, GuardedMonolithToolBroker, executionSucceeded };
+module.exports = { SPECIAL_CAPABILITIES, SENSITIVE_ACTION_TOOLS, GuardedMonolithToolBroker, executionSucceeded };

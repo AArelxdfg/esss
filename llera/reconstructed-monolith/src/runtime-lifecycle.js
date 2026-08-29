@@ -65,6 +65,24 @@ class RuntimeLifecycle {
     this.inferenceAdmissionReason = null;
   }
 
+  _assertTransitionAvailable({ allowClosedAdmission = false } = {}) {
+    if (this.state === 'starting') {
+      const error = new Error('runtime start already in progress');
+      error.code = 'RUNTIME_START_IN_PROGRESS';
+      throw error;
+    }
+    if (this.state === 'stopping') {
+      const error = new Error('runtime stop in progress');
+      error.code = 'RUNTIME_STOP_IN_PROGRESS';
+      throw error;
+    }
+    if (this.inferenceAdmissionClosed && !allowClosedAdmission) {
+      const error = new Error(`runtime transition in progress: ${this.inferenceAdmissionReason || 'inference admission closed'}`);
+      error.code = 'RUNTIME_TRANSITION_IN_PROGRESS';
+      throw error;
+    }
+  }
+
   async _cleanupStartedBackend({ pid, model, reason }) {
     if (!pid) return { attempted: false, stopped: false, error: null };
     try {
@@ -87,7 +105,11 @@ class RuntimeLifecycle {
 
     try {
       this.desiredModel = previousModel;
-      const restored = await this.ensureRunning(previousModel, `model-switch-rollback:${failedModel}->${previousModel}`);
+      const restored = await this.ensureRunning(
+        previousModel,
+        `model-switch-rollback:${failedModel}->${previousModel}`,
+        { allowClosedAdmission: true }
+      );
       this.desiredModel = failedModel;
       this.switchRollbackCount += 1;
       this.lastSwitchFailure = {
@@ -136,19 +158,17 @@ class RuntimeLifecycle {
     return { reason, drained };
   }
 
-  async ensureRunning(model, reason = 'ensure') {
+  async ensureRunning(model, reason = 'ensure', { allowClosedAdmission = false } = {}) {
     if (!model) throw new Error('model is required');
+
+    // A rejected concurrent lifecycle request must be observational only. In
+    // particular it must not overwrite desiredModel while another start,
+    // drain, stop, recovery or switch owns the runtime transition.
+    this._assertTransitionAvailable({ allowClosedAdmission });
 
     const previousModel = this.state === 'ready' && this.model !== model ? this.model : null;
     this.desiredModel = model;
-    if (this.state === 'ready' && this.model === model) {
-      if (this.inferenceAdmissionClosed) {
-        const error = new Error(`runtime transition in progress: ${this.inferenceAdmissionReason || 'inference admission closed'}`);
-        error.code = 'RUNTIME_TRANSITION_IN_PROGRESS';
-        throw error;
-      }
-      return this.snapshot();
-    }
+    if (this.state === 'ready' && this.model === model) return this.snapshot();
 
     if (previousModel) {
       this._closeInferenceAdmission(`model-switch:${previousModel}->${model}`);
@@ -160,8 +180,6 @@ class RuntimeLifecycle {
       }
       await this.stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true });
     }
-    if (this.state === 'starting') throw new Error('runtime start already in progress');
-    if (this.state === 'stopping') throw new Error('runtime stop in progress');
     if (this.state === 'failed' && this.pid) {
       const error = new Error(`runtime start blocked: unresolved backend pid ${this.pid}`);
       error.code = 'RUNTIME_ORPHAN_UNRESOLVED';
@@ -327,7 +345,7 @@ class RuntimeLifecycle {
     this.model = null;
     this.activeInference.clear();
     this.recoveryCount += 1;
-    return this.ensureRunning(desiredModel, `recovery:${reason}`);
+    return this.ensureRunning(desiredModel, `recovery:${reason}`, { allowClosedAdmission: true });
   }
 }
 

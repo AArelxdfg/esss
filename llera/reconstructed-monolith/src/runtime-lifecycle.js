@@ -1,13 +1,17 @@
 'use strict';
 
 class RuntimeLifecycle {
-  constructor({ start, stop, health, now = () => Date.now() } = {}) {
+  constructor({ start, stop, health, isAlive = null, stopTimeoutMs = 15000, now = () => Date.now() } = {}) {
     if (typeof start !== 'function' || typeof stop !== 'function' || typeof health !== 'function') {
       throw new Error('start/stop/health functions are required');
     }
+    if (isAlive !== null && typeof isAlive !== 'function') throw new Error('isAlive must be a function when provided');
+    if (!Number.isFinite(stopTimeoutMs) || stopTimeoutMs <= 0) throw new Error('stopTimeoutMs must be a positive number');
     this.startBackend = start;
     this.stopBackend = stop;
     this.healthBackend = health;
+    this.isAliveBackend = isAlive;
+    this.stopTimeoutMs = stopTimeoutMs;
     this.now = now;
     this.state = 'stopped';
     this.model = null;
@@ -17,6 +21,7 @@ class RuntimeLifecycle {
     this.activeInference = new Map();
     this.lastError = null;
     this.lastSwitchFailure = null;
+    this.lastBackendExit = null;
     this.recoveryCount = 0;
     this.switchRollbackCount = 0;
     this.transitionLog = [];
@@ -32,6 +37,7 @@ class RuntimeLifecycle {
       activeInference: [...this.activeInference.values()].map(x => ({ id: x.id, priority: x.priority, startedAt: x.startedAt })),
       lastError: this.lastError,
       lastSwitchFailure: this.lastSwitchFailure,
+      lastBackendExit: this.lastBackendExit ? { ...this.lastBackendExit } : null,
       recoveryCount: this.recoveryCount,
       switchRollbackCount: this.switchRollbackCount
     };
@@ -51,13 +57,76 @@ class RuntimeLifecycle {
     this.state = next;
   }
 
-  async _cleanupStartedBackend({ pid, model, reason }) {
-    if (!pid) return { attempted: false, stopped: false, error: null };
+  async _probeAlive({ pid, model, reason = 'pid-probe' }) {
+    if (!pid || !this.isAliveBackend) return null;
     try {
-      await this.stopBackend({ pid, model, reason });
-      return { attempted: true, stopped: true, error: null };
+      return Boolean(await this.isAliveBackend({ pid, model, reason }));
     } catch (err) {
-      return { attempted: true, stopped: false, error: String(err?.message || err) };
+      const error = new Error(`runtime pid probe failed for ${pid}: ${String(err?.message || err)}`);
+      error.code = 'RUNTIME_PID_PROBE_FAILED';
+      error.pid = pid;
+      throw error;
+    }
+  }
+
+  _recordBackendExit({ pid, model, kind, reason }) {
+    this.lastBackendExit = { pid, model, kind, reason, at: this.now() };
+    return this.lastBackendExit;
+  }
+
+  async _stopBackendBounded({ pid, model, reason }) {
+    if (!pid) return { attempted:false, stopped:true, alreadyDead:false };
+
+    const aliveBefore = await this._probeAlive({ pid, model, reason:`pre-stop:${reason}` });
+    if (aliveBefore === false) {
+      this._recordBackendExit({ pid, model, kind:'external-dead', reason });
+      return { attempted:false, stopped:true, alreadyDead:true };
+    }
+
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error(`runtime stop timed out for pid ${pid} after ${this.stopTimeoutMs}ms`);
+        error.code = 'RUNTIME_STOP_TIMEOUT';
+        error.pid = pid;
+        reject(error);
+      }, this.stopTimeoutMs);
+    });
+
+    try {
+      await Promise.race([
+        Promise.resolve().then(() => this.stopBackend({ pid, model, reason })),
+        timeout
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
+    const aliveAfter = await this._probeAlive({ pid, model, reason:`post-stop:${reason}` });
+    if (aliveAfter === true) {
+      const error = new Error(`runtime stop returned but pid ${pid} is still alive`);
+      error.code = 'RUNTIME_STOP_DID_NOT_TERMINATE';
+      error.pid = pid;
+      throw error;
+    }
+
+    this._recordBackendExit({ pid, model, kind:'stopped', reason });
+    return { attempted:true, stopped:true, alreadyDead:false };
+  }
+
+  async _cleanupStartedBackend({ pid, model, reason }) {
+    if (!pid) return { attempted: false, stopped: false, alreadyDead:false, error: null, code:null };
+    try {
+      const result = await this._stopBackendBounded({ pid, model, reason });
+      return { ...result, error:null, code:null };
+    } catch (err) {
+      return {
+        attempted: true,
+        stopped: false,
+        alreadyDead:false,
+        error: String(err?.message || err),
+        code: err && err.code || null
+      };
     }
   }
 
@@ -122,13 +191,30 @@ class RuntimeLifecycle {
     return { reason, drained };
   }
 
+  async _reconcileTrackedPid(reason) {
+    if (!this.pid || !this.isAliveBackend) return { reconciled:false, alive:null };
+    const pid = this.pid;
+    const model = this.model;
+    const alive = await this._probeAlive({ pid, model, reason });
+    if (alive !== false) return { reconciled:false, alive };
+    this._recordBackendExit({ pid, model, kind:'external-dead', reason });
+    this.pid = null;
+    this.model = null;
+    this.activeInference.clear();
+    return { reconciled:true, alive:false, pid, model };
+  }
+
   async ensureRunning(model, reason = 'ensure') {
     if (!model) throw new Error('model is required');
 
-    const previousModel = this.state === 'ready' && this.model !== model ? this.model : null;
     this.desiredModel = model;
-    if (this.state === 'ready' && this.model === model) return this.snapshot();
+    if (this.state === 'ready' && this.model === model) {
+      const reconciled = await this._reconcileTrackedPid('ensure-ready-probe');
+      if (!reconciled.reconciled) return this.snapshot();
+      this._transition('failed', 'external-kill-detected');
+    }
 
+    const previousModel = this.state === 'ready' && this.model !== model ? this.model : null;
     if (previousModel) {
       await this.drainActiveInference(`model-switch:${previousModel}->${model}`);
       await this.stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true });
@@ -136,9 +222,12 @@ class RuntimeLifecycle {
     if (this.state === 'starting') throw new Error('runtime start already in progress');
     if (this.state === 'stopping') throw new Error('runtime stop in progress');
     if (this.state === 'failed' && this.pid) {
-      const error = new Error(`runtime start blocked: unresolved backend pid ${this.pid}`);
-      error.code = 'RUNTIME_ORPHAN_UNRESOLVED';
-      throw error;
+      const reconciled = await this._reconcileTrackedPid('failed-state-pid-reconcile');
+      if (!reconciled.reconciled) {
+        const error = new Error(`runtime start blocked: unresolved backend pid ${this.pid}`);
+        error.code = 'RUNTIME_ORPHAN_UNRESOLVED';
+        throw error;
+      }
     }
     if (this.state === 'failed') this._transition('recovering', reason);
     if (this.state === 'recovering') this._transition('starting', reason);
@@ -193,10 +282,6 @@ class RuntimeLifecycle {
     if (this.state === 'stopped') return this.snapshot();
     if (!['ready', 'failed', 'starting'].includes(this.state)) throw new Error(`cannot stop from ${this.state}`);
 
-    // A direct stop is a material runtime transition just like model switching
-    // and recovery. Never erase tracked inference without invoking its abort
-    // callback first. If any abort fails, keep the backend/state intact and
-    // fail closed instead of pretending the work disappeared.
     try {
       await this.drainActiveInference(`stop-drain:${reason}`);
     } catch (err) {
@@ -206,7 +291,7 @@ class RuntimeLifecycle {
 
     this._transition('stopping', reason);
     try {
-      if (this.pid) await this.stopBackend({ pid: this.pid, model: this.model });
+      if (this.pid) await this._stopBackendBounded({ pid:this.pid, model:this.model, reason });
       this.pid = null;
       this.model = null;
       this.activeInference.clear();
@@ -275,7 +360,7 @@ class RuntimeLifecycle {
     this._transition('recovering', reason);
     if (this.pid) {
       try {
-        await this.stopBackend({ pid: this.pid, model: this.model, reason: `recovery-stop:${reason}` });
+        await this._stopBackendBounded({ pid:this.pid, model:this.model, reason:`recovery-stop:${reason}` });
       } catch (err) {
         this.lastError = `recovery stop failed: ${String(err?.message || err)}`;
         this._transition('failed', 'recovery-stop-failed');

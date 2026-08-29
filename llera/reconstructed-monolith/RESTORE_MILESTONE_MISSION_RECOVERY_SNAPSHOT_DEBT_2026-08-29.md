@@ -25,7 +25,7 @@ Validated behaviors:
 - Source commit: `011766e4a76a9f217560e87c0622debc8ce99140`
 - Regression commit: `7f1dbd671dee74fdae5966b41a77c2124f899063`
 - Source SHA-256: `b56bf482eb2b537d672f62fa12acb2a3e34b9d045f1934288494314ea2e61756`
-- Regression SHA-256: `3265e91b98943f7a7d909259dc693edaead4c2961eef0f0a2644b3cb22030e92`
+- Regression SHA-256: `3cf554ba1853d2052d55fc1af61a61f95f8ff8b53010721b516842593b18b3a8`
 - Exact historical V5.3.5/V5.4 source bytes were not recovered in this run.
 - Physical Windows/GPU validation is not claimed.
 - This is not a claim of full V5.4 parity.

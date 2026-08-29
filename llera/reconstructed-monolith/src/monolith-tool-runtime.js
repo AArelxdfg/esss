@@ -17,6 +17,10 @@ function createMonolithToolRuntime({
   webSearch = null,
   cyberSearch = null,
   fetchImpl,
+  commandAuthorizer = null,
+  allowPrivateNetwork = false,
+  dnsLookup,
+  maxRedirects,
   capabilityServices = {},
   guard,
   failureDoctrine,
@@ -33,7 +37,11 @@ function createMonolithToolRuntime({
     browserAdapter,
     webSearch,
     cyberSearch,
-    fetchImpl
+    fetchImpl,
+    commandAuthorizer,
+    allowPrivateNetwork,
+    dnsLookup,
+    maxRedirects
   });
 
   if (!computer || typeof computer.invoke !== 'function' || typeof computer.coverage !== 'function') {
@@ -71,6 +79,8 @@ function createMonolithToolRuntime({
       ...routed,
       workspaceMode: allowOutsideWorkspace ? 'full-pc-explicit' : 'workspace-scoped',
       physicalAdaptersPresent: Boolean(computerAdapter || browserAdapter),
+      shellAuthorizationPresent: typeof commandAuthorizer === 'function',
+      privateNetworkOptIn: Boolean(allowPrivateNetwork),
       physicalValidationClaimed: false
     };
   };

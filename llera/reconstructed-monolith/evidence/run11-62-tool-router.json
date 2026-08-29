@@ -1,0 +1,38 @@
+{
+  "product": "LLera MONOLITH OMEGA reconstructed",
+  "milestone": "62-tool execution router with specialized fail-closed routing",
+  "historical_contract": {
+    "declared_tools": 62,
+    "specialized_capability_tools": 14,
+    "generic_computer_routes": 48
+  },
+  "verification": {
+    "agent-tool-router-62.test.js": "PASS",
+    "full_surface_routable_when_dependencies_present": true,
+    "specialized_fallback_bypass_blocked": true,
+    "unknown_tools_fail_closed": true
+  },
+  "hashes": {
+    "src/agent-tool-router.js": "0a875cd55de9eec109dd9238ba54147ad65ae051a892394b2531e4681db07af7",
+    "test/agent-tool-router-62.test.js": "8591787acf6a899c484e7d22e6c10e8b884ca6efdd1159005ae2c5ad6c885e54",
+    "delta_zip": "a6ff8905e48f695a8e1d31f66c5fa574e24331ab7b5eeac8d271c4eed37f91a7"
+  },
+  "commits": {
+    "source": "df6932e31219070d5d931b9b0eeef864ff02dedf",
+    "regression": "1873b67606325b357a36b981971aee98df1bbc7d"
+  },
+  "historical_exact_recovery": {
+    "v5_3_5_source_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_source_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "github_exact_hash_matches": 0
+  },
+  "build_limit": "Full checkout failed in the build container because github.com DNS resolution was unavailable; no Windows x64 EXE or full source ZIP rebuild is claimed.",
+  "claims": {
+    "exact_v5_4": false,
+    "full_parity": false,
+    "physical_windows_gpu_validation": false,
+    "windows_grade_final": false,
+    "stable_json_modified": false,
+    "release_published": false
+  }
+}

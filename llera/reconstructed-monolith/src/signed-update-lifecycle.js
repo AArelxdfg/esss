@@ -45,6 +45,8 @@ class SignedUpdateLifecycle {
     this.publicKey = publicKey;
     this.fetchImpl = fetchImpl;
     this.onProgress = onProgress;
+    this._verifiedManifestObjects = new WeakMap();
+    this._verifiedReceipts = new Map();
     this.paths = {
       downloads: path.join(this.rootDir, 'downloads'), staging: path.join(this.rootDir, 'staging'),
       current: path.join(this.rootDir, 'current'), backup: path.join(this.rootDir, 'rollback'),
@@ -54,9 +56,13 @@ class SignedUpdateLifecycle {
   async init() {
     await Promise.all([fsp.mkdir(this.paths.downloads,{recursive:true}),fsp.mkdir(this.paths.staging,{recursive:true}),fsp.mkdir(this.paths.backup,{recursive:true})]);
   }
-  verifySignedManifest(manifest, signatureBase64) {
+  _manifestPayload(manifest) {
     if (!manifest || typeof manifest !== 'object') throw new Error('manifest required');
     const payload = Buffer.from(stableStringify(manifest));
+    return { payload, payloadSha256:sha256Buffer(payload) };
+  }
+  verifySignedManifest(manifest, signatureBase64) {
+    const { payload, payloadSha256 } = this._manifestPayload(manifest);
     const signature = Buffer.from(signatureBase64 || '', 'base64');
     if (!signature.length) throw new Error('manifest signature missing');
     if (!crypto.verify(null, payload, this.publicKey, signature)) throw new Error('manifest signature invalid');
@@ -67,9 +73,37 @@ class SignedUpdateLifecycle {
     let artifactUrl;
     try { artifactUrl = new URL(String(manifest.artifact.url || '')); } catch { throw new Error('artifact url invalid'); }
     if (artifactUrl.protocol !== 'https:') throw new Error('artifact url must use https');
-    return { verified: true, payloadSha256: sha256Buffer(payload) };
+    const receiptId = crypto.randomUUID();
+    const receipt = Object.freeze({
+      verified:true,
+      receiptId,
+      payloadSha256,
+      version:String(manifest.version),
+      artifactSha256:String(manifest.artifact.sha256).toLowerCase(),
+      artifactSize:manifest.artifact.size,
+      artifactUrl:artifactUrl.toString()
+    });
+    this._verifiedManifestObjects.set(manifest,payloadSha256);
+    this._verifiedReceipts.set(receiptId,payloadSha256);
+    return receipt;
   }
-  async downloadArtifact(manifest, { resume = true } = {}) {
+  _requireVerifiedManifest(manifest, verificationReceipt = null) {
+    const { payloadSha256 } = this._manifestPayload(manifest);
+    if (verificationReceipt && typeof verificationReceipt === 'object') {
+      const receiptId=String(verificationReceipt.receiptId || '');
+      const registered=this._verifiedReceipts.get(receiptId);
+      if (!receiptId || registered !== payloadSha256 || verificationReceipt.payloadSha256 !== payloadSha256) {
+        throw new Error('manifest verification receipt mismatch');
+      }
+      return { payloadSha256, receiptId };
+    }
+    if (this._verifiedManifestObjects.get(manifest) !== payloadSha256) {
+      throw new Error('manifest must be signature-verified before update lifecycle use');
+    }
+    return { payloadSha256, receiptId:null };
+  }
+  async downloadArtifact(manifest, { resume = true, verificationReceipt = null } = {}) {
+    this._requireVerifiedManifest(manifest,verificationReceipt);
     await this.init();
     const artifact = manifest.artifact;
     const version = safeVersionSegment(manifest.version);
@@ -84,7 +118,7 @@ class SignedUpdateLifecycle {
     const response = await this.fetchImpl(artifact.url,{headers});
     if (!response || !response.ok) throw new Error(`download failed: ${response && response.status}`);
     if (offset) {
-      if (response.status !== 206) { await fsp.rm(partPath,{force:true}); return this.downloadArtifact(manifest,{resume:false}); }
+      if (response.status !== 206) { await fsp.rm(partPath,{force:true}); return this.downloadArtifact(manifest,{resume:false,verificationReceipt}); }
       const range = parseContentRange(headerValue(response.headers,'content-range'));
       if (!range || range.start !== offset || range.end < range.start || (range.total != null && range.total !== artifact.size)) {
         await fsp.rm(partPath,{force:true});
@@ -109,16 +143,18 @@ class SignedUpdateLifecycle {
     this.onProgress({phase:'verified',received:st.size,total:artifact.size,percent:100});
     return {path:finalPath,sha256:digest,size:st.size};
   }
-  async stageArtifact(manifest, downloadedPath) {
+  async stageArtifact(manifest, downloadedPath, { verificationReceipt = null } = {}) {
+    this._requireVerifiedManifest(manifest,verificationReceipt);
     const version = safeVersionSegment(manifest.version);
     const stageDir = path.join(this.paths.staging,version);
     await fsp.rm(stageDir,{recursive:true,force:true}); await fsp.mkdir(stageDir,{recursive:true});
     const staged = path.join(stageDir,'LLera-update.bin'); await fsp.copyFile(downloadedPath,staged);
     const digest = await sha256File(staged);
     if (digest.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) throw new Error('staged artifact integrity mismatch');
-    await this._writeJournal({state:'staged',version,staged,sha256:digest}); return staged;
+    await this._writeJournal({state:'staged',version,staged,sha256:digest,manifestPayloadSha256:this._manifestPayload(manifest).payloadSha256}); return staged;
   }
-  async activateStaged(manifest, stagedPath) {
+  async activateStaged(manifest, stagedPath, { verificationReceipt = null } = {}) {
+    this._requireVerifiedManifest(manifest,verificationReceipt);
     await this.init(); const version = safeVersionSegment(manifest.version);
     const currentFile=path.join(this.paths.current,'LLera.bin'), backupFile=path.join(this.paths.backup,'LLera.previous.bin');
     await fsp.mkdir(this.paths.current,{recursive:true}); await fsp.mkdir(this.paths.backup,{recursive:true});
@@ -136,7 +172,8 @@ class SignedUpdateLifecycle {
       state:'activated',version,currentFile,
       backupFile:hadCurrent?backupFile:null,
       backupSha256:hadCurrent?backupSha256:null,
-      sha256:digest
+      sha256:digest,
+      manifestPayloadSha256:this._manifestPayload(manifest).payloadSha256
     });
     this.onProgress({phase:'activated',percent:100,version}); return {currentFile,backupAvailable:hadCurrent,backupSha256};
   }

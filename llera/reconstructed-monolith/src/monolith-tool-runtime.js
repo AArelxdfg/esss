@@ -18,6 +18,7 @@ function createMonolithToolRuntime({
   cyberSearch = null,
   fetchImpl,
   commandAuthorizer = null,
+  actionAuthorizer = null,
   allowPrivateNetwork = false,
   dnsLookup,
   maxRedirects,
@@ -63,7 +64,8 @@ function createMonolithToolRuntime({
     capabilityBroker: capabilities,
     guard,
     failureDoctrine,
-    summarizeResult
+    summarizeResult,
+    actionAuthorizer
   });
 
   const missionTools = new MissionToolCoordinator({
@@ -80,6 +82,7 @@ function createMonolithToolRuntime({
       workspaceMode: allowOutsideWorkspace ? 'full-pc-explicit' : 'workspace-scoped',
       physicalAdaptersPresent: Boolean(computerAdapter || browserAdapter),
       shellAuthorizationPresent: typeof commandAuthorizer === 'function',
+      sensitiveActionAuthorizationPresent: typeof actionAuthorizer === 'function',
       privateNetworkOptIn: Boolean(allowPrivateNetwork),
       physicalValidationClaimed: false
     };

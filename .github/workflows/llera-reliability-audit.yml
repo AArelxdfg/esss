@@ -36,6 +36,9 @@ jobs:
             test/tool-surface.test.js
             test/runtime-pid-guard-edge-cases.test.js
             test/runtime-lifecycle.test.js
+            test/runtime-failed-start-orphan-guard.test.js
+            test/runtime-recovery-stop-fail-closed.test.js
+            test/runtime-recovery-inference-drain.test.js
             test/runtime-direct-stop-inference-drain.test.js
             test/outcome-memory.test.js
             test/verified-learning-receipt-boundary.test.js

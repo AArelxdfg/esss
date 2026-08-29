@@ -88,6 +88,8 @@ Module._load=originalLoad;
   assert.strictEqual(coverage.declaredCount,62);
   assert.strictEqual(coverage.workspaceMode,'workspace-scoped');
   assert.strictEqual(coverage.physicalValidationClaimed,false);
+  assert.strictEqual(coverage.shellAuthorizationPresent,false);
+  assert.strictEqual(coverage.privateNetworkOptIn,false);
   assert.strictEqual(coverage.fullExecutionSurfaceAvailable,false);
   assert(coverage.unavailable.includes('run_command'));
   assert(coverage.unavailable.includes('browser_open'));
@@ -115,9 +117,14 @@ Module._load=originalLoad;
   assert.match(result.error,/capability unavailable/);
   assert(!calls.some(x=>x[0]==='computer'&&x[1]==='browser_open'));
 
-  const customComputer={coverage:()=>({available:['run_command','start_process']}),invoke:async(tool)=>({ok:true,tool})};
-  const fullPc=createMonolithToolRuntime({missionEngine,allowOutsideWorkspace:true,computerExecutor:customComputer,capabilityBroker:new FakeCapabilityBroker()});
+  const authorizer=async()=>true;
+  const fullPc=createMonolithToolRuntime({missionEngine,allowOutsideWorkspace:true,commandAuthorizer:authorizer,allowPrivateNetwork:true,capabilityBroker:new FakeCapabilityBroker()});
   assert.strictEqual(fullPc.coverage().workspaceMode,'full-pc-explicit');
+  assert.strictEqual(fullPc.coverage().shellAuthorizationPresent,true);
+  assert.strictEqual(fullPc.coverage().privateNetworkOptIn,true);
+  assert.strictEqual(fullPc.computerExecutor.options.allowOutsideWorkspace,true);
+  assert.strictEqual(fullPc.computerExecutor.options.commandAuthorizer,authorizer);
+  assert.strictEqual(fullPc.computerExecutor.options.allowPrivateNetwork,true);
 
   console.log('MONOLITH canonical tool runtime integration PASS',{
     genericMissionPathToComputerExecutor:true,
@@ -126,6 +133,8 @@ Module._load=originalLoad;
     unavailablePhysicalAdapterFailsClosed:true,
     workspaceScopedShellUnavailable:true,
     fullPcRequiresExplicitOptIn:true,
+    shellAuthorizerForwarded:true,
+    privateNetworkOptInForwarded:true,
     physicalValidationClaimed:false
   });
 })().catch(error=>{console.error(error.stack||error);process.exit(1);});

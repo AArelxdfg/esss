@@ -168,10 +168,6 @@ class RuntimeLifecycle {
       const baseError = String(err?.message || err);
       this.lastError = cleanup.error ? `${baseError}; cleanup failed: ${cleanup.error}` : baseError;
 
-      // If cleanup fails, preserve the backend identity instead of pretending it
-      // disappeared. This keeps the single-runtime invariant fail-closed: a
-      // subsequent ensureRunning() is blocked until stop()/recover() can resolve
-      // the known orphan PID.
       if (cleanup.error && cleanupPid) {
         this.pid = cleanupPid;
         this.model = model;
@@ -196,6 +192,18 @@ class RuntimeLifecycle {
   async stop(reason = 'stop', { preserveDesiredModel = false } = {}) {
     if (this.state === 'stopped') return this.snapshot();
     if (!['ready', 'failed', 'starting'].includes(this.state)) throw new Error(`cannot stop from ${this.state}`);
+
+    // A direct stop is a material runtime transition just like model switching
+    // and recovery. Never erase tracked inference without invoking its abort
+    // callback first. If any abort fails, keep the backend/state intact and
+    // fail closed instead of pretending the work disappeared.
+    try {
+      await this.drainActiveInference(`stop-drain:${reason}`);
+    } catch (err) {
+      this.lastError = `stop inference drain failed: ${String(err?.message || err)}`;
+      throw err;
+    }
+
     this._transition('stopping', reason);
     try {
       if (this.pid) await this.stopBackend({ pid: this.pid, model: this.model });
@@ -240,9 +248,6 @@ class RuntimeLifecycle {
         this.activeInference.delete(task.id);
         aborted.push(task.id);
       } catch (err) {
-        // A broken abort callback must not prevent later low-priority inference
-        // from being preempted. Keep the failed victim registered so the caller
-        // can reconcile/retry it explicitly instead of silently losing state.
         failures.push({ id: task.id, error: String(err?.message || err) });
       }
     }
@@ -260,11 +265,6 @@ class RuntimeLifecycle {
     const desiredModel = this.desiredModel || this.model;
     if (!desiredModel) throw new Error('no desired model to recover');
 
-    // Recovery must not silently discard tracked inference. Drain every active
-    // task before changing runtime state or stopping the backend. If any abort
-    // fails, leave the runtime/backend identity intact and fail closed so the
-    // caller can reconcile the unresolved inference instead of launching a new
-    // generation while work may still be executing against the old process.
     try {
       await this.drainActiveInference(`recovery-drain:${reason}`);
     } catch (err) {

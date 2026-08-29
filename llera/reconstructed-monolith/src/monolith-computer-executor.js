@@ -13,6 +13,10 @@ const PORTABLE_TOOLS = new Set([
   'read_text_range','file_stat','path_exists','hash_file','web_get','system_info'
 ]);
 
+// Generic shell commands cannot be proven workspace-confined by cwd alone.
+// In workspace-scoped mode they are fail-closed; full-PC mode must be explicit.
+const WORKSPACE_RESTRICTED_SHELL_TOOLS = new Set(['run_command','start_process']);
+
 const COMPUTER_ADAPTER_METHODS = {
   list_apps:'listApps', launch_app:'launchApp', focus_app:'focusApp', ui_snapshot:'uiSnapshot', ui_invoke:'uiInvoke',
   close_app:'closeApp', desktop_screenshot:'desktopScreenshot', mouse_click:'mouseClick', keyboard_type:'keyboardType',
@@ -72,6 +76,13 @@ class MonolithComputerExecutor {
 
   coverage() {
     const available = new Set(PORTABLE_TOOLS);
+    const blockedByWorkspacePolicy = [];
+    if (!this.allowOutsideWorkspace) {
+      for (const tool of WORKSPACE_RESTRICTED_SHELL_TOOLS) {
+        available.delete(tool);
+        blockedByWorkspacePolicy.push(tool);
+      }
+    }
     for (const [tool, method] of Object.entries(COMPUTER_ADAPTER_METHODS)) {
       if (this.computerAdapter && typeof this.computerAdapter[method] === 'function') available.add(tool);
     }
@@ -82,7 +93,8 @@ class MonolithComputerExecutor {
     if (typeof this.cyberSearch === 'function') available.add('search_cyber_core');
     return {
       available:[...available].sort(),
-      unavailable:[],
+      unavailable:[...blockedByWorkspacePolicy].sort(),
+      blockedByWorkspacePolicy:[...blockedByWorkspacePolicy].sort(),
       portable:[...PORTABLE_TOOLS].sort(),
       adapterBacked:[...available].filter(t => !PORTABLE_TOOLS.has(t)).sort(),
       availableCount:available.size
@@ -376,4 +388,4 @@ class MonolithComputerExecutor {
   }
 }
 
-module.exports = { PORTABLE_TOOLS, COMPUTER_ADAPTER_METHODS, BROWSER_ADAPTER_METHODS, MonolithComputerExecutor };
+module.exports = { PORTABLE_TOOLS, WORKSPACE_RESTRICTED_SHELL_TOOLS, COMPUTER_ADAPTER_METHODS, BROWSER_ADAPTER_METHODS, MonolithComputerExecutor };

@@ -1,0 +1,48 @@
+name: LLera Reliability Audit
+
+on:
+  push:
+    branches:
+      - llera-reliability-audit-2026-08-29
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  category-1-node-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: llera/reconstructed-monolith
+    steps:
+      - name: Checkout exact audit commit
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run Category 1 reliability regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests=(
+            test/dual-verifier-independence.test.js
+            test/dual-verifier-evidence-coverage.test.js
+            test/evidence-verifier.test.js
+            test/evidence-ledger-persistence.test.js
+            test/anti-loop-semantic-path.test.js
+            test/tool-surface.test.js
+            test/runtime-pid-guard-edge-cases.test.js
+            test/runtime-lifecycle.test.js
+            test/runtime-direct-stop-inference-drain.test.js
+            test/outcome-memory.test.js
+            test/verified-learning-receipt-boundary.test.js
+            test/agent-tool-router-62.test.js
+            test/monolith-computer-executor.test.js
+          )
+          for test_file in "${tests[@]}"; do
+            echo "===== RUN $test_file ====="
+            node "$test_file"
+          done

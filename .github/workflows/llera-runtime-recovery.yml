@@ -30,6 +30,7 @@ jobs:
           - runtime-recovery-stop-fail-closed
           - runtime-recovery-inference-drain
           - runtime-direct-stop-inference-drain
+          - runtime-inference-admission-drain-race
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -22,6 +22,8 @@ const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('../src/m
   };
 
   const broker = new MonolithCapabilityBroker({
+    filesystem: service('filesystem'),
+    processes: service('processes'),
     vision: service('vision'),
     evidence: service('evidence'),
     updater: service('updater'),
@@ -34,12 +36,38 @@ const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('../src/m
     diagnostics: service('diagnostics')
   });
 
-  assert.strictEqual(Object.keys(CAPABILITY_TOOL_BINDINGS).length, 14);
+  assert.strictEqual(Object.keys(CAPABILITY_TOOL_BINDINGS).length, 33);
 
   const coverage = broker.coverage();
-  assert.strictEqual(coverage.supportedCount, 14);
-  assert.strictEqual(coverage.availableCount, 14);
+  assert.strictEqual(coverage.supportedCount, 33);
+  assert.strictEqual(coverage.availableCount, 33);
   assert.strictEqual(coverage.unavailableCount, 0);
+
+  const fsRead = await broker.invoke('read_file', { path:'C:/workspace/a.txt' }, { missionId:'m1' });
+  assert.strictEqual(fsRead.name, 'filesystem');
+  assert.strictEqual(fsRead.method, 'readFile');
+  assert.strictEqual(fsRead.args[0].path, 'C:/workspace/a.txt');
+  assert.strictEqual(fsRead.args[0].context.missionId, 'm1');
+
+  const fsWrite = await broker.invoke('write_file', { path:'C:/workspace/a.txt', content:'ok' }, { stepId:'s1' });
+  assert.strictEqual(fsWrite.method, 'writeFile');
+  assert.strictEqual(fsWrite.args[0].context.stepId, 's1');
+
+  const process = await broker.invoke('run_command', { command:'node --version' }, { missionId:'m1' });
+  assert.strictEqual(process.name, 'processes');
+  assert.strictEqual(process.method, 'runCommand');
+
+  await broker.invoke('start_process', { command:'worker.exe' });
+  await broker.invoke('process_status', { pid:42 });
+  await broker.invoke('process_stop', { pid:42 });
+  await broker.invoke('list_processes', {});
+  await broker.invoke('read_process_output', { pid:42 });
+  await broker.invoke('list_dir', { path:'C:/workspace' });
+  await broker.invoke('search_files', { path:'C:/workspace', query:'MONOLITH' });
+  await broker.invoke('read_text_range', { path:'C:/workspace/a.txt', start:1, end:3 });
+  await broker.invoke('file_stat', { path:'C:/workspace/a.txt' });
+  await broker.invoke('path_exists', { path:'C:/workspace/a.txt' });
+  await broker.invoke('hash_file', { path:'C:/workspace/a.txt', algorithm:'sha256' });
 
   const outcome = await broker.invoke('outcome_search', {
     query:'runtime crash',
@@ -86,6 +114,12 @@ const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('../src/m
   const partialCoverage = partial.coverage();
   assert.strictEqual(partialCoverage.availableCount, 2);
   assert(partialCoverage.unavailable.includes('snapshot_restore'));
+  assert(partialCoverage.unavailable.includes('read_file'));
+
+  await assert.rejects(
+    () => partial.invoke('read_file', { path:'x' }),
+    /filesystem capability unavailable/
+  );
 
   await assert.rejects(
     () => partial.invoke('snapshot_restore', { missionId:'m1' }),
@@ -97,10 +131,12 @@ const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('../src/m
     /unsupported restored capability tool/
   );
 
-  console.log('MONOLITH capability broker restored execution coverage PASS', {
-    declaredCapabilityExecutors:14,
-    priorCapabilityExecutors:6,
-    newlyWiredExecutors:8,
+  console.log('MONOLITH capability broker expanded execution coverage PASS', {
+    declaredCapabilityExecutors:33,
+    priorCapabilityExecutors:14,
+    newlyWiredExecutors:19,
+    historicalFilesystemExecutors:13,
+    historicalProcessExecutors:6,
     dependencyCoverageObservable:true,
     missingDependencyFailsClosed:true
   });

@@ -8,6 +8,7 @@ on:
       - 'llera/reconstructed-monolith/src/agent-tool-router.js'
       - 'llera/reconstructed-monolith/src/tool-surface.js'
       - 'llera/reconstructed-monolith/test/monolith-capability-broker-coverage.test.js'
+      - 'llera/reconstructed-monolith/test/monolith-capability-broker-62-executable.test.js'
       - 'llera/reconstructed-monolith/test/agent-tool-router-62.test.js'
       - 'llera/reconstructed-monolith/test/tool-surface-62.test.js'
       - '.github/workflows/llera-capability-restore.yml'
@@ -36,3 +37,5 @@ jobs:
         run: node llera/reconstructed-monolith/test/agent-tool-router-62.test.js
       - name: Executable capability broker coverage
         run: node llera/reconstructed-monolith/test/monolith-capability-broker-coverage.test.js
+      - name: Full 62-tool executable parity
+        run: node llera/reconstructed-monolith/test/monolith-capability-broker-62-executable.test.js

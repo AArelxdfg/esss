@@ -1,15 +1,13 @@
 'use strict';
 
-const { RESTORED_MONOLITH_TOOLS, ToolExecutionGuard } = require('./tool-surface');
+const { RESTORED_MONOLITH_TOOLS, MATERIAL_TOOLS, ToolExecutionGuard } = require('./tool-surface');
 const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('./monolith-capability-broker');
 const { FailureDoctrine } = require('./failure-doctrine');
 
 const SPECIAL_CAPABILITIES = new Set(Object.keys(CAPABILITY_TOOL_BINDINGS));
-const SENSITIVE_ACTION_TOOLS = new Set([
-  'move_path','delete_path','process_stop','launch_app','ui_invoke','close_app',
-  'mouse_click','keyboard_type','key_press','browser_click','browser_type','browser_download',
-  'clipboard_write','window_move_resize','snapshot_restore'
-]);
+// Backwards-compatible export name, but the authorization boundary is now exactly
+// the material-action boundary declared by tool-surface.js.
+const SENSITIVE_ACTION_TOOLS = new Set(MATERIAL_TOOLS);
 
 class GuardedMonolithToolBroker {
   constructor({ historicalExecutor, capabilityBroker, guard = new ToolExecutionGuard(), failureDoctrine = new FailureDoctrine(), summarizeResult, actionAuthorizer = null } = {}) {
@@ -40,6 +38,9 @@ class GuardedMonolithToolBroker {
       specializedCapabilityCount: SPECIAL_CAPABILITIES.size,
       sensitiveActionCount: SENSITIVE_ACTION_TOOLS.size,
       sensitiveActionAuthorizationPresent: typeof this.actionAuthorizer === 'function',
+      materialActionCount: MATERIAL_TOOLS.size,
+      materialActionAuthorizationPresent: typeof this.actionAuthorizer === 'function',
+      materialActionAuthorizationCoverageComplete: SENSITIVE_ACTION_TOOLS.size === MATERIAL_TOOLS.size && [...MATERIAL_TOOLS].every(tool => SENSITIVE_ACTION_TOOLS.has(tool)),
       capabilityCoverage,
       verificationDebt: this.guard.verificationDebt ? { ...this.guard.verificationDebt } : null,
       canFinalize: this.guard.canFinalize(),
@@ -60,7 +61,7 @@ class GuardedMonolithToolBroker {
         args:{...args},
         context:{...context},
         material:Boolean(decision && decision.material),
-        category:'sensitive-action'
+        category:'material-action'
       });
       const allow = result === true || Boolean(result && result.allow === true);
       return allow

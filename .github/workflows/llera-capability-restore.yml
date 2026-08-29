@@ -7,10 +7,13 @@ on:
       - 'llera/reconstructed-monolith/src/monolith-capability-broker.js'
       - 'llera/reconstructed-monolith/src/agent-tool-router.js'
       - 'llera/reconstructed-monolith/src/tool-surface.js'
+      - 'llera/reconstructed-monolith/src/guarded-tool-broker.js'
       - 'llera/reconstructed-monolith/test/monolith-capability-broker-coverage.test.js'
       - 'llera/reconstructed-monolith/test/monolith-capability-broker-62-executable.test.js'
       - 'llera/reconstructed-monolith/test/agent-tool-router-62.test.js'
       - 'llera/reconstructed-monolith/test/tool-surface-62.test.js'
+      - 'llera/reconstructed-monolith/test/target-bound-verification-debt.test.js'
+      - 'llera/reconstructed-monolith/test/independent-verification-debt.test.js'
       - '.github/workflows/llera-capability-restore.yml'
   workflow_dispatch:
 
@@ -31,6 +34,7 @@ jobs:
           node --check llera/reconstructed-monolith/src/monolith-capability-broker.js
           node --check llera/reconstructed-monolith/src/agent-tool-router.js
           node --check llera/reconstructed-monolith/src/tool-surface.js
+          node --check llera/reconstructed-monolith/src/guarded-tool-broker.js
       - name: Historical 62-tool declaration
         run: node llera/reconstructed-monolith/test/tool-surface-62.test.js
       - name: 62-tool router
@@ -39,3 +43,7 @@ jobs:
         run: node llera/reconstructed-monolith/test/monolith-capability-broker-coverage.test.js
       - name: Full 62-tool executable parity
         run: node llera/reconstructed-monolith/test/monolith-capability-broker-62-executable.test.js
+      - name: Target-bound verification debt
+        run: node llera/reconstructed-monolith/test/target-bound-verification-debt.test.js
+      - name: Independent verification debt
+        run: node llera/reconstructed-monolith/test/independent-verification-debt.test.js

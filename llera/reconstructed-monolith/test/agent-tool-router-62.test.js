@@ -53,6 +53,7 @@ Module._load = originalLoad;
 
   const specializedCalls = [];
   const genericCalls = [];
+  const genericTools = restored.filter(t => !SPECIALIZED_TOOLS.has(t));
   const capabilityBroker = {
     coverage() {
       return {
@@ -68,6 +69,14 @@ Module._load = originalLoad;
     }
   };
   const computerExecutor = {
+    coverage() {
+      return {
+        available:[...genericTools],
+        unavailable:[],
+        availableCount:genericTools.length,
+        unavailableCount:0
+      };
+    },
     async invoke(tool, args, context) {
       genericCalls.push({tool,args,context});
       return { route:'computer', tool, args, context };
@@ -87,7 +96,7 @@ Module._load = originalLoad;
   for (const tool of Object.keys(capabilityBindings)) {
     assert.strictEqual(router.routeFor(tool), 'specialized');
   }
-  for (const tool of restored.filter(t => !SPECIALIZED_TOOLS.has(t))) {
+  for (const tool of genericTools) {
     assert.strictEqual(router.routeFor(tool), 'computer');
   }
 
@@ -112,6 +121,20 @@ Module._load = originalLoad;
   );
   assert.strictEqual(genericCalls.length, 1, 'generic executor must not bypass specialized capability gate');
 
+  const partialComputerExecutor = {
+    coverage() { return {available:['read_file'],unavailable:genericTools.filter(t=>t!=='read_file')}; },
+    async invoke(tool,args,context) { return {route:'computer',tool,args,context}; }
+  };
+  const genericFailClosed = new MonolithAgentToolRouter({capabilityBroker,computerExecutor:partialComputerExecutor});
+  const partialCoverage = genericFailClosed.coverage();
+  assert.strictEqual(partialCoverage.fullExecutionSurfaceAvailable,false);
+  assert.strictEqual(partialCoverage.routes.read_file,'computer');
+  assert.strictEqual(partialCoverage.routes.write_file,'unavailable-computer');
+  await assert.rejects(
+    () => genericFailClosed.invoke('write_file',{path:'x',content:'x'}),
+    /computer MONOLITH capability unavailable/
+  );
+
   await assert.rejects(
     () => router.invoke('not_a_real_tool', {}),
     /unknown MONOLITH tool/
@@ -123,6 +146,8 @@ Module._load = originalLoad;
     computerExecutorRoutes:48,
     fullSurfaceRoutableWhenDependenciesPresent:true,
     specializedFallbackBypassBlocked:true,
+    genericAvailabilityMustBeDeclared:true,
+    genericUnavailableFailsClosed:true,
     unknownToolsFailClosed:true
   });
 })().catch(error => {

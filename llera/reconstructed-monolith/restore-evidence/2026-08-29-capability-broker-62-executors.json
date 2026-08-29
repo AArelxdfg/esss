@@ -1,0 +1,37 @@
+{
+  "milestone": "MONOLITH 62-tool executable capability broker parity",
+  "date": "2026-08-29",
+  "baseline": "reconstructed MONOLITH source; Recovery/Native demo shells excluded",
+  "source_commit": "5facadcb3a0fcf2b1a9262208b3bb2a11a4f21f2",
+  "source_blob_sha1": "14b5483aeb4c80a6dd16f2fbf3198f3e57178fcc",
+  "coverage_test_commit": "8d6cd8327afacf8c3d17ffdb6ee341790bf4b103",
+  "standalone_test_commit": "4843f0dcebd7c62397e9703c76c109f25fbf8a53",
+  "standalone_test_blob_sha1": "90debe2e8ee7fd4b24f4db1b5d0ca85a249d7d0b",
+  "ci_gate_commit": "ca45a8f2de4fcf30d131a872a78563b00573191b",
+  "prior_executable_bindings": 33,
+  "current_executable_bindings": 62,
+  "new_bindings": 29,
+  "new_service_families": ["desktop", "browser", "web", "cyberCore", "system", "clipboard"],
+  "contract": {
+    "all_declared_tools_have_broker_bindings": true,
+    "missing_dependencies_fail_closed": true,
+    "mission_context_forwarded": true
+  },
+  "ci": {
+    "run_id": 33274171490,
+    "conclusion": "failure",
+    "runner_id": 0,
+    "steps": [],
+    "interpretation": "runner provisioning failure before test execution; not a regression-test failure and not a PASS"
+  },
+  "exact_v535_source_recovered": false,
+  "exact_v540_source_recovered": false,
+  "claims": {
+    "exact_v54": false,
+    "full_product_parity": false,
+    "physical_windows_gpu_validation": false,
+    "windows_grade_final": false
+  },
+  "stable_json_modified": false,
+  "release_published": false
+}

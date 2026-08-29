@@ -56,6 +56,28 @@ function normalizePath(value) {
   return value.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '').toLowerCase();
 }
 
+function semanticFingerprintArgs(args = {}) {
+  const out = stable(args || {});
+  const pathKeys = ['path','file','filePath','targetPath','destination','source','src','dst','from','to'];
+  for (const key of pathKeys) {
+    if (Object.prototype.hasOwnProperty.call(out, key)) {
+      const normalized = normalizePath(out[key]);
+      if (normalized) out[key] = normalized;
+    }
+  }
+  const idKeys = ['pid','processId','windowId','hwnd','tabId','pageId','browserId'];
+  for (const key of idKeys) {
+    if (Object.prototype.hasOwnProperty.call(out, key) && out[key] !== null && out[key] !== undefined) {
+      out[key] = String(out[key]);
+    }
+  }
+  return out;
+}
+
+function semanticFingerprint(tool, args = {}) {
+  return crypto.createHash('sha256').update(JSON.stringify([tool, semanticFingerprintArgs(args)])).digest('hex');
+}
+
 function verificationScope(tool, args = {}) {
   args = args || {};
   const pathValue = args.path || args.file || args.filePath || args.targetPath || args.destination || args.source;
@@ -118,10 +140,12 @@ class ToolExecutionGuard {
       const cls = this.classify(raw.tool);
       const rawArgs = raw.args || raw.arguments || {};
       const fp = raw.fingerprint || raw.argumentsHash || fingerprint(raw.tool, rawArgs);
+      const semanticFp = raw.semanticFingerprint || semanticFingerprint(raw.tool, rawArgs);
       const entry = {
         ...raw,
         args: rawArgs,
         fingerprint: fp,
+        semanticFingerprint: semanticFp,
         ok: persistedOk(raw),
         material: typeof raw.material === 'boolean' ? raw.material : cls.material,
         observation: typeof raw.observation === 'boolean' ? raw.observation : (Boolean(raw.verification) || cls.observation),
@@ -146,21 +170,22 @@ class ToolExecutionGuard {
   decide(tool, args = {}) {
     if (!RESTORED_MONOLITH_TOOLS.includes(tool)) return {allow:false, reason:'unknown_tool'};
     const fp = fingerprint(tool, args);
+    const semanticFp = semanticFingerprint(tool, args);
     const cls = this.classify(tool);
     const scope = verificationScope(tool, args);
-    const same = this.history.filter(x => x.fingerprint === fp);
+    const same = this.history.filter(x => (x.semanticFingerprint || semanticFingerprint(x.tool, x.args || {})) === semanticFp);
     const failures = same.filter(x => x.ok === false).length;
-    if (failures >= this.maxSameFailure) return {allow:false, reason:'anti_loop_same_failure', fingerprint:fp};
+    if (failures >= this.maxSameFailure) return {allow:false, reason:'anti_loop_same_failure', fingerprint:fp, semanticFingerprint:semanticFp};
     const last = same.at(-1);
-    if (last && last.ok === true && !cls.observation) return {allow:false, reason:'anti_loop_recent_success', fingerprint:fp};
-    if (this.verificationDebt && cls.material) return {allow:false, reason:'verification_debt_open', fingerprint:fp};
-    return {allow:true, fingerprint:fp, scope, ...cls};
+    if (last && last.ok === true && !cls.observation) return {allow:false, reason:'anti_loop_recent_success', fingerprint:fp, semanticFingerprint:semanticFp};
+    if (this.verificationDebt && cls.material) return {allow:false, reason:'verification_debt_open', fingerprint:fp, semanticFingerprint:semanticFp};
+    return {allow:true, fingerprint:fp, semanticFingerprint:semanticFp, scope, ...cls};
   }
 
   record(tool, args, {ok, resultSummary='', at = new Date().toISOString(), verifiesFingerprint = null, verification = false} = {}) {
     const decision = this.decide(tool, args);
     if (!decision.allow) return {...decision, recorded:false};
-    const entry = { tool, args:stable(args), fingerprint:decision.fingerprint, ok:Boolean(ok), material:decision.material, observation:decision.observation, scope:decision.scope || null, resultSummary, at, verification:Boolean(verification), verifiesFingerprint:verifiesFingerprint || null };
+    const entry = { tool, args:stable(args), fingerprint:decision.fingerprint, semanticFingerprint:decision.semanticFingerprint, ok:Boolean(ok), material:decision.material, observation:decision.observation, scope:decision.scope || null, resultSummary, at, verification:Boolean(verification), verifiesFingerprint:verifiesFingerprint || null };
     this.history.push(entry);
     if (entry.material && entry.ok) this.verificationDebt = {fingerprint: entry.fingerprint, tool, scope: entry.scope || null, at};
     if (observationVerifiesDebt(entry, this.verificationDebt)) {
@@ -176,4 +201,4 @@ class ToolExecutionGuard {
   canFinalize() { return !this.verificationDebt; }
 }
 
-module.exports = { HISTORICAL_V2_TOOLS, RESTORED_MONOLITH_TOOLS, MATERIAL_TOOLS, OBSERVATION_TOOLS, fingerprint, verificationScope, observationVerifiesDebt, ToolExecutionGuard };
+module.exports = { HISTORICAL_V2_TOOLS, RESTORED_MONOLITH_TOOLS, MATERIAL_TOOLS, OBSERVATION_TOOLS, fingerprint, semanticFingerprint, verificationScope, observationVerifiesDebt, ToolExecutionGuard };

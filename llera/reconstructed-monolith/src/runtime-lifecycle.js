@@ -259,6 +259,19 @@ class RuntimeLifecycle {
     if (!['ready', 'failed'].includes(this.state)) throw new Error(`cannot recover from ${this.state}`);
     const desiredModel = this.desiredModel || this.model;
     if (!desiredModel) throw new Error('no desired model to recover');
+
+    // Recovery must not silently discard tracked inference. Drain every active
+    // task before changing runtime state or stopping the backend. If any abort
+    // fails, leave the runtime/backend identity intact and fail closed so the
+    // caller can reconcile the unresolved inference instead of launching a new
+    // generation while work may still be executing against the old process.
+    try {
+      await this.drainActiveInference(`recovery-drain:${reason}`);
+    } catch (err) {
+      this.lastError = `recovery inference drain failed: ${String(err?.message || err)}`;
+      throw err;
+    }
+
     this._transition('recovering', reason);
     if (this.pid) {
       try {

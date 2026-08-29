@@ -1,0 +1,35 @@
+{
+  "kind": "runtime-recovery-ci-gate",
+  "date": "2026-08-29",
+  "baseline_commit_before_gate": "ca68a78d6eefa16f77b2e79d14c4676f8169aa6c",
+  "gate_commit": "f0257781bbb48301809b78bb233030ee3b779ec3",
+  "workflow": ".github/workflows/llera-runtime-recovery.yml",
+  "tests_declared": [
+    "runtime-lifecycle",
+    "runtime-inference-coordinator",
+    "runtime-switch-drain",
+    "runtime-switch-rollback",
+    "runtime-failed-start-orphan-guard",
+    "runtime-recovery-stop-fail-closed",
+    "runtime-recovery-inference-drain",
+    "runtime-direct-stop-inference-drain"
+  ],
+  "github_actions_run_id": 33251113540,
+  "observed": {
+    "jobs_created": 8,
+    "jobs_completed": 8,
+    "jobs_with_steps": 0,
+    "runner_id": 0,
+    "runner_name": "",
+    "conclusion": "failure-before-runner-execution"
+  },
+  "claim": "No runtime regression PASS is claimed from this GitHub Actions run. The jobs never acquired a runner and executed zero steps, so this is infrastructure-blocked evidence, not a code-test failure and not a test PASS.",
+  "exact_source_recovery": {
+    "v5_3_5_source_sha256_expected": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_source_sha256_expected": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "exact_source_bytes_found_this_run": false
+  },
+  "release_promotion": false,
+  "stable_json_modified": false,
+  "physical_windows_gpu_validation_claimed": false
+}

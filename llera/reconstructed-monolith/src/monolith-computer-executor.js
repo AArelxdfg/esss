@@ -5,6 +5,10 @@ const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
 const path = require('path');
+const dns = require('dns').promises;
+const http = require('http');
+const https = require('https');
+const net = require('net');
 const { spawn } = require('child_process');
 
 const PORTABLE_TOOLS = new Set([
@@ -16,6 +20,21 @@ const PORTABLE_TOOLS = new Set([
 // Generic shell commands cannot be proven workspace-confined by cwd alone.
 // In workspace-scoped mode they are fail-closed; full-PC mode must be explicit.
 const WORKSPACE_RESTRICTED_SHELL_TOOLS = new Set(['run_command','start_process']);
+const HARD_BLOCKED_COMMAND_PATTERNS = [
+  /(^|[;&|\s])(?:rm\s+-[^\n]*r[^\n]*f|rm\s+-[^\n]*f[^\n]*r)\s+\/(?:\s|$|[*])/i,
+  /(^|[;&|\s])(?:mkfs(?:\.[a-z0-9]+)?|wipefs)\b/i,
+  /(^|[;&|\s])dd\b[^\n]*\bof=\/dev\//i,
+  /\b(?:vssadmin\s+delete\s+shadows|wmic\s+shadowcopy\s+delete)\b/i,
+  /\bbcdedit\b[^\n]*\/(?:delete|deletevalue|createstore)\b/i,
+  /\bformat(?:\.com)?\s+[a-z]:/i,
+  /\bdiskpart\b/i
+];
+const CONSEQUENT_COMMAND_PATTERNS = [
+  /\b(?:shutdown|reboot|restart-computer|stop-computer)\b/i,
+  /\b(?:remove-item|del|erase|rmdir|rd)\b/i,
+  /\b(?:reg\s+(?:delete|add)|set-itemproperty|new-itemproperty|remove-itemproperty)\b/i,
+  /\b(?:sc(?:\.exe)?\s+(?:delete|config|stop)|stop-service|remove-service)\b/i
+];
 
 const COMPUTER_ADAPTER_METHODS = {
   list_apps:'listApps', launch_app:'launchApp', focus_app:'focusApp', ui_snapshot:'uiSnapshot', ui_invoke:'uiInvoke',
@@ -42,6 +61,36 @@ function capText(value, max = 2 * 1024 * 1024) {
 }
 function sha256Bytes(bytes) { return crypto.createHash('sha256').update(bytes).digest('hex'); }
 
+function isIpLiteral(host) {
+  return net.isIP(String(host || '').replace(/^\[|\]$/g,'')) !== 0;
+}
+function ipv4Number(ip) {
+  const parts=ip.split('.').map(Number);
+  if(parts.length!==4 || parts.some(n=>!Number.isInteger(n)||n<0||n>255))return null;
+  return (((parts[0]<<24)>>>0)+(parts[1]<<16)+(parts[2]<<8)+parts[3])>>>0;
+}
+function inIpv4Range(ip, base, bits) {
+  const n=ipv4Number(ip), b=ipv4Number(base); if(n===null||b===null)return false;
+  const mask=bits===0?0:(0xffffffff << (32-bits))>>>0; return (n&mask)===(b&mask);
+}
+function isPrivateAddress(address) {
+  let ip=String(address||'').toLowerCase().replace(/^\[|\]$/g,'');
+  const mapped=ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if(mapped) ip=mapped[1];
+  if(ip.includes(':')){
+    return ip==='::1'||ip==='::'||ip.startsWith('fc')||ip.startsWith('fd')||/^fe[89ab]/.test(ip);
+  }
+  return inIpv4Range(ip,'0.0.0.0',8)||inIpv4Range(ip,'10.0.0.0',8)||inIpv4Range(ip,'100.64.0.0',10)||inIpv4Range(ip,'127.0.0.0',8)||inIpv4Range(ip,'169.254.0.0',16)||inIpv4Range(ip,'172.16.0.0',12)||inIpv4Range(ip,'192.0.0.0',24)||inIpv4Range(ip,'192.168.0.0',16)||inIpv4Range(ip,'198.18.0.0',15)||inIpv4Range(ip,'224.0.0.0',4)||inIpv4Range(ip,'240.0.0.0',4);
+}
+async function resolveAddresses(lookup, host) {
+  if(typeof lookup!=='function')throw new Error('dns lookup unavailable');
+  const result=await lookup(host,{all:true,verbatim:true});
+  if(Array.isArray(result))return result.map(x=>typeof x==='string'?x:x.address).filter(Boolean);
+  if(result&&result.address)return [result.address];
+  if(typeof result==='string')return [result];
+  return [];
+}
+
 class MonolithComputerExecutor {
   constructor({
     workspaceRoot = process.cwd(),
@@ -55,7 +104,11 @@ class MonolithComputerExecutor {
     maxReadBytes = 4 * 1024 * 1024,
     maxOutputBytes = 2 * 1024 * 1024,
     maxSearchFiles = 5000,
-    processStopTimeoutMs = 5000
+    processStopTimeoutMs = 5000,
+    commandAuthorizer = null,
+    allowPrivateNetwork = false,
+    dnsLookup = dns.lookup,
+    maxRedirects = 5
   } = {}) {
     this.workspaceRoot = path.resolve(workspaceRoot);
     this.allowOutsideWorkspace = Boolean(allowOutsideWorkspace);
@@ -69,6 +122,10 @@ class MonolithComputerExecutor {
     this.maxOutputBytes = maxOutputBytes;
     this.maxSearchFiles = maxSearchFiles;
     this.processStopTimeoutMs = processStopTimeoutMs;
+    this.commandAuthorizer = commandAuthorizer;
+    this.allowPrivateNetwork = Boolean(allowPrivateNetwork);
+    this.dnsLookup = dnsLookup;
+    this.maxRedirects = Math.min(10, Math.max(0, Number(maxRedirects) || 0));
     this.jobs = new Map();
     fs.mkdirSync(this.workspaceRoot, {recursive:true});
     this.workspaceReal = fs.realpathSync(this.workspaceRoot);
@@ -77,7 +134,7 @@ class MonolithComputerExecutor {
   coverage() {
     const available = new Set(PORTABLE_TOOLS);
     const blockedByWorkspacePolicy = [];
-    if (!this.allowOutsideWorkspace) {
+    if (!this.allowOutsideWorkspace || typeof this.commandAuthorizer !== 'function') {
       for (const tool of WORKSPACE_RESTRICTED_SHELL_TOOLS) {
         available.delete(tool);
         blockedByWorkspacePolicy.push(tool);
@@ -119,8 +176,8 @@ class MonolithComputerExecutor {
       case 'file_stat': return this.fileStat(args);
       case 'path_exists': return this.pathExists(args);
       case 'hash_file': return this.hashFile(args);
-      case 'run_command': return this.runCommand(args);
-      case 'start_process': return this.startProcess(args);
+      case 'run_command': return this.runCommand(args, context);
+      case 'start_process': return this.startProcess(args, context);
       case 'process_status': return this.processStatus(args);
       case 'process_stop': return this.processStop(args);
       case 'read_process_output': return this.readProcessOutput(args);
@@ -309,6 +366,21 @@ class MonolithComputerExecutor {
     return {ok:true,path:target,sha256:hash.digest('hex'),bytes:stat.size};
   }
 
+  async assertCommandAllowed(args, context = {}) {
+    const command = String(args.command || args.cmd || '');
+    if (!command) throw new Error('command is required');
+    if (HARD_BLOCKED_COMMAND_PATTERNS.some(pattern => pattern.test(command))) {
+      throw new Error('catastrophic command hard-blocked');
+    }
+    const consequential = CONSEQUENT_COMMAND_PATTERNS.some(pattern => pattern.test(command));
+    if (typeof this.commandAuthorizer !== 'function') throw new Error('command authorizer unavailable');
+    const decision = await this.commandAuthorizer({command, args:{...args}, consequential, context});
+    if (decision !== true && !(decision && decision.allow === true)) {
+      throw new Error(consequential ? 'consequential command authorization required' : 'command authorization denied');
+    }
+    return {command, consequential};
+  }
+
   commandSpec(args) {
     const command=String(args.command||args.cmd||'');if(!command)throw new Error('command is required');
     const shell=String(args.shell||'system').toLowerCase();
@@ -318,7 +390,8 @@ class MonolithComputerExecutor {
     return process.platform==='win32'?{file:'powershell.exe',argv:['-NoProfile','-NonInteractive','-Command',command]}:{file:'/bin/sh',argv:['-lc',command]};
   }
 
-  async runCommand(args) {
+  async runCommand(args, context = {}) {
+    await this.assertCommandAllowed(args, context);
     const cwd=this.resolvePath(args.cwd||'.');const spec=this.commandSpec(args);const timeoutMs=Math.min(20*60*1000,Math.max(100,Number(args.timeout_ms||args.timeoutMs||120000)));
     return new Promise((resolve,reject)=>{
       const child=spawn(spec.file,spec.argv,{cwd,windowsHide:true,stdio:['ignore','pipe','pipe']});
@@ -331,7 +404,8 @@ class MonolithComputerExecutor {
     });
   }
 
-  async startProcess(args) {
+  async startProcess(args, context = {}) {
+    await this.assertCommandAllowed(args, context);
     const cwd=this.resolvePath(args.cwd||'.');const spec=this.commandSpec(args);const id=crypto.randomUUID();
     const child=spawn(spec.file,spec.argv,{cwd,windowsHide:true,stdio:['ignore','pipe','pipe']});
     const job={id,pid:child.pid,command:String(args.command||args.cmd||''),cwd,state:'running',exitCode:null,signal:null,stdout:'',stderr:'',startedAt:this.now(),endedAt:null,child};
@@ -372,15 +446,93 @@ class MonolithComputerExecutor {
     return {ok:true,platform:process.platform,text:output,managedJobs:[...this.jobs.values()].map(j=>this.jobView(j))};
   }
 
+  _assertWebUrl(url) {
+    const parsed = new URL(String(url));
+    if (!['http:','https:'].includes(parsed.protocol)) throw new Error('web_get requires http/https URL');
+    if (parsed.username || parsed.password) throw new Error('web_get URL credentials are not allowed');
+    if (this.allowPrivateNetwork) return parsed;
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host.endsWith('.localhost')) throw new Error('web_get private network target blocked');
+    if (isIpLiteral(host) && isPrivateAddress(host)) throw new Error('web_get private network target blocked');
+    return parsed;
+  }
+
+  async _resolveBoundAddress(hostname, family = 0) {
+    const addresses = isIpLiteral(hostname) ? [hostname] : await resolveAddresses(this.dnsLookup, hostname);
+    if (!addresses.length) throw new Error('web_get hostname resolution returned no addresses');
+    if (!this.allowPrivateNetwork && addresses.some(isPrivateAddress)) throw new Error('web_get private network target blocked');
+    const requestedFamily = Number(family) || 0;
+    const selected = addresses.map(address => ({address, family:net.isIP(address)})).find(item => !requestedFamily || item.family === requestedFamily);
+    if (!selected || !selected.family) throw new Error('web_get hostname resolution returned invalid address');
+    return selected;
+  }
+
+  _boundLookup(hostname, options, callback) {
+    const family = typeof options === 'number' ? options : Number(options && options.family) || 0;
+    this._resolveBoundAddress(hostname, family).then(
+      selected => callback(null, selected.address, selected.family),
+      error => callback(error)
+    );
+  }
+
+  async _requestWebOnce(parsed, timeoutMs) {
+    const client = parsed.protocol === 'https:' ? https : http;
+    return new Promise((resolve, reject) => {
+      const options = {
+        protocol: parsed.protocol,
+        hostname: parsed.hostname,
+        port: parsed.port || undefined,
+        path: `${parsed.pathname}${parsed.search}`,
+        method: 'GET',
+        headers: {'user-agent':'LLera-MONOLITH/1.0','accept-encoding':'identity'},
+        lookup: (hostname, lookupOptions, callback) => this._boundLookup(hostname, lookupOptions, callback)
+      };
+      const req = client.request(options, response => {
+        const chunks=[]; let total=0; let settled=false;
+        response.on('data', chunk => {
+          if(settled)return;
+          total += chunk.length;
+          if(total > this.maxReadBytes){
+            settled=true;
+            req.destroy(new Error('web_get response exceeds configured limit'));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on('end', () => {
+          if(settled)return; settled=true;
+          resolve({
+            status:Number(response.statusCode||0),
+            ok:Number(response.statusCode||0)>=200&&Number(response.statusCode||0)<300,
+            headers:response.headers||{},
+            url:parsed.toString(),
+            text:Buffer.concat(chunks).toString('utf8')
+          });
+        });
+        response.on('error', reject);
+      });
+      req.once('error', reject);
+      req.setTimeout(timeoutMs, () => req.destroy(new Error('web_get timeout')));
+      req.end();
+    });
+  }
+
   async webGet(args) {
-    if(typeof this.fetchImpl!=='function')throw new Error('fetch backend unavailable');
-    const url=String(args.url||'');if(!/^https?:\/\//i.test(url))throw new Error('web_get requires http/https URL');
-    const controller=new AbortController();const timeoutMs=Math.min(120000,Math.max(100,Number(args.timeout_ms||30000)));const timer=setTimeout(()=>controller.abort(),timeoutMs);
-    try{
-      const response=await this.fetchImpl(url,{redirect:'follow',signal:controller.signal,headers:{'user-agent':'LLera-MONOLITH/1.0'}});
-      const text=capText(await response.text(),this.maxReadBytes);
-      return {ok:response.ok,status:response.status,url:response.url||url,text};
-    }finally{clearTimeout(timer);}
+    let url=String(args.url||'');
+    const timeoutMs=Math.min(120000,Math.max(100,Number(args.timeout_ms||30000)));
+    for(let redirectCount=0; redirectCount<=this.maxRedirects; redirectCount+=1){
+      const parsed=this._assertWebUrl(url);
+      const response=await this._requestWebOnce(parsed,timeoutMs);
+      if([301,302,303,307,308].includes(response.status)){
+        if(redirectCount===this.maxRedirects)throw new Error('web_get redirect limit exceeded');
+        const location=response.headers.location;
+        if(!location)throw new Error('web_get redirect missing location');
+        url=new URL(location,parsed).toString();
+        continue;
+      }
+      return {...response,redirects:redirectCount};
+    }
+    throw new Error('web_get redirect limit exceeded');
   }
 
   systemInfo() {
@@ -388,4 +540,4 @@ class MonolithComputerExecutor {
   }
 }
 
-module.exports = { PORTABLE_TOOLS, WORKSPACE_RESTRICTED_SHELL_TOOLS, COMPUTER_ADAPTER_METHODS, BROWSER_ADAPTER_METHODS, MonolithComputerExecutor };
+module.exports = { PORTABLE_TOOLS, WORKSPACE_RESTRICTED_SHELL_TOOLS, HARD_BLOCKED_COMMAND_PATTERNS, CONSEQUENT_COMMAND_PATTERNS, isPrivateAddress, COMPUTER_ADAPTER_METHODS, BROWSER_ADAPTER_METHODS, MonolithComputerExecutor };

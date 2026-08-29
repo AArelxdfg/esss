@@ -77,7 +77,7 @@ async function waitFor(fn,{timeout=3000,interval=20}={}){
     assert.strictEqual(fs.existsSync(path.join(workspace,'dest/moved.txt')),false);
     await assert.rejects(()=>executor.invoke('delete_path',{path:'.',recursive:true}),/workspace root deletion blocked/);
 
-    const fullExecutor=new MonolithComputerExecutor({workspaceRoot:workspace,allowOutsideWorkspace:true,processStopTimeoutMs:1000});
+    const fullExecutor=new MonolithComputerExecutor({workspaceRoot:workspace,allowOutsideWorkspace:true,processStopTimeoutMs:1000,commandAuthorizer:async()=>true});
     assert(fullExecutor.coverage().available.includes('run_command'));
     assert(fullExecutor.coverage().available.includes('start_process'));
 
@@ -101,7 +101,8 @@ async function waitFor(fn,{timeout=3000,interval=20}={}){
     server=http.createServer((req,res)=>{res.writeHead(200,{'content-type':'text/plain'});res.end('LOCAL_HTTP_OK');});
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
     const addr=server.address();
-    result=await executor.invoke('web_get',{url:`http://127.0.0.1:${addr.port}/test`});
+    const localNetExecutor=new MonolithComputerExecutor({workspaceRoot:workspace,allowPrivateNetwork:true});
+    result=await localNetExecutor.invoke('web_get',{url:`http://127.0.0.1:${addr.port}/test`});
     assert.strictEqual(result.ok,true);assert.strictEqual(result.text,'LOCAL_HTTP_OK');
 
     const adapterCalls=[];

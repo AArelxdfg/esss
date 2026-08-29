@@ -64,7 +64,7 @@ function makeFinalization({missionId='m1',claim='verified claim',evidenceIds=['e
   await rejectedCoordinator.init();
   await assert.rejects(
     () => rejectedCoordinator.finalizeAndLearn({missionId:'m1',goal:'forged',claim:'verified claim'}),
-    error => error && error.code === 'OUTCOME_VERIFICATION_RECEIPT_INVALID'
+    error => error && error.code === 'VERIFIED_LEARNING_RECEIPT_INVALID'
   );
   assert.strictEqual(memory.snapshot().outcomes.length,1,'invalid receipt must not append learning outcome');
 
@@ -87,7 +87,7 @@ function makeFinalization({missionId='m1',claim='verified claim',evidenceIds=['e
 
   console.log('MONOLITH verified learning receipt boundary PASS',{
     finalizerReceiptRequired:true,
-    forgedReceiptRejected:true,
+    forgedReceiptRejectedBeforeIdempotency:true,
     skillBoundToVerifiedReceipt:true,
     restartIdempotent:true
   });

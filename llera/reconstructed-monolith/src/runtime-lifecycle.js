@@ -15,6 +15,8 @@ class RuntimeLifecycle {
     this.pid = null;
     this.generation = 0;
     this.activeInference = new Map();
+    this.inferenceAdmissionClosed = false;
+    this.inferenceAdmissionReason = null;
     this.lastError = null;
     this.lastSwitchFailure = null;
     this.recoveryCount = 0;
@@ -30,6 +32,8 @@ class RuntimeLifecycle {
       pid: this.pid,
       generation: this.generation,
       activeInference: [...this.activeInference.values()].map(x => ({ id: x.id, priority: x.priority, startedAt: x.startedAt })),
+      inferenceAdmissionClosed: this.inferenceAdmissionClosed,
+      inferenceAdmissionReason: this.inferenceAdmissionReason,
       lastError: this.lastError,
       lastSwitchFailure: this.lastSwitchFailure,
       recoveryCount: this.recoveryCount,
@@ -49,6 +53,16 @@ class RuntimeLifecycle {
     if (!allowed[this.state]?.has(next)) throw new Error(`illegal runtime transition ${this.state} -> ${next}`);
     this.transitionLog.push({ from: this.state, to: next, reason, at: this.now() });
     this.state = next;
+  }
+
+  _closeInferenceAdmission(reason) {
+    this.inferenceAdmissionClosed = true;
+    this.inferenceAdmissionReason = reason || 'runtime-transition';
+  }
+
+  _openInferenceAdmission() {
+    this.inferenceAdmissionClosed = false;
+    this.inferenceAdmissionReason = null;
   }
 
   async _cleanupStartedBackend({ pid, model, reason }) {
@@ -127,10 +141,23 @@ class RuntimeLifecycle {
 
     const previousModel = this.state === 'ready' && this.model !== model ? this.model : null;
     this.desiredModel = model;
-    if (this.state === 'ready' && this.model === model) return this.snapshot();
+    if (this.state === 'ready' && this.model === model) {
+      if (this.inferenceAdmissionClosed) {
+        const error = new Error(`runtime transition in progress: ${this.inferenceAdmissionReason || 'inference admission closed'}`);
+        error.code = 'RUNTIME_TRANSITION_IN_PROGRESS';
+        throw error;
+      }
+      return this.snapshot();
+    }
 
     if (previousModel) {
-      await this.drainActiveInference(`model-switch:${previousModel}->${model}`);
+      this._closeInferenceAdmission(`model-switch:${previousModel}->${model}`);
+      try {
+        await this.drainActiveInference(`model-switch:${previousModel}->${model}`);
+      } catch (err) {
+        this._openInferenceAdmission();
+        throw err;
+      }
       await this.stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true });
     }
     if (this.state === 'starting') throw new Error('runtime start already in progress');
@@ -157,6 +184,7 @@ class RuntimeLifecycle {
       this.generation += 1;
       this.lastError = null;
       this._transition('ready', reason);
+      this._openInferenceAdmission();
       return this.snapshot();
     } catch (err) {
       const cleanupPid = started && started.pid ? started.pid : this.pid;
@@ -198,14 +226,15 @@ class RuntimeLifecycle {
     }
     if (!['ready', 'failed'].includes(this.state)) throw new Error(`cannot stop from ${this.state}`);
 
-    // A direct stop is a material runtime transition just like model switching
-    // and recovery. Never erase tracked inference without invoking its abort
-    // callback first. If any abort fails, keep the backend/state intact and
-    // fail closed instead of pretending the work disappeared.
+    // Close admission before taking the drain snapshot. Otherwise a new
+    // inference can register while an existing abort callback is awaiting and
+    // be erased by the subsequent stop without ever being aborted.
+    this._closeInferenceAdmission(`stop:${reason}`);
     try {
       await this.drainActiveInference(`stop-drain:${reason}`);
     } catch (err) {
       this.lastError = `stop inference drain failed: ${String(err?.message || err)}`;
+      if (this.state === 'ready') this._openInferenceAdmission();
       throw err;
     }
 
@@ -226,6 +255,11 @@ class RuntimeLifecycle {
   }
 
   registerInference(id, { priority = 'normal', abort } = {}) {
+    if (this.inferenceAdmissionClosed) {
+      const error = new Error(`inference admission closed: ${this.inferenceAdmissionReason || 'runtime transition'}`);
+      error.code = 'RUNTIME_INFERENCE_ADMISSION_CLOSED';
+      throw error;
+    }
     if (this.state !== 'ready') throw new Error('runtime is not ready');
     if (!id || this.activeInference.has(id)) throw new Error('unique inference id required');
     if (typeof abort !== 'function') throw new Error('abort callback required');
@@ -270,10 +304,12 @@ class RuntimeLifecycle {
     const desiredModel = this.desiredModel || this.model;
     if (!desiredModel) throw new Error('no desired model to recover');
 
+    this._closeInferenceAdmission(`recovery:${reason}`);
     try {
       await this.drainActiveInference(`recovery-drain:${reason}`);
     } catch (err) {
       this.lastError = `recovery inference drain failed: ${String(err?.message || err)}`;
+      if (this.state === 'ready') this._openInferenceAdmission();
       throw err;
     }
 

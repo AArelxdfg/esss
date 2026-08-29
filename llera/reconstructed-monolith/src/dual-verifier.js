@@ -29,6 +29,7 @@ class DualVerifier {
     const knownIds = new Set(ids);
     const strict = this.#score(strictChecks, knownIds);
     const adversarial = this.#score(adversarialChecks, knownIds);
+    const independence = this.#independence(strictChecks, adversarialChecks);
     const strictCoverage = this.#coverage(strict.checks, knownIds);
     const adversarialCoverage = this.#coverage(adversarial.checks, knownIds);
     const evidenceCoverage = Math.min(strictCoverage, adversarialCoverage);
@@ -38,6 +39,7 @@ class DualVerifier {
       adversarialCoverage >= this.minEvidenceCoverage;
 
     const ok =
+      independence.ok &&
       coverageOk &&
       strict.score >= this.strictThreshold &&
       adversarial.score >= this.adversarialThreshold;
@@ -47,6 +49,7 @@ class DualVerifier {
       claim,
       strict,
       adversarial,
+      independence,
       evidenceCoverage,
       coverage: {
         strict: strictCoverage,
@@ -56,7 +59,9 @@ class DualVerifier {
       evidenceIds: ids,
       reason: ok
         ? 'dual_verifier_pass'
-        : (!coverageOk ? 'evidence_coverage_reject' : 'dual_verifier_reject')
+        : (!independence.ok
+          ? 'verifier_independence_reject'
+          : (!coverageOk ? 'evidence_coverage_reject' : 'dual_verifier_reject'))
     };
   }
 
@@ -119,6 +124,42 @@ class DualVerifier {
       failures: normalized.filter(c => !c.ok).map(c => c.name),
       checks: normalized
     };
+  }
+
+  #independence(strictChecks, adversarialChecks) {
+    if (!Array.isArray(strictChecks) || !Array.isArray(adversarialChecks)) {
+      return {ok:false, reason:'invalid_check_sets'};
+    }
+    if (strictChecks.length === 0 || adversarialChecks.length === 0) {
+      return {ok:false, reason:'missing_verifier_channel'};
+    }
+    if (strictChecks === adversarialChecks) {
+      return {ok:false, reason:'shared_check_array'};
+    }
+
+    const strictObjects = new Set(strictChecks.filter(c => c && typeof c === 'object'));
+    const sharedObjects = adversarialChecks.filter(c => c && typeof c === 'object' && strictObjects.has(c));
+    if (sharedObjects.length > 0) {
+      return {ok:false, reason:'shared_check_object', sharedCount:sharedObjects.length};
+    }
+
+    const signature = c => JSON.stringify({
+      name: c && c.name ? String(c.name) : '',
+      detail: c && c.detail ? String(c.detail) : '',
+      evidenceIds: Array.isArray(c && c.evidenceIds)
+        ? [...new Set(c.evidenceIds.filter(Boolean).map(String))].sort()
+        : []
+    });
+    const strictSignatures = new Set(strictChecks.map(signature));
+    const adversarialSignatures = new Set(adversarialChecks.map(signature));
+    const identical =
+      strictSignatures.size === adversarialSignatures.size &&
+      [...strictSignatures].every(sig => adversarialSignatures.has(sig));
+    if (identical) {
+      return {ok:false, reason:'identical_verifier_checks'};
+    }
+
+    return {ok:true, reason:'independent_verifier_channels'};
   }
 
   #coverage(checks, knownIds) {

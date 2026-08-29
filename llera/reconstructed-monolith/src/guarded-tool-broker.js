@@ -1,12 +1,10 @@
 'use strict';
 
 const { RESTORED_MONOLITH_TOOLS, ToolExecutionGuard } = require('./tool-surface');
-const { MonolithCapabilityBroker } = require('./monolith-capability-broker');
+const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('./monolith-capability-broker');
 const { FailureDoctrine } = require('./failure-doctrine');
 
-const SPECIAL_CAPABILITIES = new Set([
-  'vision_analyze_image','vision_ocr_screen','evidence_record','evidence_verify','update_status','host_pressure_status'
-]);
+const SPECIAL_CAPABILITIES = new Set(Object.keys(CAPABILITY_TOOL_BINDINGS));
 
 class GuardedMonolithToolBroker {
   constructor({ historicalExecutor, capabilityBroker, guard = new ToolExecutionGuard(), failureDoctrine = new FailureDoctrine(), summarizeResult } = {}) {
@@ -28,8 +26,13 @@ class GuardedMonolithToolBroker {
 
   status(context = {}) {
     const missionId = context.missionId || null;
+    const capabilityCoverage = this.capabilityBroker && typeof this.capabilityBroker.coverage === 'function'
+      ? this.capabilityBroker.coverage()
+      : null;
     return {
       toolCount: RESTORED_MONOLITH_TOOLS.length,
+      specializedCapabilityCount: SPECIAL_CAPABILITIES.size,
+      capabilityCoverage,
       verificationDebt: this.guard.verificationDebt ? { ...this.guard.verificationDebt } : null,
       canFinalize: this.guard.canFinalize(),
       failureSummary: missionId && this.failureDoctrine && typeof this.failureDoctrine.summarize === 'function'

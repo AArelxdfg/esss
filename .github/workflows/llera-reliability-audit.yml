@@ -40,6 +40,11 @@ jobs:
             test/runtime-recovery-stop-fail-closed.test.js
             test/runtime-recovery-inference-drain.test.js
             test/runtime-direct-stop-inference-drain.test.js
+            test/runtime-switch-drain.test.js
+            test/runtime-switch-rollback.test.js
+            test/runtime-recovery-inference-drain.test.js
+            test/runtime-inference-coordinator.test.js
+            test/runtime-recovery-stop-fail-closed.test.js
             test/outcome-memory.test.js
             test/verified-learning-receipt-boundary.test.js
             test/agent-tool-router-62.test.js

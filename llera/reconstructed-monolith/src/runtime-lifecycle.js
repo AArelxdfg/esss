@@ -135,6 +135,11 @@ class RuntimeLifecycle {
     }
     if (this.state === 'starting') throw new Error('runtime start already in progress');
     if (this.state === 'stopping') throw new Error('runtime stop in progress');
+    if (this.state === 'failed' && this.pid) {
+      const error = new Error(`runtime start blocked: unresolved backend pid ${this.pid}`);
+      error.code = 'RUNTIME_ORPHAN_UNRESOLVED';
+      throw error;
+    }
     if (this.state === 'failed') this._transition('recovering', reason);
     if (this.state === 'recovering') this._transition('starting', reason);
     else if (this.state === 'stopped') this._transition('starting', reason);
@@ -245,7 +250,13 @@ class RuntimeLifecycle {
     if (!desiredModel) throw new Error('no desired model to recover');
     this._transition('recovering', reason);
     if (this.pid) {
-      try { await this.stopBackend({ pid: this.pid, model: this.model }); } catch (_) { /* best-effort cleanup */ }
+      try {
+        await this.stopBackend({ pid: this.pid, model: this.model, reason: `recovery-stop:${reason}` });
+      } catch (err) {
+        this.lastError = `recovery stop failed: ${String(err?.message || err)}`;
+        this._transition('failed', 'recovery-stop-failed');
+        throw err;
+      }
     }
     this.pid = null;
     this.model = null;

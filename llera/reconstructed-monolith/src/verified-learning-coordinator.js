@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateFinalizationReceipt } = require('./outcome-memory');
+
 class VerifiedLearningCoordinator {
   constructor({ finalizer, outcomeMemory, loadState, saveState, deriveSkill = null } = {}) {
     if (!finalizer || typeof finalizer.finalize !== 'function') throw new Error('finalizer.finalize is required');
@@ -44,17 +46,28 @@ class VerifiedLearningCoordinator {
     const receipt = finalization.receipt || {};
     if (!isSha256(receipt.sha256)) throw new Error('verified finalization receipt SHA-256 required');
     const verification = finalization.verification || {};
-    const strictScore = Number(verification.strict && verification.strict.score || receipt.strictScore || 0);
-    const adversarialScore = Number(verification.adversarial && verification.adversarial.score || receipt.adversarialScore || 0);
-    const confidence = Math.min(strictScore, adversarialScore);
-    if (strictScore < 0.62 || adversarialScore < 0.62) throw new Error('verifier score below learning threshold');
-
     const evidenceIds = Array.isArray(verification.evidenceIds) ? verification.evidenceIds : (Array.isArray(receipt.evidenceIds) ? receipt.evidenceIds : []);
     if (!evidenceIds.length) throw new Error('bound evidence IDs required for learning');
+
+    const receiptValidation = validateFinalizationReceipt(receipt, { missionId, evidenceIds });
+    if (!receiptValidation.ok) {
+      const error = new Error(`verified finalization receipt rejected: ${receiptValidation.reason}`);
+      error.code = 'VERIFIED_LEARNING_RECEIPT_INVALID';
+      error.reason = receiptValidation.reason;
+      throw error;
+    }
+    const strictScore = receiptValidation.strictScore;
+    const adversarialScore = receiptValidation.adversarialScore;
+    const confidence = receiptValidation.confidence;
 
     const tag = `final-receipt:${receipt.sha256}`;
     const existing = findOutcomeByReceipt(this.outcomeMemory.snapshot(), tag);
     if (existing) {
+      if (existing.missionId !== missionId || !existing.verification || existing.verification.receiptSha256 !== receipt.sha256) {
+        const error = new Error('receipt idempotency collision with mismatched persisted outcome');
+        error.code = 'VERIFIED_LEARNING_RECEIPT_COLLISION';
+        throw error;
+      }
       this.state.receipts[receipt.sha256] = { status: 'committed', missionId, outcomeId: existing.id || null };
       await this.saveState(this.snapshot());
       return { ok: true, learned: false, idempotent: true, receiptSha256: receipt.sha256, outcome: existing };

@@ -1,0 +1,30 @@
+{
+  "product": "LLera MONOLITH OMEGA reconstructed",
+  "milestone": "Capability broker executor coverage 6 -> 14",
+  "source_commit": "a9f98fe034a91eb2efe69ff6eabb5575d2eeab94",
+  "test_commit": "9e976a7eacd5ceff51a7fd9e466d476f5c26b7d7",
+  "source_sha256": "94a1dae664d7dedae27ec0b8a9a2371b4b45a202d31fadc13d6829c2d1f381ce",
+  "test_sha256": "81830c094ae31c1e83d71305f5e4d43d107e06db3881fa8caac8824ebf59ff66",
+  "delta_zip_sha256": "fdaa4806980172a60b8d630d429f3f725294b30cb09ae91b3bfd2ec0a953af72",
+  "historical_tool_surface_declared": 62,
+  "capability_broker_executors_before": 6,
+  "capability_broker_executors_after": 14,
+  "newly_wired": [
+    "outcome_search",
+    "autonomy_status",
+    "knowledge_graph_search",
+    "skill_search",
+    "snapshot_create",
+    "snapshot_restore",
+    "llera_doctor",
+    "llera_bench"
+  ],
+  "exact_v5_3_5_source_zip_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+  "exact_v5_4_source_zip_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+  "exact_historical_bytes_recovered": false,
+  "physical_windows_validated": false,
+  "windows_x64_exe_rebuilt": false,
+  "full_source_zip_rebuilt": false,
+  "stable_json_modified": false,
+  "release_published": false
+}

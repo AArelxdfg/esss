@@ -33,6 +33,16 @@ const OBSERVATION_TOOLS = new Set([
   'vision_analyze_image','vision_ocr_screen','evidence_record','evidence_verify','update_status','host_pressure_status'
 ]);
 
+// These tools can independently re-observe or verify state. Merely recording/asserting
+// evidence is intentionally excluded: an evidence record is provenance, not proof that
+// the material side effect actually happened.
+const INDEPENDENT_VERIFICATION_TOOLS = new Set([
+  'list_dir','read_file','search_files','read_text_range','file_stat','path_exists','hash_file',
+  'process_status','list_processes','read_process_output','list_apps','ui_snapshot','desktop_screenshot',
+  'browser_snapshot','browser_extract','web_get','web_search','system_info','clipboard_read','window_list',
+  'llera_doctor','llera_bench','vision_analyze_image','vision_ocr_screen','evidence_verify','update_status','host_pressure_status'
+]);
+
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === 'object') {
@@ -95,12 +105,20 @@ function explicitVerificationFingerprint(entry) {
 
 function observationVerifiesDebt(entry, debt) {
   if (!entry || !debt || !entry.observation || !entry.ok || entry.material) return false;
+  if (!INDEPENDENT_VERIFICATION_TOOLS.has(entry.tool)) return false;
+  if (entry.tool === debt.tool) return false;
+
   const explicit = explicitVerificationFingerprint(entry);
   if (explicit) return explicit === debt.fingerprint;
+
   const entryScope = entry.scope || verificationScope(entry.tool, entry.args || entry.arguments || {});
   if (debt.scope && entryScope) return debt.scope === entryScope;
   if (debt.scope && !entryScope) return false;
-  return Boolean(entry.verification === true);
+
+  // Unscoped material actions need an explicit fingerprint binding. A generic
+  // `verification:true` flag is not enough because it can be self-asserted by a
+  // planner without proving which material action was independently observed.
+  return false;
 }
 
 class ToolExecutionGuard {
@@ -176,4 +194,4 @@ class ToolExecutionGuard {
   canFinalize() { return !this.verificationDebt; }
 }
 
-module.exports = { HISTORICAL_V2_TOOLS, RESTORED_MONOLITH_TOOLS, MATERIAL_TOOLS, OBSERVATION_TOOLS, fingerprint, verificationScope, observationVerifiesDebt, ToolExecutionGuard };
+module.exports = { HISTORICAL_V2_TOOLS, RESTORED_MONOLITH_TOOLS, MATERIAL_TOOLS, OBSERVATION_TOOLS, INDEPENDENT_VERIFICATION_TOOLS, fingerprint, verificationScope, observationVerifiesDebt, ToolExecutionGuard };

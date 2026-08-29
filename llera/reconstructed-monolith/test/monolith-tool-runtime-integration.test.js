@@ -36,7 +36,7 @@ class FakeRouter {
 }
 
 class FakeGuardedBroker {
-  constructor({historicalExecutor,capabilityBroker}) { this.historicalExecutor=historicalExecutor; this.capabilityBroker=capabilityBroker; }
+  constructor({historicalExecutor,capabilityBroker,actionAuthorizer}) { this.historicalExecutor=historicalExecutor; this.capabilityBroker=capabilityBroker; this.actionAuthorizer=actionAuthorizer; }
   restore(){ return {}; }
   async invoke(tool,args,context){
     if(tool === 'evidence_verify') return {ok:true,result:await this.capabilityBroker.invoke(tool,args,context),trace:{material:false,observation:true}};
@@ -89,6 +89,7 @@ Module._load=originalLoad;
   assert.strictEqual(coverage.workspaceMode,'workspace-scoped');
   assert.strictEqual(coverage.physicalValidationClaimed,false);
   assert.strictEqual(coverage.shellAuthorizationPresent,false);
+  assert.strictEqual(coverage.sensitiveActionAuthorizationPresent,false);
   assert.strictEqual(coverage.privateNetworkOptIn,false);
   assert.strictEqual(coverage.fullExecutionSurfaceAvailable,false);
   assert(coverage.unavailable.includes('run_command'));
@@ -118,12 +119,15 @@ Module._load=originalLoad;
   assert(!calls.some(x=>x[0]==='computer'&&x[1]==='browser_open'));
 
   const authorizer=async()=>true;
-  const fullPc=createMonolithToolRuntime({missionEngine,allowOutsideWorkspace:true,commandAuthorizer:authorizer,allowPrivateNetwork:true,capabilityBroker:new FakeCapabilityBroker()});
+  const actionAuthorizer=async()=>true;
+  const fullPc=createMonolithToolRuntime({missionEngine,allowOutsideWorkspace:true,commandAuthorizer:authorizer,actionAuthorizer,allowPrivateNetwork:true,capabilityBroker:new FakeCapabilityBroker()});
   assert.strictEqual(fullPc.coverage().workspaceMode,'full-pc-explicit');
   assert.strictEqual(fullPc.coverage().shellAuthorizationPresent,true);
+  assert.strictEqual(fullPc.coverage().sensitiveActionAuthorizationPresent,true);
   assert.strictEqual(fullPc.coverage().privateNetworkOptIn,true);
   assert.strictEqual(fullPc.computerExecutor.options.allowOutsideWorkspace,true);
   assert.strictEqual(fullPc.computerExecutor.options.commandAuthorizer,authorizer);
+  assert.strictEqual(fullPc.guardedBroker.actionAuthorizer,actionAuthorizer);
   assert.strictEqual(fullPc.computerExecutor.options.allowPrivateNetwork,true);
 
   console.log('MONOLITH canonical tool runtime integration PASS',{
@@ -134,6 +138,7 @@ Module._load=originalLoad;
     workspaceScopedShellUnavailable:true,
     fullPcRequiresExplicitOptIn:true,
     shellAuthorizerForwarded:true,
+    sensitiveActionAuthorizerForwarded:true,
     privateNetworkOptInForwarded:true,
     physicalValidationClaimed:false
   });

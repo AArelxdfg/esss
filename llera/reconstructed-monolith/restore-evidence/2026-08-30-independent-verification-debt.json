@@ -1,0 +1,41 @@
+{
+  "milestone": "MONOLITH OMEGA independent material-action verification debt hardening",
+  "contractSource": "LLera V5.3.3 MONOLITH OMEGA AGENT PROOF",
+  "contract": {
+    "materialActionCreatesVerificationDebt": true,
+    "secondMaterialActionBlockedUntilIndependentVerification": true,
+    "finalizationBlockedUntilIndependentVerification": true,
+    "antiLoopRestoredFromDurableTrace": true,
+    "verificationDebtRestoredFromDurableTrace": true
+  },
+  "change": {
+    "sourceCommit": "a5c21acc15de4cac0334a79ff4e71e13786953a4",
+    "sourceBlob": "05edb19240ef635ea71f9938b57623135748e808",
+    "testCommit": "b6ca2bb04fa33732a292d46a04ebf18beeb4495b",
+    "ciCommit": "af34b2e00d1d867cd82ada2764c7f33881bdf965",
+    "behavior": [
+      "evidence_record cannot discharge verification debt",
+      "scoped debt requires an independent same-target observation or explicit binding",
+      "unscoped material actions require explicit fingerprint binding",
+      "restore path applies the same independent-verification rule"
+    ]
+  },
+  "verification": {
+    "githubActionsRun": 33276951897,
+    "githubActionsConclusion": "failure-before-runner-allocation",
+    "runnerId": 0,
+    "steps": [],
+    "executablePassClaimed": false,
+    "localCloneAttempt": "blocked by container DNS resolution for github.com"
+  },
+  "artifactRecovery": {
+    "v5.3.5SourceSha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5.4SourceSha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "exactSourceBytesRecovered": false
+  },
+  "releaseState": {
+    "stableJsonModified": false,
+    "releasePublished": false,
+    "windowsX64ArtifactRebuilt": false
+  }
+}

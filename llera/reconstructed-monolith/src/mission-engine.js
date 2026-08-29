@@ -19,6 +19,7 @@ class MissionEngine {
     this.saveBackend = save;
     this.now = now;
     this.state = { schema: 1, missions: {}, order: [] };
+    this.durableState = clone(this.state);
     this.loaded = false;
   }
 
@@ -30,6 +31,7 @@ class MissionEngine {
         throw new Error('unsupported or corrupt mission state');
       }
       this.state = clone(persisted);
+      this.durableState = clone(persisted);
       this._repairInterruptedState();
       await this._persist();
     }
@@ -341,7 +343,16 @@ class MissionEngine {
   }
 
   async _persist() {
-    await this.saveBackend(clone(this.state));
+    const candidate = clone(this.state);
+    try {
+      await this.saveBackend(candidate);
+      this.durableState = clone(candidate);
+    } catch (error) {
+      // A failed persistence operation must not leave a ghost checkpoint/step transition
+      // visible in memory. Revert to the last state whose save completed successfully.
+      this.state = clone(this.durableState);
+      throw error;
+    }
   }
 }
 

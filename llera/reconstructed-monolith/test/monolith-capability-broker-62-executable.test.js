@@ -13,7 +13,12 @@ const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('../src/m
       };
     }
   });
-  const outcomeMemory = { search: async (...args) => ({ name:'outcomeMemory', method:'search', args }) };
+  const outcomeMemory = {
+    search: async (...args) => {
+      calls.push({ name:'outcomeMemory', method:'search', args });
+      return { name:'outcomeMemory', method:'search', args };
+    }
+  };
   const broker = new MonolithCapabilityBroker({
     filesystem:service('filesystem'), processes:service('processes'), desktop:service('desktop'),
     browser:service('browser'), web:service('web'), cyberCore:service('cyberCore'), system:service('system'),

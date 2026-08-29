@@ -24,7 +24,8 @@ class MissionToolCoordinator {
   status(missionId) {
     const mission = this.missionEngine.getMission(missionId);
     if (!mission) throw new Error(`unknown mission ${missionId}`);
-    const recoverySnapshotDebt = this._recoverySnapshotDebt(mission);
+    const recoverySnapshotDebts = this._recoverySnapshotDebts(mission);
+    const recoverySnapshotDebt = recoverySnapshotDebts[0] || null;
     const broker = this.broker.status();
     return {
       missionId,
@@ -32,7 +33,9 @@ class MissionToolCoordinator {
       currentStepId: mission.currentStepId,
       toolTraceCount: (mission.toolTrace || []).length,
       recoverySnapshotDebt,
-      canFinalize: Boolean(broker.canFinalize) && !recoverySnapshotDebt,
+      recoverySnapshotDebts,
+      recoverySnapshotDebtCount: recoverySnapshotDebts.length,
+      canFinalize: Boolean(broker.canFinalize) && recoverySnapshotDebts.length === 0,
       broker
     };
   }
@@ -45,7 +48,8 @@ class MissionToolCoordinator {
 
     this.broker.restore(mission.toolTrace || []);
 
-    const recoverySnapshotDebt = this._recoverySnapshotDebt(mission);
+    const recoverySnapshotDebts = this._recoverySnapshotDebts(mission);
+    const recoverySnapshotDebt = recoverySnapshotDebts[0] || null;
     const classification = this._classify(tool);
     if (recoverySnapshotDebt && classification.material) {
       return {
@@ -55,7 +59,8 @@ class MissionToolCoordinator {
         persisted: false,
         missionId,
         stepId: activeStepId,
-        recoverySnapshotDebt
+        recoverySnapshotDebt,
+        recoverySnapshotDebtCount: recoverySnapshotDebts.length
       };
     }
 
@@ -134,7 +139,8 @@ class MissionToolCoordinator {
     }
     const mission = this.missionEngine.getMission(missionId);
     if (!mission) throw new Error(`unknown mission ${missionId}`);
-    const debt = this._recoverySnapshotDebt(mission);
+    const debts = this._recoverySnapshotDebts(mission);
+    const debt = debts[0] || null;
     if (!debt) return { repaired: false, reason: 'no_recovery_snapshot_debt', missionId };
 
     const snapshot = await this.recoverySnapshots.create({ missionId, reason });
@@ -148,6 +154,7 @@ class MissionToolCoordinator {
       repaired: true,
       missionId,
       debtCheckpointId: debt.id,
+      remainingDebtCount: Math.max(0, debts.length - 1),
       checkpoint,
       snapshot: snapshot || null
     };
@@ -156,7 +163,7 @@ class MissionToolCoordinator {
   canFinalize(missionId) {
     this.restoreMission(missionId);
     const mission = this.missionEngine.getMission(missionId);
-    return Boolean(this.broker.status().canFinalize) && !this._recoverySnapshotDebt(mission);
+    return Boolean(this.broker.status().canFinalize) && this._recoverySnapshotDebts(mission).length === 0;
   }
 
   _classify(tool) {
@@ -167,24 +174,40 @@ class MissionToolCoordinator {
   }
 
   _recoverySnapshotDebt(mission) {
+    return this._recoverySnapshotDebts(mission)[0] || null;
+  }
+
+  _recoverySnapshotDebts(mission) {
     const checkpoints = Array.isArray(mission && mission.checkpoints) ? mission.checkpoints : [];
-    let debt = null;
+    const open = new Map();
+
     for (const checkpoint of checkpoints) {
-      const type = checkpoint && checkpoint.payload && checkpoint.payload.type;
-      if (type === 'recovery-snapshot-debt') debt = checkpoint;
+      if (!checkpoint || !checkpoint.id || !checkpoint.payload) continue;
+      const type = checkpoint.payload.type;
+
+      if (type === 'recovery-snapshot-debt') {
+        open.set(checkpoint.id, checkpoint);
+        continue;
+      }
+
       if (type === 'recovery-snapshot-repaired') {
         const debtId = checkpoint.payload.debtCheckpointId;
-        if (!debtId || (debt && debt.id === debtId)) debt = null;
+        // Fail closed: repair must explicitly bind to a real debt ID.
+        // Missing/unknown IDs never clear arbitrary recovery debt.
+        if (typeof debtId === 'string' && debtId.length > 0 && open.has(debtId)) {
+          open.delete(debtId);
+        }
       }
     }
-    return debt ? {
-      id: debt.id,
-      at: debt.at || null,
-      stepId: debt.payload.stepId || null,
-      traceId: debt.payload.traceId || null,
-      tool: debt.payload.tool || null,
-      error: debt.payload.error || null
-    } : null;
+
+    return [...open.values()].map(checkpoint => ({
+      id: checkpoint.id,
+      at: checkpoint.at || null,
+      stepId: checkpoint.payload.stepId || null,
+      traceId: checkpoint.payload.traceId || null,
+      tool: checkpoint.payload.tool || null,
+      error: checkpoint.payload.error || null
+    }));
   }
 }
 

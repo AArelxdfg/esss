@@ -4,13 +4,14 @@ const assert = require('assert');
 const Module = require('module');
 
 const restored = ['read_file','delete_path','process_stop','browser_click','snapshot_restore','evidence_verify'];
+const material = new Set(['delete_path','process_stop','browser_click','snapshot_restore']);
 class FakeGuard {
   constructor(){ this.verificationDebt=null; this.records=[]; }
   decide(tool,args){
     if(!restored.includes(tool))return {allow:false,reason:'unknown_tool'};
-    return {allow:true,fingerprint:`fp:${tool}`,material:tool!=='read_file'&&tool!=='evidence_verify'};
+    return {allow:true,fingerprint:`fp:${tool}`,material:material.has(tool)};
   }
-  record(tool,args,outcome){ const trace={recorded:true,tool,args,outcome,material:tool!=='read_file'}; this.records.push(trace); return trace; }
+  record(tool,args,outcome){ const trace={recorded:true,tool,args,outcome,material:material.has(tool)}; this.records.push(trace); return trace; }
   canFinalize(){ return true; }
   restore(){ return {restored:0}; }
 }
@@ -19,7 +20,7 @@ class FakeCapabilityBroker { coverage(){return {available:['evidence_verify']};}
 
 const originalLoad=Module._load;
 Module._load=function(request,parent,isMain){
-  if(request==='./tool-surface') return {RESTORED_MONOLITH_TOOLS:restored,ToolExecutionGuard:FakeGuard};
+  if(request==='./tool-surface') return {RESTORED_MONOLITH_TOOLS:restored,MATERIAL_TOOLS:material,ToolExecutionGuard:FakeGuard};
   if(request==='./monolith-capability-broker') return {MonolithCapabilityBroker:FakeCapabilityBroker,CAPABILITY_TOOL_BINDINGS:{evidence_verify:['evidence','verify']}};
   if(request==='./failure-doctrine') return {FailureDoctrine:FakeFailureDoctrine};
   return originalLoad.apply(this,arguments);
@@ -59,7 +60,7 @@ Module._load=originalLoad;
   assert.strictEqual(executions,0);
   assert.strictEqual(deniedCalls.length,1);
   assert.strictEqual(deniedCalls[0].tool,'process_stop');
-  assert.strictEqual(deniedCalls[0].category,'sensitive-action');
+  assert.strictEqual(deniedCalls[0].category,'material-action');
 
   const throwing=new GuardedMonolithToolBroker({
     historicalExecutor:execute,
@@ -91,7 +92,7 @@ Module._load=originalLoad;
   result=await approved.invoke('read_file',{path:'x.txt'},{missionId:'m4'});
   assert.strictEqual(result.ok,true);
   assert.strictEqual(executions,2);
-  assert.strictEqual(approvedCalls.length,1,'observation tool must not request sensitive-action authorization');
+  assert.strictEqual(approvedCalls.length,1,'observation tool must not request material-action authorization');
 
   const specializedCalls=[];
   const specializedBroker=new FakeCapabilityBroker();
@@ -105,13 +106,14 @@ Module._load=originalLoad;
   const status=noAuthorizer.status();
   assert.strictEqual(status.sensitiveActionAuthorizationPresent,false);
   assert.strictEqual(status.sensitiveActionCount,SENSITIVE_ACTION_TOOLS.size);
+  assert.strictEqual(status.materialActionAuthorizationCoverageComplete,true);
 
-  console.log('guarded broker sensitive-action authorization PASS',{
+  console.log('guarded broker material-action authorization PASS',{
     missingAuthorizerFailsClosed:true,
     deniedActionNeverExecutes:true,
     authorizerFailureFailsClosed:true,
     approvedActionExecutesOnce:true,
-    observationBypassesSensitivePrompt:true,
+    observationBypassesMaterialPrompt:true,
     specializedObservationRemainsSpecialized:true
   });
 })().catch(error=>{console.error(error.stack||error);process.exit(1);});

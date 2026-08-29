@@ -26,9 +26,13 @@ const { RuntimeLifecycle } = require('../src/runtime-lifecycle');
   assert.strictEqual(snapshot.generation, 0);
   assert.strictEqual(snapshot.desiredModel, 'qwen3-next-80b-q4km');
 
+  let cleanupCanStop = false;
+  let cleanupStartCount = 0;
   const cleanupFail = new RuntimeLifecycle({
-    start: async () => ({ pid: 202 }),
-    stop: async () => { throw new Error('kill denied'); },
+    start: async () => ({ pid: 202 + cleanupStartCount++ }),
+    stop: async () => {
+      if (!cleanupCanStop) throw new Error('kill denied');
+    },
     health: async () => false
   });
   let cleanupThrownOriginal = false;
@@ -37,6 +41,20 @@ const { RuntimeLifecycle } = require('../src/runtime-lifecycle');
   assert.strictEqual(cleanupThrownOriginal, true);
   assert.match(cleanupFail.snapshot().lastError, /cleanup failed: kill denied/);
   assert.strictEqual(cleanupFail.snapshot().state, 'failed');
+  assert.strictEqual(cleanupFail.snapshot().pid, 202, 'failed cleanup must preserve unresolved backend pid');
+  assert.strictEqual(cleanupFail.snapshot().model, 'model-b');
+  assert.strictEqual(cleanupStartCount, 1);
+
+  let orphanBlocked = false;
+  try { await cleanupFail.ensureRunning('model-b'); }
+  catch (e) { orphanBlocked = e && e.code === 'RUNTIME_ORPHAN_UNRESOLVED'; }
+  assert.strictEqual(orphanBlocked, true, 'unresolved failed-start backend must block a second launch');
+  assert.strictEqual(cleanupStartCount, 1, 'blocked orphan path must not launch another backend');
+
+  cleanupCanStop = true;
+  await cleanupFail.stop('operator-cleanup');
+  assert.strictEqual(cleanupFail.snapshot().state, 'stopped');
+  assert.strictEqual(cleanupFail.snapshot().pid, null);
 
   const healthyStopped = [];
   const healthy = new RuntimeLifecycle({
@@ -52,6 +70,9 @@ const { RuntimeLifecycle } = require('../src/runtime-lifecycle');
 
   console.log('runtime failed-start orphan guard PASS', {
     orphanCleanup: true,
+    failedCleanupIdentityPreserved: true,
+    secondRuntimeLaunchBlocked: true,
+    explicitCleanupRecoversStoppedState: true,
     generationCommitAfterHealth: true,
     cleanupFailureSurfaced: true,
     desiredModelPreserved: true

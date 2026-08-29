@@ -1,0 +1,36 @@
+{
+  "milestone": "dual-verifier-independence",
+  "date": "2026-08-30",
+  "contract": [
+    "V4 dual Strict + Adversarial verification gate",
+    "V5.3.5 structured evidence bindings into verifier"
+  ],
+  "source": {
+    "path": "llera/reconstructed-monolith/src/dual-verifier.js",
+    "commit": "ca0e9c26ff65e3246a7de4f25252b4ed77d4a4c9",
+    "blob_sha": "0f9c668ecbffaf5111a1ed89f2bc7af5bd73ac90"
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/dual-verifier-independence.test.js",
+    "commit": "67dd4239affd45d51094df0016d7f7036f9aa166"
+  },
+  "ci": {
+    "workflow": ".github/workflows/llera-capability-restore.yml",
+    "commit": "3d07eea969554c07c291d9d7c2fbe2ef34d3ff65",
+    "run_id": 33281485182,
+    "status_at_record": "queued",
+    "runner_allocated": false,
+    "pass_claimed": false
+  },
+  "behavior": {
+    "reject_same_array_for_both_channels": true,
+    "reject_same_check_object_for_both_channels": true,
+    "reject_semantically_identical_copied_check_sets": true,
+    "preserve_independent_strict_and_adversarial_pass_path": true
+  },
+  "exact_v5_3_5_source_zip_found": false,
+  "exact_v5_4_source_zip_found": false,
+  "release_published": false,
+  "stable_json_modified": false,
+  "windows_physical_validation_claimed": false
+}

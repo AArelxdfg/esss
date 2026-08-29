@@ -63,7 +63,14 @@ class VerifiedLearningCoordinator {
     this.state.receipts[receipt.sha256] = { status: 'applying', missionId };
     await this.saveState(this.snapshot());
 
-    const verifiedContext = { strict: true, adversarial: true, confidence, evidenceIds };
+    const verifiedContext = {
+      strict: true,
+      adversarial: true,
+      confidence,
+      evidenceIds,
+      receipt:{...receipt},
+      receiptSha256:receipt.sha256
+    };
     const outcome = await this.outcomeMemory.recordOutcome({
       missionId, goal, status: 'completed', summary,
       tags: [...new Set([...tags, tag])], verification: verifiedContext

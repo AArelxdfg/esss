@@ -191,7 +191,12 @@ class RuntimeLifecycle {
 
   async stop(reason = 'stop', { preserveDesiredModel = false } = {}) {
     if (this.state === 'stopped') return this.snapshot();
-    if (!['ready', 'failed', 'starting'].includes(this.state)) throw new Error(`cannot stop from ${this.state}`);
+    if (this.state === 'starting') {
+      const error = new Error('runtime stop blocked: start in progress');
+      error.code = 'RUNTIME_START_IN_PROGRESS';
+      throw error;
+    }
+    if (!['ready', 'failed'].includes(this.state)) throw new Error(`cannot stop from ${this.state}`);
 
     // A direct stop is a material runtime transition just like model switching
     // and recovery. Never erase tracked inference without invoking its abort

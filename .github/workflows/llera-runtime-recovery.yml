@@ -31,6 +31,9 @@ jobs:
           - runtime-recovery-inference-drain
           - runtime-direct-stop-inference-drain
           - runtime-inference-admission-drain-race
+          - runtime-start-stop-race-guard
+          - runtime-transition-serialization
+          - runtime-host-pressure-drain-serialization
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

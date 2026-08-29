@@ -32,12 +32,18 @@ class SoakRecoveryGate {
           await this.runtime.recover(`soak-cycle-${i}`);
           report.runtimeRecoveries += 1;
         }
-        const mission = this.missionEngine.getMission(missionId);
+        let mission = this.missionEngine.getMission(missionId);
         if (!mission) throw new Error('mission disappeared during soak');
         if (mission.status === 'interrupted') {
           await this.missionEngine.startMission(missionId);
           report.missionResumes += 1;
+          mission = this.missionEngine.getMission(missionId);
+          if (!mission) throw new Error('mission disappeared after resume');
         }
+        if (!isHealthyMissionStatus(mission.status)) {
+          throw new Error(`mission entered non-healthy status ${String(mission.status || 'unknown')} at cycle ${i}`);
+        }
+
         const evidenceOk = await this.evidenceVerifier({ cycle: i, missionId, runtime: this.runtime.snapshot ? this.runtime.snapshot() : null });
         report.evidenceChecks += 1;
         if (!evidenceOk) throw new Error(`evidence verification failed at cycle ${i}`);
@@ -71,6 +77,7 @@ class SoakRecoveryGate {
       evidenceContinuous: report.evidenceChecks === cycles,
       noWatchdogSafeMode: report.watchdogSafeModeEvents === 0,
       missionPreserved: Boolean(finalMission),
+      missionHealthy: Boolean(finalMission && isHealthyMissionStatus(finalMission.status)),
       noFailures: report.failures.length === 0,
       watchdogStabilityCommitted: false,
     };
@@ -109,4 +116,9 @@ class SoakRecoveryGate {
   }
 }
 
-module.exports = { SoakRecoveryGate };
+function isHealthyMissionStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  return normalized === 'running' || normalized === 'completed';
+}
+
+module.exports = { SoakRecoveryGate, isHealthyMissionStatus };

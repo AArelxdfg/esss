@@ -10,6 +10,7 @@ const capabilityTools = [
   'llera_doctor','llera_bench'
 ];
 const allTools = ['read_file', ...capabilityTools];
+const materialTools = new Set(['snapshot_restore']);
 
 class FakeGuard {
   constructor() { this.verificationDebt = null; this.history = []; }
@@ -42,7 +43,7 @@ class FakeCapabilityBroker {
 const originalLoad = Module._load;
 Module._load = function(request, parent, isMain) {
   if (request === './tool-surface') {
-    return {RESTORED_MONOLITH_TOOLS:allTools, ToolExecutionGuard:FakeGuard};
+    return {RESTORED_MONOLITH_TOOLS:allTools, MATERIAL_TOOLS:materialTools, ToolExecutionGuard:FakeGuard};
   }
   if (request === './monolith-capability-broker') {
     return {
@@ -69,12 +70,14 @@ Module._load = originalLoad;
     },
     capabilityBroker,
     guard:new FakeGuard(),
-    failureDoctrine:new FakeFailureDoctrine()
+    failureDoctrine:new FakeFailureDoctrine(),
+    actionAuthorizer:async()=>({allow:true})
   });
 
   const status = broker.status({missionId:'m1'});
   assert.strictEqual(status.specializedCapabilityCount, 14);
   assert.strictEqual(status.capabilityCoverage.availableCount, 14);
+  assert.strictEqual(status.materialActionAuthorizationCoverageComplete,true);
 
   for (const tool of capabilityTools) {
     const result = await broker.invoke(tool,{q:tool},{missionId:'m1'});
@@ -93,6 +96,7 @@ Module._load = originalLoad;
     specializedCapabilities:14,
     historicalBypassForSpecialized:0,
     capabilityCoverageExposed:true,
+    materialAuthorizationCompatible:true,
     ordinaryHistoricalRoutePreserved:true
   });
 })().catch(error => {

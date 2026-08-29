@@ -1,0 +1,41 @@
+name: LLera Mission Restore
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'llera/reconstructed-monolith/src/mission-engine.js'
+      - 'llera/reconstructed-monolith/test/mission-*.test.js'
+      - '.github/workflows/llera-mission-restore.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  durable-missions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+      - name: Record exact commit
+        run: |
+          echo "TESTED_COMMIT=$(git rev-parse HEAD)"
+          git status --porcelain
+      - name: Node version
+        run: node --version
+      - name: Mission persistence regressions
+        working-directory: llera/reconstructed-monolith
+        run: |
+          set -euo pipefail
+          for test in \
+            test/mission-engine.test.js \
+            test/mission-atomic-finalization.test.js \
+            test/mission-recovery-snapshot-debt.test.js \
+            test/mission-multi-recovery-snapshot-debt.test.js \
+            test/mission-persistence-fail-closed.test.js
+          do
+            echo "=== $test ==="
+            node "$test"
+          done

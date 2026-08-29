@@ -7,7 +7,7 @@ const fsp = fs.promises;
 const http = require('http');
 const os = require('os');
 const path = require('path');
-const { MonolithComputerExecutor, PORTABLE_TOOLS } = require('../src/monolith-computer-executor');
+const { MonolithComputerExecutor, PORTABLE_TOOLS, WORKSPACE_RESTRICTED_SHELL_TOOLS } = require('../src/monolith-computer-executor');
 
 async function waitFor(fn,{timeout=3000,interval=20}={}){
   const until=Date.now()+timeout;
@@ -22,7 +22,13 @@ async function waitFor(fn,{timeout=3000,interval=20}={}){
   try{
     const executor=new MonolithComputerExecutor({workspaceRoot:workspace,processStopTimeoutMs:1000});
     const coverage=executor.coverage();
-    for(const tool of PORTABLE_TOOLS)assert(coverage.available.includes(tool),`portable tool missing: ${tool}`);
+    for(const tool of PORTABLE_TOOLS){
+      if(WORKSPACE_RESTRICTED_SHELL_TOOLS.has(tool)) assert(!coverage.available.includes(tool),`workspace-scoped shell must be unavailable: ${tool}`);
+      else assert(coverage.available.includes(tool),`portable tool missing: ${tool}`);
+    }
+    assert.deepStrictEqual(coverage.blockedByWorkspacePolicy,[...WORKSPACE_RESTRICTED_SHELL_TOOLS].sort());
+    await assert.rejects(()=>executor.invoke('run_command',{command:'echo SHOULD_NOT_RUN'}),/capability unavailable/);
+    await assert.rejects(()=>executor.invoke('start_process',{command:'echo SHOULD_NOT_RUN'}),/capability unavailable/);
     for(const tool of ['browser_click','ui_snapshot','clipboard_read','web_search','search_cyber_core'])assert(!coverage.available.includes(tool),`${tool} must be unavailable without adapter`);
 
     await assert.rejects(()=>executor.invoke('read_file',{path:'../outside.txt'}),/workspace path escape blocked/);
@@ -71,18 +77,22 @@ async function waitFor(fn,{timeout=3000,interval=20}={}){
     assert.strictEqual(fs.existsSync(path.join(workspace,'dest/moved.txt')),false);
     await assert.rejects(()=>executor.invoke('delete_path',{path:'.',recursive:true}),/workspace root deletion blocked/);
 
-    result=await executor.invoke('run_command',{command:`"${process.execPath}" -e "process.stdout.write('RUN_OK')"`,shell:'system',cwd:'.'});
+    const fullExecutor=new MonolithComputerExecutor({workspaceRoot:workspace,allowOutsideWorkspace:true,processStopTimeoutMs:1000});
+    assert(fullExecutor.coverage().available.includes('run_command'));
+    assert(fullExecutor.coverage().available.includes('start_process'));
+
+    result=await fullExecutor.invoke('run_command',{command:`"${process.execPath}" -e "process.stdout.write('RUN_OK')"`,shell:'system',cwd:'.'});
     assert.strictEqual(result.ok,true);assert.strictEqual(result.stdout,'RUN_OK');assert.strictEqual(result.exitCode,0);
-    result=await executor.invoke('run_command',{command:`"${process.execPath}" -e "process.stderr.write('NOPE');process.exit(7)"`,shell:'system',cwd:'.'});
+    result=await fullExecutor.invoke('run_command',{command:`"${process.execPath}" -e "process.stderr.write('NOPE');process.exit(7)"`,shell:'system',cwd:'.'});
     assert.strictEqual(result.ok,false);assert.strictEqual(result.exitCode,7);assert.strictEqual(result.stderr,'NOPE');
 
-    const shortJob=await executor.invoke('start_process',{command:`"${process.execPath}" -e "setTimeout(()=>process.stdout.write('BG_OK'),80)"`,shell:'system',cwd:'.'});
-    const completed=await waitFor(async()=>{const state=await executor.invoke('process_status',{job_id:shortJob.jobId});return state.state==='completed'?state:null;});
+    const shortJob=await fullExecutor.invoke('start_process',{command:`"${process.execPath}" -e "setTimeout(()=>process.stdout.write('BG_OK'),80)"`,shell:'system',cwd:'.'});
+    const completed=await waitFor(async()=>{const state=await fullExecutor.invoke('process_status',{job_id:shortJob.jobId});return state.state==='completed'?state:null;});
     assert.strictEqual(completed.stdout,'BG_OK');
-    result=await executor.invoke('read_process_output',{job_id:shortJob.jobId});assert.strictEqual(result.stdout,'BG_OK');
+    result=await fullExecutor.invoke('read_process_output',{job_id:shortJob.jobId});assert.strictEqual(result.stdout,'BG_OK');
 
-    const longJob=await executor.invoke('start_process',{command:`"${process.execPath}" -e "setInterval(()=>{},1000)"`,shell:'system',cwd:'.'});
-    const stopped=await executor.invoke('process_stop',{job_id:longJob.jobId});
+    const longJob=await fullExecutor.invoke('start_process',{command:`"${process.execPath}" -e "setInterval(()=>{},1000)"`,shell:'system',cwd:'.'});
+    const stopped=await fullExecutor.invoke('process_stop',{job_id:longJob.jobId});
     assert.strictEqual(stopped.state,'stopped');
 
     result=await executor.invoke('list_processes',{});assert.strictEqual(result.ok,true);assert(result.text.length>0);
@@ -118,6 +128,8 @@ async function waitFor(fn,{timeout=3000,interval=20}={}){
       portableTools:PORTABLE_TOOLS.size,
       filesystemReadWriteVerify:true,
       workspaceEscapeBlocked:true,
+      workspaceScopedShellFailClosed:true,
+      fullPcShellRequiresExplicitOptIn:true,
       processRunBackgroundStop:true,
       localHttpWebGet:true,
       missingAdaptersFailClosed:true,

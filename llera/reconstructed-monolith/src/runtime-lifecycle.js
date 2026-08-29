@@ -159,16 +159,27 @@ class RuntimeLifecycle {
       this._transition('ready', reason);
       return this.snapshot();
     } catch (err) {
+      const cleanupPid = started && started.pid ? started.pid : this.pid;
       const cleanup = await this._cleanupStartedBackend({
-        pid: started && started.pid ? started.pid : this.pid,
+        pid: cleanupPid,
         model,
         reason: 'failed-start-cleanup'
       });
       const baseError = String(err?.message || err);
       this.lastError = cleanup.error ? `${baseError}; cleanup failed: ${cleanup.error}` : baseError;
-      this.pid = null;
-      this.model = null;
-      this.activeInference.clear();
+
+      // If cleanup fails, preserve the backend identity instead of pretending it
+      // disappeared. This keeps the single-runtime invariant fail-closed: a
+      // subsequent ensureRunning() is blocked until stop()/recover() can resolve
+      // the known orphan PID.
+      if (cleanup.error && cleanupPid) {
+        this.pid = cleanupPid;
+        this.model = model;
+      } else {
+        this.pid = null;
+        this.model = null;
+        this.activeInference.clear();
+      }
       this._transition('failed', cleanup.error ? 'start-failed-cleanup-failed' : 'start-failed-cleaned');
 
       if (previousModel && !cleanup.error) {

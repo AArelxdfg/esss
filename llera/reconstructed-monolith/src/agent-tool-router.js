@@ -10,8 +10,8 @@ class MonolithAgentToolRouter {
     if (!capabilityBroker || typeof capabilityBroker.invoke !== 'function' || typeof capabilityBroker.coverage !== 'function') {
       throw new Error('capabilityBroker invoke/coverage is required');
     }
-    if (!computerExecutor || typeof computerExecutor.invoke !== 'function') {
-      throw new Error('computerExecutor.invoke is required');
+    if (!computerExecutor || typeof computerExecutor.invoke !== 'function' || typeof computerExecutor.coverage !== 'function') {
+      throw new Error('computerExecutor invoke/coverage is required');
     }
     this.capabilityBroker = capabilityBroker;
     this.computerExecutor = computerExecutor;
@@ -19,7 +19,9 @@ class MonolithAgentToolRouter {
 
   coverage() {
     const capability = this.capabilityBroker.coverage();
-    const capabilityAvailable = new Set(capability.available || []);
+    const capabilityAvailable = new Set((capability.available || []).map(String));
+    const computer = this.computerExecutor.coverage();
+    const computerAvailable = new Set((computer && computer.available || []).map(String));
     const available = [];
     const unavailable = [];
     const routes = {};
@@ -32,8 +34,9 @@ class MonolithAgentToolRouter {
         continue;
       }
 
-      routes[tool] = 'computer';
-      available.push(tool);
+      const ok = computerAvailable.has(tool);
+      routes[tool] = ok ? 'computer' : 'unavailable-computer';
+      (ok ? available : unavailable).push(tool);
     }
 
     return {
@@ -45,6 +48,8 @@ class MonolithAgentToolRouter {
       available,
       unavailable,
       routes,
+      specializedCoverage: capability,
+      computerCoverage: computer || null,
       fullExecutionSurfaceAvailable: unavailable.length === 0
     };
   }
@@ -62,6 +67,10 @@ class MonolithAgentToolRouter {
       return this.capabilityBroker.invoke(tool, args, context);
     }
 
+    const computerCoverage = this.computerExecutor.coverage();
+    if (!(computerCoverage && computerCoverage.available || []).includes(tool)) {
+      throw new Error(`computer MONOLITH capability unavailable: ${tool}`);
+    }
     return this.computerExecutor.invoke(tool, args, context);
   }
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { receiptStateKey } = require('./verified-mission-finalizer');
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function normalizeTokens(value) {
@@ -18,6 +19,41 @@ function stableId(prefix, seed) {
 function normalizeEvidenceIds(values) {
   if (!Array.isArray(values)) return [];
   return [...new Set(values.filter(Boolean).map(v => String(v)))];
+}
+function sameStringSet(a, b) {
+  const aa = [...new Set((a || []).map(String))].sort();
+  const bb = [...new Set((b || []).map(String))].sort();
+  return aa.length === bb.length && aa.every((value, index) => value === bb[index]);
+}
+function validateFinalizationReceipt(receipt, { missionId, evidenceIds = [] } = {}) {
+  if (!receipt || receipt.schema !== 2) return {ok:false, reason:'finalization_receipt_required'};
+  if (receipt.missionId !== missionId) return {ok:false, reason:'finalization_receipt_mission_mismatch'};
+  if (!/^[a-f0-9]{64}$/i.test(String(receipt.sha256 || '')) || receipt.sha256 !== receipt.stateKey) {
+    return {ok:false, reason:'finalization_receipt_sha_invalid'};
+  }
+  if (!/^[a-f0-9]{64}$/i.test(String(receipt.toolTraceDigest || ''))) {
+    return {ok:false, reason:'finalization_receipt_trace_digest_invalid'};
+  }
+  const receiptEvidenceIds = normalizeEvidenceIds(receipt.evidenceIds);
+  if (!receiptEvidenceIds.length || !sameStringSet(receiptEvidenceIds, evidenceIds)) {
+    return {ok:false, reason:'finalization_receipt_evidence_mismatch'};
+  }
+  const strictScore = Number(receipt.strictScore || 0);
+  const adversarialScore = Number(receipt.adversarialScore || 0);
+  if (!Number.isFinite(strictScore) || !Number.isFinite(adversarialScore) || strictScore < 0.62 || adversarialScore < 0.62) {
+    return {ok:false, reason:'finalization_receipt_score_reject'};
+  }
+  const expected = receiptStateKey({
+    missionId:receipt.missionId,
+    claim:receipt.claim || '',
+    evidenceIds:receiptEvidenceIds,
+    materialBindings:Array.isArray(receipt.materialBindings) ? receipt.materialBindings : [],
+    strictScore,
+    adversarialScore,
+    toolTraceDigest:receipt.toolTraceDigest
+  });
+  if (expected !== receipt.stateKey) return {ok:false, reason:'finalization_receipt_state_mismatch'};
+  return {ok:true, strictScore, adversarialScore, confidence:Math.min(strictScore, adversarialScore), evidenceIds:receiptEvidenceIds, receiptSha256:receipt.sha256};
 }
 
 class OutcomeMemory {
@@ -50,12 +86,25 @@ class OutcomeMemory {
     if (!missionId || !goal) throw new Error('missionId and goal are required');
     if (!['completed', 'failed', 'partial'].includes(status)) throw new Error('invalid outcome status');
 
-    const verificationEvidenceIds = normalizeEvidenceIds(verification.evidenceIds);
-    const verified =
-      verification.strict === true &&
-      verification.adversarial === true &&
-      Number(verification.confidence || 0) >= 0.62 &&
-      verificationEvidenceIds.length > 0;
+    const suppliedEvidenceIds = normalizeEvidenceIds(verification.evidenceIds);
+    const receiptValidation = status === 'completed'
+      ? validateFinalizationReceipt(verification.receipt, { missionId, evidenceIds:suppliedEvidenceIds })
+      : {ok:false, reason:'non_completed_outcome'};
+    const attemptedVerifiedCompletion = status === 'completed' && (
+      verification.strict === true || verification.adversarial === true || Number(verification.confidence || 0) >= 0.62 || suppliedEvidenceIds.length > 0 || verification.receipt
+    );
+    if (attemptedVerifiedCompletion && !receiptValidation.ok) {
+      const error = new Error(`verified completed outcome rejected: ${receiptValidation.reason}`);
+      error.code = 'OUTCOME_VERIFICATION_RECEIPT_INVALID';
+      error.reason = receiptValidation.reason;
+      throw error;
+    }
+
+    const verified = status === 'completed' && receiptValidation.ok;
+    const verificationEvidenceIds = verified ? receiptValidation.evidenceIds : suppliedEvidenceIds;
+    const strict = verified ? true : verification.strict === true;
+    const adversarial = verified ? true : verification.adversarial === true;
+    const confidence = verified ? receiptValidation.confidence : Number(verification.confidence || 0);
 
     const at = this.now();
     const record = {
@@ -68,10 +117,11 @@ class OutcomeMemory {
       tags: [...new Set(tags.map(v => String(v).toLowerCase()))],
       verified,
       verification: {
-        strict: verification.strict === true,
-        adversarial: verification.adversarial === true,
-        confidence: Number(verification.confidence || 0),
-        evidenceIds: verificationEvidenceIds
+        strict,
+        adversarial,
+        confidence,
+        evidenceIds: verificationEvidenceIds,
+        receiptSha256: verified ? receiptValidation.receiptSha256 : null
       },
       at
     };
@@ -123,6 +173,10 @@ class OutcomeMemory {
       throw new Error('skill candidates require a verified completed mission outcome');
     }
 
+    const sourceReceiptSha256 = sourceOutcome.verification && sourceOutcome.verification.receiptSha256;
+    if (!sourceReceiptSha256 || verification.receiptSha256 !== sourceReceiptSha256) {
+      throw new Error('skill candidate requires the source verified finalization receipt');
+    }
     const verified =
       verification.strict === true &&
       verification.adversarial === true &&
@@ -164,6 +218,7 @@ class OutcomeMemory {
       evidenceIds: candidateEvidenceIds,
       sourceOutcomeId: sourceOutcome.id,
       sourceEvidenceIds,
+      sourceReceiptSha256,
       trust: 'candidate-only',
       executable: false,
       approvalRequired: true,
@@ -179,4 +234,4 @@ class OutcomeMemory {
   async _persist() { await this.saveBackend(clone(this.state)); }
 }
 
-module.exports = { OutcomeMemory };
+module.exports = { OutcomeMemory, validateFinalizationReceipt };

@@ -292,6 +292,22 @@ class RuntimeLifecycle {
     const normalized = String(level || '').toUpperCase();
     if (normalized !== 'CRITICAL') return { level: normalized, aborted: [], failures: [] };
 
+    // Lifecycle drains own cancellation while admission is closed. Running a
+    // HOSTGUARD preemption pass concurrently would invoke the same abort
+    // callback twice and can turn a healthy stop/recovery/model-switch into a
+    // false drain failure. Defer pressure cancellation to the active lifecycle
+    // owner; that drain already covers all priorities, including low-priority
+    // work that HOSTGUARD would otherwise preempt.
+    if (this.inferenceAdmissionClosed || ['starting','stopping','recovering'].includes(this.state)) {
+      return {
+        level: normalized,
+        aborted: [],
+        failures: [],
+        deferred: true,
+        reason: this.inferenceAdmissionReason || `runtime-${this.state}`
+      };
+    }
+
     const victims = [...this.activeInference.values()]
       .filter(t => t.priority === 'low')
       .sort((a, b) => a.startedAt - b.startedAt || String(a.id).localeCompare(String(b.id)));

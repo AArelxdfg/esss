@@ -34,7 +34,8 @@ jobs:
             test/mission-atomic-finalization.test.js \
             test/mission-recovery-snapshot-debt.test.js \
             test/mission-multi-recovery-snapshot-debt.test.js \
-            test/mission-persistence-fail-closed.test.js
+            test/mission-persistence-fail-closed.test.js \
+            test/mission-concurrent-persistence-guard.test.js
           do
             echo "=== $test ==="
             node "$test"

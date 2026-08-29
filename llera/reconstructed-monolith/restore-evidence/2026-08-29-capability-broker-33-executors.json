@@ -1,0 +1,29 @@
+{
+  "product": "LLera reconstructed MONOLITH OMEGA",
+  "date": "2026-08-29",
+  "scope": "historical agent tool execution surface",
+  "sourceCommit": "467bc4e5ab7f98b425baee1f62e1902cc727b97d",
+  "sourceBlob": "8a3033c9f226c8d99c41c7b754f559a7e04282d2",
+  "testCommit": "08d7720f2ce1a31a16e1156de2568583f171b36b",
+  "testBlob": "8f58cd9d7688f5547efbc2ed68b542f3aff63296",
+  "ciWorkflowCommit": "5647c02503c6c5d950f09e04f5e1ded8a2ae379b",
+  "historicalDeclaredToolCount": 62,
+  "priorExecutableCapabilityCount": 14,
+  "currentExecutableCapabilityCount": 33,
+  "newlyExecutable": {
+    "filesystem": ["list_dir","read_file","write_file","apply_patch","search_files","make_dir","copy_path","move_path","delete_path","read_text_range","file_stat","path_exists","hash_file"],
+    "process": ["run_command","start_process","process_status","process_stop","list_processes","read_process_output"]
+  },
+  "failClosedDependencyBehavior": true,
+  "localSmoke": {
+    "result": "PASS",
+    "exitCode": 0,
+    "checks": ["33 bindings declared", "33 mock-backed bindings available", "filesystem routing", "process routing", "missing filesystem dependency rejected"]
+  },
+  "limits": [
+    "This is reconstructed-source progress, not exact V5.3.5/V5.4 source recovery.",
+    "The service bindings require real Windows/filesystem/process adapters in the final product host.",
+    "No physical Windows/GPU validation is claimed.",
+    "No Windows x64 EXE or complete source ZIP was rebuilt because the complete product source tree is not available in this execution environment."
+  ]
+}

@@ -65,10 +65,17 @@ class DualVerifier {
     if (!e.id || !/^ev_[a-f0-9]{24}$/i.test(e.id)) return {ok:false, reason:'invalid_evidence_id'};
     if (!/^[a-f0-9]{64}$/i.test(e.sha256 || '')) return {ok:false, reason:'invalid_evidence_binding'};
     if (!e.missionId || !e.stepId || !e.kind || !e.target) return {ok:false, reason:'incomplete_evidence_binding'};
+    if (e.tool !== null && e.tool !== undefined && (typeof e.tool !== 'string' || !e.tool.trim())) {
+      return {ok:false, reason:'invalid_evidence_tool'};
+    }
+    if (e.byteCount !== null && e.byteCount !== undefined && (!Number.isSafeInteger(e.byteCount) || e.byteCount < 0)) {
+      return {ok:false, reason:'invalid_evidence_byte_count'};
+    }
 
     const expected = evidenceId({
       missionId:e.missionId,
       stepId:e.stepId,
+      tool:e.tool || null,
       kind:e.kind,
       target:e.target,
       sha256:String(e.sha256).toLowerCase()

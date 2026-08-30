@@ -1,0 +1,35 @@
+{
+  "milestone": "AURORA command palette activation announcement continuity",
+  "date": "2026-08-30",
+  "status": "targeted-regression-pass",
+  "source": {
+    "path": "llera/reconstructed-monolith/src/aurora-accessibility-controller.js",
+    "commit": "29c1525f2864355246e92ede7b782fd534fb4e7a",
+    "git_blob_sha": "d9bf54a35531aadf36258dcbe2faba06740ea6f6"
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/aurora-focus-trap-controller.test.js",
+    "commit": "b60d0ee911841e0302a323fe736188cf5d1218d2",
+    "git_blob_sha": "aaddd5c06177c04c783d7159958cdc8a285c22eb"
+  },
+  "behavior": {
+    "problem": "Enter activation replaced the meaningful surface/command live-region update with the generic command-palette-closed announcement.",
+    "fix": "After successful palette activation and focus restoration, the accessibility controller emits a final '<command label> activated' polite live-region update and exposes paletteActivationAnnounced in the accessibility contract.",
+    "focus_restoration_preserved": true,
+    "reduced_motion_contract_unchanged": true,
+    "stable_json_modified": false,
+    "release_published": false
+  },
+  "verification": {
+    "full_repository_clone": "blocked by github.com network/DNS from local runner",
+    "targeted_node_syntax": "PASS",
+    "targeted_mock_regression": "PASS: AURORA palette activation announcement PASS",
+    "full_suite_claimed": false,
+    "physical_windows_claimed": false
+  },
+  "historical_contract": {
+    "v5_4_source_zip_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "v5_3_5_source_zip_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "exact_historical_source_bytes_recovered_this_run": false
+  }
+}

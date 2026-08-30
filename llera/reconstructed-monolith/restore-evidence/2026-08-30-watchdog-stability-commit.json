@@ -1,0 +1,53 @@
+{
+  "milestone": "Verified updater watchdog stability commit hardening",
+  "date": "2026-08-30",
+  "baseline": "reconstructed-monolith",
+  "historical_contract": {
+    "v5_3_5_source_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_source_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "exact_v5_4_bytes_recovered": false
+  },
+  "source": {
+    "path": "llera/reconstructed-monolith/src/verified-update-install-coordinator.js",
+    "commit": "5bf928455fcd8165c5df17350d82ef008a39ebf8",
+    "blob_sha": "5e806d804c376d25a5c094a48ec566e598afbbe3",
+    "behavior": [
+      "verified install is not reported successful when watchdog durable stability commit fails",
+      "watchdog stability failure is recorded as a blocked fail-closed lifecycle state",
+      "installed artifact and signed-manifest provenance remain attached to the failure record"
+    ]
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/verified-update-install-coordinator.test.js",
+    "commit": "b891628d5f2c3e441ccb650c529ad5a3bee3520e",
+    "blob_sha": "9512ef6d4f4c5972d62df21ca6972bb0ee97d4b0",
+    "coverage": [
+      "watchdog markStable exception",
+      "fail-closed blocked result",
+      "installedVerified provenance",
+      "artifact SHA-256 continuity",
+      "manifest payload SHA-256 continuity",
+      "failure persisted in coordinator status history"
+    ]
+  },
+  "ci": {
+    "workflow": "LLera Signed Updater Restore",
+    "run_id": 33293859978,
+    "head_sha": "5bf928455fcd8165c5df17350d82ef008a39ebf8",
+    "status": "completed",
+    "conclusion": "failure",
+    "runner_id": 0,
+    "steps": [],
+    "interpretation": "GitHub runner provisioning failed before any test step; PASS not claimed"
+  },
+  "local_execution": {
+    "status": "BLOCKED",
+    "reason": "raw.githubusercontent.com DNS resolution failed"
+  },
+  "exact_v5_4_claimed": false,
+  "full_parity_claimed": false,
+  "physical_windows_gpu_claimed": false,
+  "windows_grade_final_claimed": false,
+  "stable_json_modified": false,
+  "release_published": false
+}

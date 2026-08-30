@@ -30,7 +30,15 @@ class VerifiedUpdateInstallCoordinator {
       try {
         await this.watchdog.markStable();
       } catch(error) {
-        const result={ok:false,blocked:true,version:manifest.version,phase:'watchdog-stability-commit',reason:'watchdog_stability_commit_failed',installedVerified:true,artifactSha256:expectedSha256,manifestPayloadSha256:verifiedManifest.payloadSha256||null,installedPath:installed.current||null,error:String(error&&error.message||error),at:this.now()};
+        let rollback=null;
+        if (typeof this.installer.rollbackVerifiedInstall==='function') {
+          try {
+            rollback=await this.installer.rollbackVerifiedInstall({version:manifest.version,expectedSha256,hadCurrent:installed.hadCurrent===true,previousSha256:installed.previousSha256||null});
+          } catch(rollbackError) {
+            rollback={rolledBack:false,blocked:true,repairRequired:true,reason:'post_install_rollback_failed',error:String(rollbackError&&rollbackError.message||rollbackError)};
+          }
+        }
+        const result={ok:false,blocked:true,version:manifest.version,phase:'watchdog-stability-commit',reason:'watchdog_stability_commit_failed',installedVerified:true,rolledBack:rollback&&rollback.rolledBack===true,rollbackAttempted:rollback!==null,rollbackRepairRequired:rollback&&rollback.repairRequired===true,rollbackReason:rollback&&rollback.reason||null,artifactSha256:expectedSha256,manifestPayloadSha256:verifiedManifest.payloadSha256||null,installedPath:installed.current||null,error:String(error&&error.message||error),at:this.now()};
         this.history.push(result);
         return result;
       }

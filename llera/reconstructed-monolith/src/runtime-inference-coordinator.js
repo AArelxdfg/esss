@@ -45,11 +45,26 @@ class RuntimeInferenceCoordinator {
     }
   }
 
-  complete(id) {
+  complete(id, expectedGeneration = null) {
+    const local = this.active.get(id) || null;
+    if (expectedGeneration !== null && expectedGeneration !== undefined) {
+      if (!local || local.generation !== expectedGeneration) {
+        this.completed.push({
+          id,
+          reason: 'stale-completion-ignored',
+          expectedGeneration,
+          activeGeneration: local && local.generation !== undefined ? local.generation : null
+        });
+        return false;
+      }
+    }
+
     const runtimeRemoved = this.runtime.completeInference(id);
     const governorRemoved = this.governor.complete(id);
     const localRemoved = this.active.delete(id);
-    if (runtimeRemoved || governorRemoved || localRemoved) this.completed.push({ id, reason: 'completed' });
+    if (runtimeRemoved || governorRemoved || localRemoved) {
+      this.completed.push({ id, reason: 'completed', generation: local && local.generation !== undefined ? local.generation : null });
+    }
     return Boolean(runtimeRemoved || governorRemoved || localRemoved);
   }
 

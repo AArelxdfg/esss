@@ -1,5 +1,7 @@
 'use strict';
 
+const { canCompleteRuntimeInference } = require('./runtime-completion-guard');
+
 const LOW_PRIORITY_CLASSES = new Set(['council', 'adversarial']);
 
 class RuntimeInferenceCoordinator {
@@ -57,9 +59,22 @@ class RuntimeInferenceCoordinator {
         });
         return false;
       }
+
+      const runtimeGate = canCompleteRuntimeInference(this.runtime, id, expectedGeneration);
+      if (!runtimeGate.allow) {
+        this.completed.push({
+          id,
+          reason: 'runtime-generation-completion-blocked',
+          expectedGeneration,
+          activeGeneration: local.generation,
+          runtimeGeneration: runtimeGate.activeGeneration,
+          runtimeReason: runtimeGate.reason
+        });
+        return false;
+      }
     }
 
-    const runtimeRemoved = this.runtime.completeInference(id);
+    const runtimeRemoved = this.runtime.completeInference(id, expectedGeneration);
     const governorRemoved = this.governor.complete(id);
     const localRemoved = this.active.delete(id);
     if (runtimeRemoved || governorRemoved || localRemoved) {

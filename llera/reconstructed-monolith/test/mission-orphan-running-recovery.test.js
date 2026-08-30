@@ -44,7 +44,34 @@ async function recover(persisted) {
   assert.equal(afterReplay.steps[0].completedAt, 77);
   assert.equal(afterReplay.status, 'interrupted');
 
-  console.log('MISSION_ORPHAN_RUNNING_RECOVERY_PASS');
+  const staleAttempt = JSON.parse(JSON.stringify(baseMission));
+  staleAttempt.steps[0].attempts = 2;
+  staleAttempt.steps[0].startedAt = 100;
+  staleAttempt.checkpoints.push({
+    id: 'cp-old-attempt', at: 77, status: 'running', currentStepId: null,
+    completedStepIds: ['s1'], payload: { type: 'step-complete', stepId: 's1', attempt: 1, startedAt: 2, result: { ok: true } }
+  });
+  const staleRejected = await recover({ schema: 1, missions: { m1: staleAttempt }, order: ['m1'] });
+  const afterStale = staleRejected.engine.getMission('m1');
+  assert.equal(afterStale.steps[0].status, 'pending');
+  assert.equal(afterStale.steps[0].completedAt, null);
+  assert.equal(afterStale.steps[0].lastError, 'interrupted:process-restart');
+  assert.equal(afterStale.status, 'interrupted');
+
+  const matchingAttempt = JSON.parse(JSON.stringify(baseMission));
+  matchingAttempt.steps[0].attempts = 2;
+  matchingAttempt.steps[0].startedAt = 100;
+  matchingAttempt.checkpoints.push({
+    id: 'cp-attempt-2', at: 120, status: 'running', currentStepId: null,
+    completedStepIds: ['s1'], payload: { type: 'step-complete', stepId: 's1', attempt: 2, startedAt: 100, result: { ok: true } }
+  });
+  const matchingReplay = await recover({ schema: 1, missions: { m1: matchingAttempt }, order: ['m1'] });
+  const afterMatching = matchingReplay.engine.getMission('m1');
+  assert.equal(afterMatching.steps[0].status, 'completed');
+  assert.equal(afterMatching.steps[0].checkpointId, 'cp-attempt-2');
+  assert.equal(afterMatching.steps[0].completedAt, 120);
+
+  console.log('MISSION_ATTEMPT_BOUND_RECOVERY_PASS');
 })().catch(error => {
   console.error(error);
   process.exit(1);

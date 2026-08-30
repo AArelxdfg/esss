@@ -1,0 +1,49 @@
+{
+  "milestone": "Vision 4B + Windows OCR immutable input snapshot isolation",
+  "date": "2026-08-30",
+  "scope": [
+    "image input",
+    "file input",
+    "screen/OCR input",
+    "Vision 4B backend",
+    "Windows OCR backend"
+  ],
+  "source": {
+    "path": "llera/reconstructed-monolith/src/vision-pipeline.js",
+    "commit": "fa2beb5afa6fdee30e70c22f478d4b4e5352b7e1",
+    "git_blob_sha": "15f92cdee7d02c77eec361858c1f9aaf5a89867d"
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/vision-input-snapshot-isolation.test.js",
+    "commit": "076facf7d72bc151da97ed1467668f9eeda95465",
+    "git_blob_sha": "7ac912f185eac8fcb331b79c701375af0143fa83"
+  },
+  "ci_gate_commit": "6a7fc6938700184dda677bcdd1a72f80a0c36535",
+  "local_exact_blob_validation": {
+    "source_blob_match": true,
+    "test_blob_match": true,
+    "tests": [
+      "vision-runtime-adapter.test.js PASS",
+      "vision-backend-recovery.test.js PASS",
+      "vision-input-snapshot-isolation.test.js PASS"
+    ]
+  },
+  "behavior": {
+    "caller_mutation_isolated_after_admission": true,
+    "vision_backend_mutation_cannot_change_ocr_input": true,
+    "ocr_backend_receives_independent_snapshot": true,
+    "result_sha256_binds_to_admitted_snapshot": true,
+    "hostguard_critical_pressure_behavior_preserved": true
+  },
+  "claims_not_made": [
+    "exact V5.4 source recovered",
+    "full MONOLITH OMEGA parity",
+    "physical Windows OCR execution",
+    "physical GPU Vision 4B execution",
+    "Windows-grade final"
+  ],
+  "release_state": {
+    "stable_json_modified": false,
+    "release_published": false
+  }
+}

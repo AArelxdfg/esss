@@ -1,0 +1,24 @@
+{
+  "milestone": "soak-runtime-startup-fail-closed",
+  "date": "2026-08-30",
+  "parity_area": "Windows installer/uninstaller/watchdog and soak/recovery gates",
+  "source_commit": "7bbf2fc9ee8046a53341c92d4afd142248d442ef",
+  "source_blob_sha": "99ba5d136e18fb1f6df5b2b9335c37fc5506218e",
+  "test_commit": "35683660dac4f3a0c345751b05d9823d52d73e72",
+  "test_blob_sha": "c62bb228a7e9536087216712e32c0c47ebedea5e",
+  "behavior": [
+    "runtime.ensureRunning failure is captured as a structured stage=runtime-startup failure instead of escaping the soak gate",
+    "startup failure produces a fail-closed report with zero completed cycles/evidence checks",
+    "watchdog stability debt cannot be cleared when runtime startup failed",
+    "synthetic HOSTGUARD pressure is restored/left at NORMAL before final reporting"
+  ],
+  "verification": {
+    "regression_added": true,
+    "runtime_execution": "BLOCKED",
+    "blocker": "execution container could not resolve raw.githubusercontent.com, so no executable PASS is claimed"
+  },
+  "exact_v5_4_source_recovered": false,
+  "physical_windows_gpu_validated": false,
+  "release_published": false,
+  "stable_json_modified": false
+}

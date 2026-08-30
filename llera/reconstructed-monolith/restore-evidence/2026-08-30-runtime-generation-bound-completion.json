@@ -1,0 +1,46 @@
+{
+  "milestone": "runtime-generation-bound-inference-completion",
+  "date": "2026-08-30",
+  "scope": "reconstructed MONOLITH runtime inference coordination",
+  "problem": "a delayed completion from an older runtime generation could target a newly admitted inference reusing the same id after restart",
+  "change": {
+    "source_path": "llera/reconstructed-monolith/src/runtime-inference-coordinator.js",
+    "source_commit": "d929a89f1cdf28ff31c854e89b771c0e59ad24e1",
+    "source_blob": "ca579dd3cab0cd79cfb7d6b33bc3c18aca2102df",
+    "behavior": "complete(id, expectedGeneration) ignores mismatched stale completions and records stale-completion-ignored audit state without deleting current runtime/governor/coordinator admission",
+    "backward_compatibility": "legacy complete(id) remains accepted"
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/runtime-generation-bound-completion.test.js",
+    "commit": "9adccd66bfc809a9d599ef68b6b1c620b05ac678",
+    "isolated_behavior_reproduction": "PASS",
+    "pass_marker": "RUNTIME_GENERATION_BOUND_COMPLETION_PASS",
+    "repository_exact_source_ci": "BLOCKED",
+    "ci_reason": "GitHub Actions job received no runner; runner_id=0 and steps=[]"
+  },
+  "ci": {
+    "workflow_commit": "3906208286d0f87e1b81f35b741bafb827addab0",
+    "run_id": 33312569769,
+    "job_id": 99260151887,
+    "runner_id": 0,
+    "steps": 0,
+    "conclusion": "failure-before-steps"
+  },
+  "exact_recovery": {
+    "v5_3_5_source_zip_sha256_expected": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_source_zip_sha256_expected": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "exact_bytes_recovered_this_run": false
+  },
+  "release_state": {
+    "stable_json_modified": false,
+    "release_published": false,
+    "windows_x64_rebuilt": false,
+    "reason": "no verified publishable candidate/signing material and repository CI runner did not execute"
+  },
+  "claims": {
+    "exact_v5_4": false,
+    "full_parity": false,
+    "physical_windows_gpu_validation": false,
+    "windows_grade_final": false
+  }
+}

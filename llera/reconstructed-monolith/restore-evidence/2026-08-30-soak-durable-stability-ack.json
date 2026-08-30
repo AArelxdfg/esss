@@ -1,0 +1,26 @@
+{
+  "milestone": "soak_durable_watchdog_stability_ack",
+  "date": "2026-08-30",
+  "baseline": "reconstructed MONOLITH OMEGA",
+  "source_commit": "68d9abec88b9fa627e05a3c4562a24cc990238dd",
+  "source_blob_sha": "eb826210a64c5d9d18978e606da6c967a68ecd6a",
+  "test_commit": "855359a403276c10162b1dc9c3706dd0d0aaec61",
+  "test_blob_sha": "31b8fd1731c690f723c28e98cd05204cd839e0a6",
+  "behavior": {
+    "stale_watchdog_ack_rejected": true,
+    "null_or_invalid_ack_rejected": true,
+    "recent_crash_state_rejected": true,
+    "active_safe_mode_state_rejected": true,
+    "invalid_soak_intervals_rejected": true,
+    "watchdog_debt_clears_only_after_durable_ack": true
+  },
+  "executable_test": {
+    "environment": "isolated Node.js",
+    "result": "PASS",
+    "marker": "SOAK_DURABLE_STABILITY_ACK_PASS"
+  },
+  "exact_v54_recovered": false,
+  "physical_windows_validation": false,
+  "release_published": false,
+  "stable_json_modified": false
+}

@@ -1,0 +1,39 @@
+name: LLera AURORA Restore
+
+on:
+  push:
+    paths:
+      - 'llera/reconstructed-monolith/src/aurora-*.js'
+      - 'llera/reconstructed-monolith/test/aurora-*.test.js'
+      - '.github/workflows/llera-aurora-restore.yml'
+  pull_request:
+    paths:
+      - 'llera/reconstructed-monolith/src/aurora-*.js'
+      - 'llera/reconstructed-monolith/test/aurora-*.test.js'
+      - '.github/workflows/llera-aurora-restore.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  aurora-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check llera/reconstructed-monolith/src/aurora-ui-contract.js
+          node --check llera/reconstructed-monolith/src/aurora-monolith-view-model.js
+          node --check llera/reconstructed-monolith/src/aurora-focus-trap.js
+          node --check llera/reconstructed-monolith/src/aurora-accessibility-controller.js
+      - name: AURORA behavior regressions
+        run: |
+          node llera/reconstructed-monolith/test/aurora-ui-contract.test.js
+          node llera/reconstructed-monolith/test/aurora-accessibility-behavior.test.js
+          node llera/reconstructed-monolith/test/aurora-surface-keyboard-navigation.test.js
+          node llera/reconstructed-monolith/test/aurora-monolith-view-model.test.js
+          node llera/reconstructed-monolith/test/aurora-focus-trap-controller.test.js

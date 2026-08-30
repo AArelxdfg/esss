@@ -1,0 +1,54 @@
+{
+  "milestone": "watchdog-post-install-stability-rollback",
+  "date": "2026-08-30",
+  "baseline": "reconstructed MONOLITH OMEGA; Recovery/Native demo shells excluded",
+  "contract": {
+    "v5_3_5_source_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_source_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "exact_source_bytes_recovered": false
+  },
+  "changes": [
+    {
+      "path": "src/windows-packaging-lifecycle.js",
+      "commit": "0b4ff4b8a26ce9a303a9a582794ce2265bb645d6",
+      "blob": "b595f07f3d732784a093170364dbe3ec12ed64ba",
+      "behavior": "WindowsInstallLifecycle exposes digest-bound rollbackVerifiedInstall; install returns hadCurrent/previousSha256 provenance and journals post-install rollback."
+    },
+    {
+      "path": "src/verified-update-install-coordinator.js",
+      "commit": "e2655f2bd003c9344f0c5ab7a1481b907d7b84e3",
+      "blob": "00b833b7e12f9d75eec24dbacbe7135cf5e80b13",
+      "behavior": "watchdog markStable failure attempts verified installer rollback and records rollback/repair outcome instead of leaving a silent half-committed update."
+    },
+    {
+      "path": "test/verified-update-install-coordinator.test.js",
+      "commit": "074c54249f757edaa4b3aac748f2a1371893fbc6",
+      "blob": "7e5fe7966385dde544520342da737e5a5b65c418"
+    },
+    {
+      "path": "test/windows-packaging-lifecycle.test.js",
+      "commit": "ef885deaf7c2f24ccf48bd84dbd6c98f8a333cc5",
+      "blob": "20b21a5b50c08267f91fcbf962a37f00bf6ff7dc"
+    }
+  ],
+  "verification": {
+    "source_review": "complete for modified paths",
+    "github_actions": {
+      "run_id": 33295277543,
+      "status": "completed",
+      "conclusion": "failure",
+      "runner_id": 0,
+      "steps": [],
+      "interpretation": "runner was not allocated; this is not an executable test failure or PASS"
+    },
+    "physical_windows_validation": false,
+    "full_parity_claimed": false,
+    "exact_v5_4_claimed": false
+  },
+  "release_safety": {
+    "stable_json_modified": false,
+    "release_published": false,
+    "windows_x64_exe_rebuilt": false,
+    "source_zip_rebuilt": false
+  }
+}

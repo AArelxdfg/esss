@@ -1,0 +1,47 @@
+{
+  "milestone": "Outcome Memory durable persistence transaction",
+  "date": "2026-08-30",
+  "scope": [
+    "Outcome Memory",
+    "Skill Evolution candidate persistence",
+    "fail-closed rollback",
+    "concurrent mutation serialization"
+  ],
+  "source": {
+    "path": "llera/reconstructed-monolith/src/outcome-memory.js",
+    "commit": "1d5f13f42730f2210d7209654a0b93bd1f91689c",
+    "git_blob_sha1": "e295acc8344308ab1022b92545153bf55cf0fc6f"
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/outcome-memory-persistence-transaction.test.js",
+    "commit": "a94d6ae6d6dc09bdd10e99d0e85132a86525dbf2",
+    "git_blob_sha1": "d7731499114f9d18f76ca6cdd95360b7fad4cbf3"
+  },
+  "ci_gate": {
+    "path": ".github/workflows/llera-learning-restore.yml",
+    "commit": "6c0f47f5897618e1c64c56aefb3c5ee0e46231e5"
+  },
+  "verification": {
+    "node_syntax": "PASS",
+    "regression": "PASS",
+    "exit_code": 0,
+    "stdout": "MONOLITH outcome memory persistence transaction PASS",
+    "committed_blob_identity_matches_tested_bytes": true
+  },
+  "restored_behavior": [
+    "failed outcome save rolls RAM back to the last durable snapshot",
+    "failed skill candidate save rolls RAM back to the last durable snapshot",
+    "a second learning mutation is rejected while persistence is in flight",
+    "rejected concurrent mutations cannot leak into a later restart"
+  ],
+  "limitations": [
+    "Exact V5.3.5/V5.4 source ZIP bytes were not recovered in this run",
+    "Full repository clone remains blocked in the execution container because github.com DNS resolution fails",
+    "No Windows x64 EXE or full source ZIP is claimed rebuilt or verified",
+    "No physical Windows/GPU validation is claimed"
+  ],
+  "historical_contract_hashes": {
+    "V5.3.5_source_zip_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "V5.4_source_zip_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471"
+  }
+}

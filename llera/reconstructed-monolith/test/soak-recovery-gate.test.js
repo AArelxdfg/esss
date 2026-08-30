@@ -3,13 +3,18 @@
 const assert = require('assert');
 const { SoakRecoveryGate, isDurableStabilityAcknowledgement } = require('../src/soak-recovery-gate');
 
-function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStableState = null, pressureResetThrows = false } = {}) {
+function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStableState = null, pressureResetThrows = false, startupThrows = false } = {}) {
   let generation = 0;
   let stableCalls = 0;
   const appliedPressures = [];
   let runtimeState = { state: 'stopped', model: null, desiredModel: null, generation: 0, recoveryCount: 0 };
   const runtime = {
-    async ensureRunning(model) { generation += 1; runtimeState = { ...runtimeState, state: 'ready', model, desiredModel: model, generation }; return this.snapshot(); },
+    async ensureRunning(model) {
+      if (startupThrows) throw new Error('synthetic runtime startup failure');
+      generation += 1;
+      runtimeState = { ...runtimeState, state: 'ready', model, desiredModel: model, generation };
+      return this.snapshot();
+    },
     async recover() { generation += 1; runtimeState = { ...runtimeState, state: 'ready', model: runtimeState.desiredModel, generation, recoveryCount: runtimeState.recoveryCount + 1 }; return this.snapshot(); },
     async applyHostPressure(level) {
       appliedPressures.push(level);
@@ -50,7 +55,9 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   const gate = new SoakRecoveryGate({ ...ok, now: (() => { let t = 1000; return () => ++t; })(), sleep: async () => {} });
   const report = await gate.run({ model: 'qwen3-next-80b-q4km', cycles: 35, recoveryEvery: 7, pressureEvery: 5, missionId: ok.mission.id, maxRecoveryCount: 5 });
   assert.strictEqual(report.pass, true);
-  assert.strictEqual(report.schema, 5);
+  assert.strictEqual(report.schema, 6);
+  assert.strictEqual(report.runtimeStartupSucceeded, true);
+  assert.strictEqual(report.gates.runtimeStartupSucceeded, true);
   assert.strictEqual(report.watchdogStabilityCommitted, true);
   assert.strictEqual(report.gates.watchdogStabilityCommitted, true);
   assert.strictEqual(report.gates.pressureRestored, true);
@@ -61,6 +68,18 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   assert(Number.isFinite(report.watchdogStabilityCommitRequestedAt));
   assert(report.watchdogStableState.lastStableAt >= report.watchdogStabilityCommitRequestedAt);
   assert.strictEqual(ok.stableCalls(), 1);
+
+  const startupFailure = fixtures({ startupThrows: true });
+  const startupFailureGate = new SoakRecoveryGate({ ...startupFailure, now: (() => { let t = 1500; return () => ++t; })(), sleep: async () => {} });
+  const startupFailureReport = await startupFailureGate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, missionId: startupFailure.mission.id });
+  assert.strictEqual(startupFailureReport.pass, false, 'runtime startup failure must return a blocked soak report');
+  assert.strictEqual(startupFailureReport.runtimeStartupSucceeded, false);
+  assert.strictEqual(startupFailureReport.gates.runtimeStartupSucceeded, false);
+  assert.strictEqual(startupFailureReport.completedCycles, 0);
+  assert.strictEqual(startupFailureReport.evidenceChecks, 0);
+  assert.strictEqual(startupFailure.stableCalls(), 0, 'startup failure must never clear watchdog debt');
+  assert.strictEqual(startupFailure.appliedPressures.at(-1), 'NORMAL', 'startup failure must still leave synthetic pressure in NORMAL');
+  assert(startupFailureReport.failures.some(x => x.stage === 'runtime-startup' && x.message.includes('runtime startup failed')));
 
   const failed = fixtures({ evidenceFailsAt: 5 });
   const failedGate = new SoakRecoveryGate({ ...failed, now: (() => { let t = 2000; return () => ++t; })(), sleep: async () => {} });
@@ -106,8 +125,10 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, recoveryEvery: 0, missionId: ok.mission.id }), /recoveryEvery/);
   assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, pressureEvery: 0, missionId: ok.mission.id }), /pressureEvery/);
 
-  console.log('MONOLITH soak/watchdog durable stability and pressure restoration PASS', {
+  console.log('MONOLITH soak/watchdog startup fail-closed durability PASS', {
     verifiedSoakClearsDebt: true,
+    startupFailureReturnsBlockedReport: true,
+    startupFailureCannotClearDebt: true,
     failedSoakCannotClearDebt: true,
     criticalPressureRestored: true,
     failedSoakPressureRestored: true,

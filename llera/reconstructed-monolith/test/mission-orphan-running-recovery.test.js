@@ -71,7 +71,37 @@ async function recover(persisted) {
   assert.equal(afterMatching.steps[0].checkpointId, 'cp-attempt-2');
   assert.equal(afterMatching.steps[0].completedAt, 120);
 
-  console.log('MISSION_ATTEMPT_BOUND_RECOVERY_PASS');
+  const missingCompletedBinding = JSON.parse(JSON.stringify(baseMission));
+  missingCompletedBinding.steps[0].attempts = 2;
+  missingCompletedBinding.steps[0].startedAt = 100;
+  missingCompletedBinding.checkpoints.push({
+    id: 'cp-missing-completed-binding', at: 120, status: 'running', currentStepId: null,
+    completedStepIds: [], payload: { type: 'step-complete', stepId: 's1', attempt: 2, startedAt: 100, result: { ok: true } }
+  });
+  const missingBindingRejected = await recover({ schema: 1, missions: { m1: missingCompletedBinding }, order: ['m1'] });
+  assert.equal(missingBindingRejected.engine.getMission('m1').steps[0].status, 'pending');
+
+  const activeStepCheckpoint = JSON.parse(JSON.stringify(baseMission));
+  activeStepCheckpoint.steps[0].attempts = 2;
+  activeStepCheckpoint.steps[0].startedAt = 100;
+  activeStepCheckpoint.checkpoints.push({
+    id: 'cp-still-active', at: 120, status: 'running', currentStepId: 's1',
+    completedStepIds: ['s1'], payload: { type: 'step-complete', stepId: 's1', attempt: 2, startedAt: 100, result: { ok: true } }
+  });
+  const activeRejected = await recover({ schema: 1, missions: { m1: activeStepCheckpoint }, order: ['m1'] });
+  assert.equal(activeRejected.engine.getMission('m1').steps[0].status, 'pending');
+
+  const missingStartedBinding = JSON.parse(JSON.stringify(baseMission));
+  missingStartedBinding.steps[0].attempts = 2;
+  missingStartedBinding.steps[0].startedAt = 100;
+  missingStartedBinding.checkpoints.push({
+    id: 'cp-missing-started-at', at: 120, status: 'running', currentStepId: null,
+    completedStepIds: ['s1'], payload: { type: 'step-complete', stepId: 's1', attempt: 2, result: { ok: true } }
+  });
+  const missingStartedRejected = await recover({ schema: 1, missions: { m1: missingStartedBinding }, order: ['m1'] });
+  assert.equal(missingStartedRejected.engine.getMission('m1').steps[0].status, 'pending');
+
+  console.log('MISSION_COMPLETION_CHECKPOINT_CONSISTENCY_PASS');
 })().catch(error => {
   console.error(error);
   process.exit(1);

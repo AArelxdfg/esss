@@ -1,0 +1,59 @@
+name: LLera learning restore
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'llera/reconstructed-monolith/src/outcome-memory.js'
+      - 'llera/reconstructed-monolith/src/verified-learning-coordinator.js'
+      - 'llera/reconstructed-monolith/src/failure-doctrine.js'
+      - 'llera/reconstructed-monolith/src/integrity-sentinel.js'
+      - 'llera/reconstructed-monolith/src/sealed-integrity-sentinel.js'
+      - 'llera/reconstructed-monolith/test/outcome-memory.test.js'
+      - 'llera/reconstructed-monolith/test/outcome-memory-persistence-transaction.test.js'
+      - 'llera/reconstructed-monolith/test/verified-learning-coordinator.test.js'
+      - 'llera/reconstructed-monolith/test/skill-evidence-provenance.test.js'
+      - 'llera/reconstructed-monolith/test/failure-doctrine-broker.test.js'
+      - 'llera/reconstructed-monolith/test/failure-doctrine-sealed-restore.test.js'
+      - 'llera/reconstructed-monolith/test/failure-integrity.test.js'
+      - 'llera/reconstructed-monolith/test/integrity-rebaseline-guard.test.js'
+      - 'llera/reconstructed-monolith/test/sealed-integrity-sentinel.test.js'
+      - '.github/workflows/llera-learning-restore.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  learning-integrity-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Syntax
+        run: |
+          node --check llera/reconstructed-monolith/src/outcome-memory.js
+          node --check llera/reconstructed-monolith/src/verified-learning-coordinator.js
+          node --check llera/reconstructed-monolith/src/failure-doctrine.js
+          node --check llera/reconstructed-monolith/src/integrity-sentinel.js
+          node --check llera/reconstructed-monolith/src/sealed-integrity-sentinel.js
+      - name: Outcome memory durability
+        run: |
+          node llera/reconstructed-monolith/test/outcome-memory.test.js
+          node llera/reconstructed-monolith/test/outcome-memory-persistence-transaction.test.js
+      - name: Verified skill evolution
+        run: |
+          node llera/reconstructed-monolith/test/verified-learning-coordinator.test.js
+          node llera/reconstructed-monolith/test/skill-evidence-provenance.test.js
+      - name: Failure doctrine
+        run: |
+          node llera/reconstructed-monolith/test/failure-doctrine-broker.test.js
+          node llera/reconstructed-monolith/test/failure-doctrine-sealed-restore.test.js
+          node llera/reconstructed-monolith/test/failure-integrity.test.js
+      - name: Integrity sentinels
+        run: |
+          node llera/reconstructed-monolith/test/integrity-rebaseline-guard.test.js
+          node llera/reconstructed-monolith/test/sealed-integrity-sentinel.test.js

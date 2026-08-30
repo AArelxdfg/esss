@@ -1,0 +1,44 @@
+name: LLera HOSTGUARD Restore
+
+on:
+  push:
+    paths:
+      - 'llera/reconstructed-monolith/src/hostguard*.js'
+      - 'llera/reconstructed-monolith/src/host-inference-governor.js'
+      - 'llera/reconstructed-monolith/src/runtime-inference-coordinator.js'
+      - 'llera/reconstructed-monolith/src/runtime-lifecycle.js'
+      - 'llera/reconstructed-monolith/test/hostguard-*.test.js'
+      - 'llera/reconstructed-monolith/test/host-inference-governor.test.js'
+      - 'llera/reconstructed-monolith/test/runtime-host-pressure-drain-serialization.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hostguard-restore:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: llera/reconstructed-monolith
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: HOSTGUARD governor
+        run: node test/host-inference-governor.test.js
+      - name: HOSTGUARD runtime coordinator
+        run: node test/hostguard-runtime-coordinator.test.js
+      - name: HOSTGUARD hysteresis
+        run: node test/hostguard-hysteresis.test.js
+      - name: HOSTGUARD resilient preemption
+        run: node test/hostguard-resilient-preemption.test.js
+      - name: HOSTGUARD preemption reconciliation
+        run: node test/hostguard-preemption-reconciliation.test.js
+      - name: HOSTGUARD preemption observability
+        run: node test/hostguard-preemption-observability.test.js
+      - name: HOSTGUARD runtime pressure serialization
+        run: node test/runtime-host-pressure-drain-serialization.test.js
+      - name: HOSTGUARD critical admission fence
+        run: node test/hostguard-critical-admission-fence.test.js

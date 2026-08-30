@@ -90,14 +90,31 @@ class EvidenceLedger {
     return entry;
   }
 
-  verifyBinding(id, {tool = null, target, bytes, digest, byteCount = null}) {
+  verifyBinding(id, {tool = null, target, bytes, digest, byteCount = null} = {}) {
     const entry = this.entries.find(x => x.id === id);
     if (!entry) return {ok:false, reason:'evidence_not_found'};
-    if (tool && tool !== entry.tool) return {ok:false, reason:'tool_mismatch'};
-    if (target && target !== entry.target) return {ok:false, reason:'target_mismatch'};
+
+    // Evidence is useful only when the verifier proves the same resource scope
+    // that was recorded. Digest-only verification is insufficient because it
+    // allows a valid hash to be detached from its declared target.
+    if (typeof target !== 'string' || !target.trim()) {
+      return {ok:false, reason:'target_required'};
+    }
+    if (target !== entry.target) return {ok:false, reason:'target_mismatch'};
+
+    // Once tool provenance is present in the evidence ID it is part of the
+    // cryptographic identity and must also be supplied during verification.
+    if (entry.tool) {
+      if (typeof tool !== 'string' || !tool.trim()) return {ok:false, reason:'tool_required'};
+      if (tool.trim() !== entry.tool) return {ok:false, reason:'tool_mismatch'};
+    } else if (tool !== null && tool !== undefined && String(tool).trim()) {
+      return {ok:false, reason:'tool_mismatch'};
+    }
+
     const actual = digest || (bytes === undefined ? null : sha256(bytes));
     if (!actual) return {ok:false, reason:'digest_missing'};
-    if (actual.toLowerCase() !== entry.sha256) return {ok:false, reason:'sha256_mismatch'};
+    if (!/^[a-f0-9]{64}$/i.test(String(actual))) return {ok:false, reason:'digest_invalid'};
+    if (String(actual).toLowerCase() !== entry.sha256) return {ok:false, reason:'sha256_mismatch'};
 
     const actualByteCount = bytes === undefined
       ? byteCount

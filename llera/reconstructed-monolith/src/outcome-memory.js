@@ -151,12 +151,13 @@ class OutcomeMemory {
     }
 
     const verifierEvidenceIds = normalizeEvidenceIds(verification.evidenceIds);
-    if (verifierEvidenceIds.length) {
-      const verifierEvidence = new Set(verifierEvidenceIds);
-      const unverifiedCandidateEvidence = candidateEvidenceIds.filter(id => !verifierEvidence.has(id));
-      if (unverifiedCandidateEvidence.length) {
-        throw new Error(`skill candidate evidence was not covered by skill verification: ${unverifiedCandidateEvidence.join(',')}`);
-      }
+    if (!verifierEvidenceIds.length) {
+      throw new Error('skill candidate verification requires explicit evidence coverage');
+    }
+    const verifierEvidence = new Set(verifierEvidenceIds);
+    const unverifiedCandidateEvidence = candidateEvidenceIds.filter(id => !verifierEvidence.has(id));
+    if (unverifiedCandidateEvidence.length) {
+      throw new Error(`skill candidate evidence was not covered by skill verification: ${unverifiedCandidateEvidence.join(',')}`);
     }
 
     const at = this.now();

@@ -6,7 +6,9 @@ on:
     paths:
       - 'llera/reconstructed-monolith/src/runtime-lifecycle.js'
       - 'llera/reconstructed-monolith/src/runtime-inference-coordinator.js'
+      - 'llera/reconstructed-monolith/src/soak-recovery-gate.js'
       - 'llera/reconstructed-monolith/test/runtime-*.test.js'
+      - 'llera/reconstructed-monolith/test/soak-*.test.js'
       - '.github/workflows/llera-runtime-recovery.yml'
   workflow_dispatch:
 
@@ -34,6 +36,9 @@ jobs:
           - runtime-start-stop-race-guard
           - runtime-transition-serialization
           - runtime-host-pressure-drain-serialization
+          - soak-recovery-gate
+          - soak-active-model-identity
+          - soak-mission-health
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

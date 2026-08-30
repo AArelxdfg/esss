@@ -16,12 +16,17 @@ function walk(root) {
   return out;
 }
 
+function executableRegistryFiles(files) {
+  return files.filter(f => /\.(js|cjs|mjs|ts|tsx)$/i.test(f));
+}
+
 function scan(root, contract) {
   const files = walk(root);
   const text = files.map(f => { try { return fs.readFileSync(f,'utf8'); } catch { return ''; } }).join('\n');
+  const registryText = executableRegistryFiles(files).map(f => { try { return fs.readFileSync(f,'utf8'); } catch { return ''; } }).join('\n');
   const foundTools = new Set();
   const registryTools = new Set();
-  for (const re of [/\bname\s*:\s*[\"'\x60]([a-z][a-z0-9_]{2,63})[\"'\x60]/gi, /[\"']name[\"']\s*:\s*[\"']([a-z][a-z0-9_]{2,63})[\"']/gi]) { let m; while ((m = re.exec(text))) registryTools.add(m[1]); }
+  for (const re of [/\bname\s*:\s*[\"'\x60]([a-z][a-z0-9_]{2,63})[\"'\x60]/gi, /[\"']name[\"']\s*:\s*[\"']([a-z][a-z0-9_]{2,63})[\"']/gi]) { let m; while ((m = re.exec(registryText))) registryTools.add(m[1]); }
   const family = {};
   for (const [name, tools] of Object.entries(contract.requiredToolFamilies)) {
     family[name] = {required: tools.length, found: []};
@@ -36,7 +41,7 @@ function scan(root, contract) {
   const missingFamilies = Object.entries(family).filter(([,v]) => v.found.length < v.required).map(([k]) => k);
   const missingMarkers = Object.entries(markers).filter(([,v]) => !v).map(([k]) => k);
   return {
-    root: path.resolve(root), filesScanned: files.length, sourceDigest: digest,
+    root: path.resolve(root), filesScanned: files.length, registryFilesScanned: executableRegistryFiles(files).length, sourceDigest: digest,
     knownContractToolsFound: foundTools.size,
     registryToolNamesFound: registryTools.size,
     historicalMinimumAgentTools: contract.baseline.historicalMinimumAgentTools,
@@ -57,9 +62,17 @@ function selfTest(contract) {
   const body = names.map(t => `{ name: '${t}' }`).join('\n') + '\n' + contract.requiredBehaviorMarkers.join(' ');
   fs.writeFileSync(path.join(tmp,'fixture.js'), body);
   const r = scan(tmp, contract);
-  fs.rmSync(tmp,{recursive:true,force:true});
   if (!r.pass) throw new Error(`self-test failed: ${JSON.stringify(r)}`);
-  console.log(JSON.stringify({selfTest:'PASS', families:Object.keys(contract.requiredToolFamilies).length, registryTools:contract.baseline.historicalMinimumAgentTools, canonicalTools:allTools.length, markers:contract.requiredBehaviorMarkers.length},null,2));
+
+  const decoy = fs.mkdtempSync(path.join(os.tmpdir(),'llera-parity-decoy-'));
+  fs.writeFileSync(path.join(decoy,'fixture.js'), allTools.map(t => `{ name: '${t}' }`).join('\n') + '\n' + contract.requiredBehaviorMarkers.join(' '));
+  fs.writeFileSync(path.join(decoy,'FAKE-TOOL-REPORT.md'), Array.from({length: contract.baseline.targetAgentTools + 20}, (_,i) => `{ name: 'fake_report_tool_${i}' }`).join('\n'));
+  const d = scan(decoy, contract);
+  fs.rmSync(tmp,{recursive:true,force:true});
+  fs.rmSync(decoy,{recursive:true,force:true});
+  if (d.registryToolNamesFound !== new Set(allTools).size) throw new Error(`decoy markdown polluted registry evidence: ${JSON.stringify(d)}`);
+  if (d.historicalMinimumEvidenceSatisfied && new Set(allTools).size < contract.baseline.historicalMinimumAgentTools) throw new Error(`decoy markdown produced false historical-minimum PASS: ${JSON.stringify(d)}`);
+  console.log(JSON.stringify({selfTest:'PASS', decoyMarkdownIsolation:'PASS', families:Object.keys(contract.requiredToolFamilies).length, registryTools:contract.baseline.historicalMinimumAgentTools, canonicalTools:allTools.length, markers:contract.requiredBehaviorMarkers.length},null,2));
 }
 
 const contractPath = process.argv[2] && process.argv[2] !== '--self-test' ? process.argv[2] : path.join(__dirname,'monolith-parity-contract.json');

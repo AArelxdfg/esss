@@ -39,14 +39,17 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 999 }, 1000), false);
   assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: ['recent-crash'], safeModeUntil: 0, lastStableAt: 5000 }, 1000), false);
   assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 6000, lastStableAt: 5000 }, 1000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 1000 }, Number.NaN), false);
 
   const ok = fixtures();
   const gate = new SoakRecoveryGate({ ...ok, now: (() => { let t = 1000; return () => ++t; })(), sleep: async () => {} });
   const report = await gate.run({ model: 'qwen3-next-80b-q4km', cycles: 35, recoveryEvery: 7, pressureEvery: 5, missionId: ok.mission.id, maxRecoveryCount: 5 });
   assert.strictEqual(report.pass, true);
-  assert.strictEqual(report.schema, 3);
+  assert.strictEqual(report.schema, 4);
   assert.strictEqual(report.watchdogStabilityCommitted, true);
   assert.strictEqual(report.gates.watchdogStabilityCommitted, true);
+  assert(Number.isFinite(report.watchdogStabilityCommitRequestedAt));
+  assert(report.watchdogStableState.lastStableAt >= report.watchdogStabilityCommitRequestedAt);
   assert.strictEqual(ok.stableCalls(), 1);
 
   const failed = fixtures({ evidenceFailsAt: 3 });
@@ -71,6 +74,15 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   assert.strictEqual(staleAck.stableCalls(), 1);
   assert(staleAckReport.failures.some(x => x.message.includes('invalid or stale stability acknowledgement')));
 
+  let sameTick = 5000;
+  const sameTickAck = fixtures({ markStableState: { crashes: [], safeModeUntil: 0, lastStableAt: sameTick } });
+  const sameTickGate = new SoakRecoveryGate({ ...sameTickAck, now: () => sameTick++, sleep: async () => {} });
+  const sameTickReport = await sameTickGate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, missionId: sameTickAck.mission.id });
+  assert.strictEqual(sameTickReport.pass, false, 'pre-existing stability timestamp must not satisfy a later commit request');
+  assert.strictEqual(sameTickReport.gates.watchdogStabilityCommitted, false);
+  assert(sameTickReport.watchdogStabilityCommitRequestedAt > 5000);
+  assert(sameTickReport.failures.some(x => x.message.includes('invalid or stale stability acknowledgement')));
+
   assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, recoveryEvery: 0, missionId: ok.mission.id }), /recoveryEvery/);
   assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, pressureEvery: 0, missionId: ok.mission.id }), /pressureEvery/);
 
@@ -79,6 +91,7 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
     failedSoakCannotClearDebt: true,
     stabilityWriteFailureBlocksPass: true,
     staleStabilityAckBlocksPass: true,
+    sameTickPreexistingAckBlocksPass: true,
     invalidIntervalsRejected: true
   });
 })().catch(error => { console.error(error); process.exit(1); });

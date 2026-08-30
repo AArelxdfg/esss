@@ -48,6 +48,7 @@ class MissionEngine {
       return { id: step.id || stableId('step', `${id}:${index}:${name}`), name, status: 'pending', dependencies: [...dependencies], attempts: 0, startedAt: null, completedAt: null, lastError: null, checkpointId: null };
     });
     const ids = new Set(normalizedSteps.map(s => s.id));
+    if (ids.size !== normalizedSteps.length) throw new Error('duplicate mission step id');
     for (const step of normalizedSteps) for (const dep of step.dependencies) { if (!ids.has(dep)) throw new Error(`unknown dependency ${dep}`); if (dep === step.id) throw new Error(`step ${step.id} cannot depend on itself`); }
     this._assertAcyclic(normalizedSteps);
     const mission = { id, title, goal, mode, status: 'pending', createdAt, updatedAt: createdAt, startedAt: null, completedAt: null, currentStepId: null, resumeCount: 0, budget: { maxSteps: Number.isFinite(budget.maxSteps) ? budget.maxSteps : normalizedSteps.length, maxAttemptsPerStep: Number.isFinite(budget.maxAttemptsPerStep) ? budget.maxAttemptsPerStep : 3 }, steps: normalizedSteps, checkpoints: [], toolTrace: [] };

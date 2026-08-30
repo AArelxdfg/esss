@@ -1,0 +1,33 @@
+{
+  "milestone": "main parity gate semantic tool-registry binding",
+  "date": "2026-08-30",
+  "source_commit": "55d1b66d9babfe37380efb7b9d3ae1e51087b2b8",
+  "source_blob": "a2c8782912bdb287abb9e109df30aac793847262",
+  "source_sha256_local_test_copy": "97bd1927baef3977dc6e7391f96c4db77994840c3e103b615d3953eb369da76b",
+  "self_test": {
+    "result": "PASS",
+    "semanticToolRegistry": "PASS",
+    "genericNameIsolation": "PASS",
+    "nonToolCountInflationIsolation": "PASS",
+    "docsJsonIsolation": "PASS",
+    "canonicalContractTools": 36,
+    "historicalMinimumAgentTools": 56,
+    "targetAgentTools": 62
+  },
+  "behavior_change": "The main MONOLITH parity decision now counts only executable-source name fields that occur in tool-like object contexts with tool semantics such as execute/handler/invoke/inputSchema/description, rather than counting every generic name field. Required tool-family evidence is now derived from the same semantic registry set.",
+  "exact_artifact_recovery": {
+    "v5_3_5_source_zip_found": false,
+    "v5_3_5_expected_source_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_source_zip_found": false,
+    "v5_4_expected_source_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471"
+  },
+  "claim_boundaries": {
+    "exactV54": false,
+    "fullParity": false,
+    "physicalWindowsValidated": false,
+    "windowsGradeFinal": false
+  },
+  "stable_json_modified": false,
+  "release_published": false,
+  "windows_x64_rebuild": "NOT_PERFORMED: exact/reconstructed product source tree required for a meaningful installer/source ZIP rebuild was not available in this run; no artifact claim made."
+}

@@ -26,7 +26,15 @@ class VerifiedUpdateInstallCoordinator {
     }
     if (!installed || installed.verified!==true) throw new Error('installer did not return verified install state');
     if (String(installed.sha256||'').toLowerCase()!==expectedSha256) throw new Error('installed artifact digest diverges from signed manifest');
-    if (this.watchdog) await this.watchdog.markStable();
+    if (this.watchdog) {
+      try {
+        await this.watchdog.markStable();
+      } catch(error) {
+        const result={ok:false,blocked:true,version:manifest.version,phase:'watchdog-stability-commit',reason:'watchdog_stability_commit_failed',installedVerified:true,artifactSha256:expectedSha256,manifestPayloadSha256:verifiedManifest.payloadSha256||null,installedPath:installed.current||null,error:String(error&&error.message||error),at:this.now()};
+        this.history.push(result);
+        return result;
+      }
+    }
     const result={ok:true,blocked:false,version:manifest.version,verified:true,manifestPayloadSha256:verifiedManifest.payloadSha256||null,artifactSha256:expectedSha256,installedPath:installed.current||null,at:this.now()}; this.history.push(result); return result;
   }
   status(){const latest=this.history.at(-1)||null; return {runs:this.history.length,latest:latest?{...latest}:null};}

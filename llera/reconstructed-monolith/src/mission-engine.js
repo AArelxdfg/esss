@@ -253,31 +253,29 @@ class MissionEngine {
       const mission = this.state.missions[id];
       if (!mission) continue;
 
-      if (mission.status === 'running' || mission.currentStepId) {
-        if (mission.currentStepId) {
-          const step = mission.steps.find(s => s.id === mission.currentStepId);
-          if (step && step.status === 'running') {
-            const durableCompletion = [...(mission.checkpoints || [])]
-              .reverse()
-              .find(c =>
-                c &&
-                c.payload &&
-                c.payload.type === 'step-complete' &&
-                c.payload.stepId === step.id
-              );
+      const runningSteps = mission.steps.filter(step => step && step.status === 'running');
+      if (mission.status === 'running' || mission.currentStepId || runningSteps.length > 0) {
+        // Reconcile every persisted running step, not only currentStepId. Legacy/partial writes
+        // can leave currentStepId null while a step remains running; without repair that step is
+        // never runnable again after restart.
+        for (const step of runningSteps) {
+          const durableCompletion = [...(mission.checkpoints || [])]
+            .reverse()
+            .find(c =>
+              c &&
+              c.payload &&
+              c.payload.type === 'step-complete' &&
+              c.payload.stepId === step.id
+            );
 
-            // Compatibility recovery for legacy two-write completeStep():
-            // if the completion checkpoint reached disk before the final step-state write,
-            // replay the durable completion instead of executing the material step again.
-            if (durableCompletion) {
-              step.status = 'completed';
-              step.completedAt = step.completedAt || durableCompletion.at;
-              step.lastError = null;
-              step.checkpointId = durableCompletion.id;
-            } else {
-              step.status = 'pending';
-              step.lastError = 'interrupted:process-restart';
-            }
+          if (durableCompletion) {
+            step.status = 'completed';
+            step.completedAt = step.completedAt || durableCompletion.at;
+            step.lastError = null;
+            step.checkpointId = durableCompletion.id;
+          } else {
+            step.status = 'pending';
+            step.lastError = 'interrupted:process-restart';
           }
         }
 

@@ -16,12 +16,23 @@ class VisionPipeline {
     const kind = String(input.kind || '').toLowerCase();
     if (!['image', 'file', 'screen'].includes(kind)) throw new Error('unsupported vision input kind');
     const mime = String(input.mime || 'application/octet-stream').toLowerCase();
+    const bytes = Buffer.from(input.bytes);
     return {
       kind,
       mime,
-      bytes: input.bytes,
-      sha256: crypto.createHash('sha256').update(input.bytes).digest('hex'),
+      bytes,
+      sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
       source: String(input.source || kind)
+    };
+  }
+
+  backendInput(n) {
+    return {
+      kind: n.kind,
+      mime: n.mime,
+      bytes: Buffer.from(n.bytes),
+      sha256: n.sha256,
+      source: n.source
     };
   }
 
@@ -53,7 +64,7 @@ class VisionPipeline {
 
       if (canVision) {
         try {
-          vision = await visionModel(n);
+          vision = await visionModel(this.backendInput(n));
           backends.push('vision-4b');
         } catch (error) {
           warnings.push({ backend: 'vision-4b', reason: String(error && error.message || error) });
@@ -62,7 +73,7 @@ class VisionPipeline {
 
       if (shouldOcr && canOcr) {
         try {
-          text = String(await ocr(n) || '');
+          text = String(await ocr(this.backendInput(n)) || '');
           backends.push('windows-ocr');
         } catch (error) {
           warnings.push({ backend: 'windows-ocr', reason: String(error && error.message || error) });

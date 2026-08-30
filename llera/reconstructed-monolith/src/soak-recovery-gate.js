@@ -16,7 +16,7 @@ class SoakRecoveryGate {
     if (!Number.isInteger(pressureEvery) || pressureEvery < 1) throw new Error('pressureEvery must be an integer >= 1');
     if (!Number.isInteger(maxRecoveryCount) || maxRecoveryCount < 0) throw new Error('maxRecoveryCount must be an integer >= 0');
     const startedAt = this.now();
-    const report = { schema: 6, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
+    const report = { schema: 7, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
       pressureEvents: 0, pressureTransitions: 0, pressureResets: 0, missionResumes: 0, watchdogSafeModeEvents: 0, evidenceChecks: 0,
       runtimeStartupSucceeded: false, watchdogStabilityCommitted: false, failures: [] };
     let lastRuntimePressure = null;
@@ -112,6 +112,7 @@ class SoakRecoveryGate {
       completedAllCycles: report.completedCycles === cycles,
       runtimeReady: Boolean(finalRuntime && finalRuntime.state === 'ready'),
       desiredModelPreserved: Boolean(finalRuntime && finalRuntime.desiredModel === model),
+      activeModelPreserved: Boolean(finalRuntime && finalRuntime.model === model),
       recoveryBudgetRespected: report.runtimeRecoveries <= maxRecoveryCount,
       evidenceContinuous: report.evidenceChecks === cycles,
       noWatchdogSafeMode: report.watchdogSafeModeEvents === 0,

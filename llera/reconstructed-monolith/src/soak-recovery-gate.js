@@ -16,9 +16,10 @@ class SoakRecoveryGate {
     if (!Number.isInteger(pressureEvery) || pressureEvery < 1) throw new Error('pressureEvery must be an integer >= 1');
     if (!Number.isInteger(maxRecoveryCount) || maxRecoveryCount < 0) throw new Error('maxRecoveryCount must be an integer >= 0');
     const startedAt = this.now();
-    const report = { schema: 4, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
-      pressureEvents: 0, missionResumes: 0, watchdogSafeModeEvents: 0, evidenceChecks: 0,
+    const report = { schema: 5, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
+      pressureEvents: 0, pressureTransitions: 0, pressureResets: 0, missionResumes: 0, watchdogSafeModeEvents: 0, evidenceChecks: 0,
       watchdogStabilityCommitted: false, failures: [] };
+    let lastRuntimePressure = null;
     await this.runtime.ensureRunning(model, 'soak-start');
 
     for (let i = 1; i <= cycles; i++) {
@@ -27,9 +28,12 @@ class SoakRecoveryGate {
           ? { commitPercent: 94, diskActivePercent: 98, diskQueue: 6, pagesPerSec: 1200, cpuPercent: 91 }
           : { commitPercent: 52, diskActivePercent: 25, diskQueue: 0.2, pagesPerSec: 20, cpuPercent: 35 };
         const pressure = await this.hostGuard.evaluate(pressureSample);
-        if (pressure.level && String(pressure.level).toUpperCase() === 'CRITICAL') {
-          report.pressureEvents += 1;
-          if (typeof this.runtime.applyHostPressure === 'function') await this.runtime.applyHostPressure('CRITICAL');
+        const pressureLevel = String(pressure && pressure.level || 'NORMAL').toUpperCase();
+        if (pressureLevel === 'CRITICAL') report.pressureEvents += 1;
+        if (typeof this.runtime.applyHostPressure === 'function' && pressureLevel !== lastRuntimePressure) {
+          await this.runtime.applyHostPressure(pressureLevel);
+          lastRuntimePressure = pressureLevel;
+          report.pressureTransitions += 1;
         }
         if (i % recoveryEvery === 0) {
           await this.runtime.recover(`soak-cycle-${i}`);
@@ -65,12 +69,30 @@ class SoakRecoveryGate {
       }
     }
 
+    // A soak run must never strand the product in a synthetic throttled profile.
+    // Restore NORMAL before the final health snapshot, even when an earlier cycle
+    // failed; failed runs still cannot clear watchdog stability debt below.
+    if (typeof this.runtime.applyHostPressure === 'function' && lastRuntimePressure !== 'NORMAL') {
+      try {
+        await this.runtime.applyHostPressure('NORMAL');
+        lastRuntimePressure = 'NORMAL';
+        report.pressureResets += 1;
+      } catch (error) {
+        report.failures.push({
+          cycle: Math.min(report.completedCycles + 1, cycles),
+          message: `host pressure reset failed: ${String(error && error.message || error)}`,
+          at: this.now()
+        });
+      }
+    }
+
     const finalRuntime = this.runtime.snapshot ? this.runtime.snapshot() : null;
     const finalMission = this.missionEngine.getMission(missionId);
     report.finishedAt = this.now();
     report.durationMs = report.finishedAt - startedAt;
     report.finalRuntime = finalRuntime;
     report.finalMissionStatus = finalMission ? finalMission.status : 'missing';
+    report.finalRuntimePressure = lastRuntimePressure;
 
     const gates = {
       completedAllCycles: report.completedCycles === cycles,
@@ -79,6 +101,7 @@ class SoakRecoveryGate {
       recoveryBudgetRespected: report.runtimeRecoveries <= maxRecoveryCount,
       evidenceContinuous: report.evidenceChecks === cycles,
       noWatchdogSafeMode: report.watchdogSafeModeEvents === 0,
+      pressureRestored: lastRuntimePressure === 'NORMAL',
       missionPreserved: Boolean(finalMission),
       missionHealthy: Boolean(finalMission && isHealthyMissionStatus(finalMission.status)),
       noFailures: report.failures.length === 0,

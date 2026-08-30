@@ -108,17 +108,23 @@ function observationVerifiesDebt(entry, debt) {
   if (!INDEPENDENT_VERIFICATION_TOOLS.has(entry.tool)) return false;
   if (entry.tool === debt.tool) return false;
 
-  const explicit = explicitVerificationFingerprint(entry);
-  if (explicit) return explicit === debt.fingerprint;
-
   const entryScope = entry.scope || verificationScope(entry.tool, entry.args || entry.arguments || {});
-  if (debt.scope && entryScope) return debt.scope === entryScope;
-  if (debt.scope && !entryScope) return false;
+  const explicit = explicitVerificationFingerprint(entry);
 
-  // Unscoped material actions need an explicit fingerprint binding. A generic
-  // `verification:true` flag is not enough because it can be self-asserted by a
-  // planner without proving which material action was independently observed.
-  return false;
+  // Fingerprint binding identifies which material action is being verified, but it
+  // must never be allowed to bypass a known resource/target binding. Otherwise a
+  // planner could attach the right fingerprint to an unrelated observation such as
+  // system_info and falsely discharge a scoped write/delete/browser debt.
+  if (debt.scope) {
+    if (!entryScope || entryScope !== debt.scope) return false;
+    if (explicit && explicit !== debt.fingerprint) return false;
+    return true;
+  }
+
+  // Unscoped material actions have no resource identity to compare, so require an
+  // explicit fingerprint binding to the exact material action. A generic
+  // `verification:true` flag remains insufficient because it is self-assertable.
+  return Boolean(explicit && explicit === debt.fingerprint);
 }
 
 class ToolExecutionGuard {

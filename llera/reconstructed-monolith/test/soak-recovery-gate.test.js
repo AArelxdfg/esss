@@ -1,9 +1,9 @@
 'use strict';
 
 const assert = require('assert');
-const { SoakRecoveryGate } = require('../src/soak-recovery-gate');
+const { SoakRecoveryGate, isDurableStabilityAcknowledgement } = require('../src/soak-recovery-gate');
 
-function fixtures({ evidenceFailsAt = null, markStableThrows = false } = {}) {
+function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStableState = null } = {}) {
   let generation = 0;
   let stableCalls = 0;
   let runtimeState = { state: 'stopped', model: null, desiredModel: null, generation: 0, recoveryCount: 0 };
@@ -23,7 +23,7 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false } = {}) {
     async markStable() {
       stableCalls += 1;
       if (markStableThrows) throw new Error('state write failed');
-      return { crashes: [], safeModeUntil: 0, lastStableAt: 9999 };
+      return markStableState || { crashes: [], safeModeUntil: 0, lastStableAt: 9999 };
     }
   };
   const hostGuard = { async evaluate(sample) { return { level: sample.commitPercent >= 90 ? 'CRITICAL' : 'NORMAL', workers: sample.commitPercent >= 90 ? 1 : 8 }; } };
@@ -34,11 +34,17 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false } = {}) {
 }
 
 (async () => {
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 5000 }, 1000), true);
+  assert.strictEqual(isDurableStabilityAcknowledgement(null, 1000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 999 }, 1000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: ['recent-crash'], safeModeUntil: 0, lastStableAt: 5000 }, 1000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 6000, lastStableAt: 5000 }, 1000), false);
+
   const ok = fixtures();
   const gate = new SoakRecoveryGate({ ...ok, now: (() => { let t = 1000; return () => ++t; })(), sleep: async () => {} });
   const report = await gate.run({ model: 'qwen3-next-80b-q4km', cycles: 35, recoveryEvery: 7, pressureEvery: 5, missionId: ok.mission.id, maxRecoveryCount: 5 });
   assert.strictEqual(report.pass, true);
-  assert.strictEqual(report.schema, 2);
+  assert.strictEqual(report.schema, 3);
   assert.strictEqual(report.watchdogStabilityCommitted, true);
   assert.strictEqual(report.gates.watchdogStabilityCommitted, true);
   assert.strictEqual(ok.stableCalls(), 1);
@@ -56,9 +62,23 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false } = {}) {
   assert.strictEqual(commitReport.gates.watchdogStabilityCommitted, false);
   assert(commitReport.failures.some(x => x.message.includes('stability commit failed')));
 
-  console.log('MONOLITH soak/watchdog stability commit PASS', {
+  const staleAck = fixtures({ markStableState: { crashes: [], safeModeUntil: 0, lastStableAt: 1 } });
+  const staleAckGate = new SoakRecoveryGate({ ...staleAck, now: (() => { let t = 4000; return () => ++t; })(), sleep: async () => {} });
+  const staleAckReport = await staleAckGate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, missionId: staleAck.mission.id });
+  assert.strictEqual(staleAckReport.pass, false);
+  assert.strictEqual(staleAckReport.watchdogStabilityCommitted, false);
+  assert.strictEqual(staleAckReport.gates.watchdogStabilityCommitted, false);
+  assert.strictEqual(staleAck.stableCalls(), 1);
+  assert(staleAckReport.failures.some(x => x.message.includes('invalid or stale stability acknowledgement')));
+
+  assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, recoveryEvery: 0, missionId: ok.mission.id }), /recoveryEvery/);
+  assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, pressureEvery: 0, missionId: ok.mission.id }), /pressureEvery/);
+
+  console.log('MONOLITH soak/watchdog durable stability acknowledgement PASS', {
     verifiedSoakClearsDebt: true,
     failedSoakCannotClearDebt: true,
-    stabilityWriteFailureBlocksPass: true
+    stabilityWriteFailureBlocksPass: true,
+    staleStabilityAckBlocksPass: true,
+    invalidIntervalsRejected: true
   });
 })().catch(error => { console.error(error); process.exit(1); });

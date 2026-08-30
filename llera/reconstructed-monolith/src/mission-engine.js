@@ -77,7 +77,7 @@ class MissionEngine {
     const completed = new Set(mission.steps.filter(s => s.status === 'completed').map(s => s.id));
     if (!step.dependencies.every(dep => completed.has(dep))) throw new Error('step dependencies are not complete');
     if (step.attempts >= mission.budget.maxAttemptsPerStep) throw new Error('step attempt budget exhausted');
-    step.status = 'running'; step.attempts += 1; step.startedAt = this.now(); step.lastError = null;
+    step.status = 'running'; step.attempts += 1; step.startedAt = this.now(); step.completedAt = null; step.lastError = null;
     mission.currentStepId = step.id; mission.updatedAt = this.now(); await this._persist(); return clone(step);
   }
 
@@ -99,7 +99,7 @@ class MissionEngine {
     const step = this._step(mission, stepId); if (step.status !== 'running') throw new Error('step is not running');
     const completedAt = this.now(); step.status = 'completed'; step.completedAt = completedAt; step.lastError = null; mission.currentStepId = null;
     if (mission.steps.every(s => s.status === 'completed')) { mission.status = 'completed'; mission.completedAt = completedAt; }
-    const checkpoint = this._buildCheckpoint(mission, { type: 'step-complete', stepId, result }); step.checkpointId = checkpoint.id; mission.checkpoints.push(checkpoint); mission.updatedAt = checkpoint.at;
+    const checkpoint = this._buildCheckpoint(mission, { type: 'step-complete', stepId, attempt: step.attempts, startedAt: step.startedAt, result }); step.checkpointId = checkpoint.id; mission.checkpoints.push(checkpoint); mission.updatedAt = checkpoint.at;
     await this._persist(); return clone(mission);
   }
 
@@ -116,6 +116,23 @@ class MissionEngine {
     mission.status = 'paused'; mission.updatedAt = this.now(); await this._persist(); return clone(mission);
   }
 
+  _completionMatchesAttempt(checkpoint, step) {
+    if (!checkpoint || !checkpoint.payload || checkpoint.payload.type !== 'step-complete' || checkpoint.payload.stepId !== step.id) return false;
+    const payloadAttempt = Number(checkpoint.payload.attempt);
+    const stepAttempt = Number(step.attempts);
+    if (Number.isFinite(payloadAttempt)) {
+      if (!Number.isFinite(stepAttempt) || payloadAttempt !== stepAttempt) return false;
+      const payloadStartedAt = Number(checkpoint.payload.startedAt);
+      const stepStartedAt = Number(step.startedAt);
+      if (Number.isFinite(payloadStartedAt) && Number.isFinite(stepStartedAt) && payloadStartedAt !== stepStartedAt) return false;
+      return true;
+    }
+    const checkpointAt = Number(checkpoint.at);
+    const stepStartedAt = Number(step.startedAt);
+    if (!Number.isFinite(checkpointAt) || !Number.isFinite(stepStartedAt) || checkpointAt < stepStartedAt) return false;
+    return Array.isArray(checkpoint.completedStepIds) && checkpoint.completedStepIds.includes(step.id);
+  }
+
   _repairInterruptedState() {
     for (const id of this.state.order) {
       const mission = this.state.missions[id]; if (!mission) continue;
@@ -123,7 +140,7 @@ class MissionEngine {
       if (mission.status !== 'running' && !mission.currentStepId && runningSteps.length === 0) continue;
 
       for (const step of runningSteps) {
-        const durableCompletion = [...(mission.checkpoints || [])].reverse().find(c => c && c.payload && c.payload.type === 'step-complete' && c.payload.stepId === step.id);
+        const durableCompletion = [...(mission.checkpoints || [])].reverse().find(c => this._completionMatchesAttempt(c, step));
         if (durableCompletion) {
           step.status = 'completed';
           step.completedAt = step.completedAt || durableCompletion.at;
@@ -131,6 +148,7 @@ class MissionEngine {
           step.checkpointId = durableCompletion.id;
         } else {
           step.status = 'pending';
+          step.completedAt = null;
           step.lastError = 'interrupted:process-restart';
         }
       }
@@ -141,6 +159,7 @@ class MissionEngine {
         mission.completedAt = mission.completedAt || Math.max(...mission.steps.map(s => Number(s.completedAt || 0))) || this.now();
       } else {
         mission.status = 'interrupted';
+        mission.completedAt = null;
       }
       mission.updatedAt = this.now();
     }

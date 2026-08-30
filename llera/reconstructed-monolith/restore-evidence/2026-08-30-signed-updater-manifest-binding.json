@@ -1,0 +1,36 @@
+{
+  "milestone": "signed-updater-manifest-byte-binding",
+  "date": "2026-08-30",
+  "status": "source_and_regression_persisted_execution_pending",
+  "source": {
+    "path": "llera/reconstructed-monolith/src/signed-update-lifecycle.js",
+    "commit": "9ee49d00b25c9a21fd45b6264d61fd676adc0825",
+    "git_blob_sha": "4cdf01fef1b0df0086f08296c4412b45e48a2b8e"
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/signed-update-manifest-binding.test.js",
+    "commit": "5f8922b7922c21b460bef48ac02f407d11511c39"
+  },
+  "ci": {
+    "path": ".github/workflows/llera-updater-restore.yml",
+    "commit": "8e88a84bf9f4482a2ca44d5f9246d28ef5b9bdfe",
+    "observed_run_count_for_commit": 0
+  },
+  "restored_contract": [
+    "download is blocked before network I/O unless the exact canonical manifest bytes were signature-verified by this lifecycle instance",
+    "post-verification manifest mutation invalidates the trust binding",
+    "staging and activation require the same verified manifest payload",
+    "journal records manifest payload SHA-256 and signature SHA-256 provenance",
+    "rollback refuses legacy or incomplete activated journals that lack manifest provenance"
+  ],
+  "validation": {
+    "local_clone_attempt": "blocked_by_transient_dns_resolution_for_github.com",
+    "executable_test_pass_claimed": false,
+    "physical_windows_validation_claimed": false,
+    "exact_v5_4_claimed": false
+  },
+  "release_controls": {
+    "stable_json_modified": false,
+    "release_published": false
+  }
+}

@@ -1,0 +1,44 @@
+name: LLera Signed Updater Restore
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'llera/reconstructed-monolith/src/signed-update-lifecycle.js'
+      - 'llera/reconstructed-monolith/src/verified-update-install-coordinator.js'
+      - 'llera/reconstructed-monolith/test/signed-update-*.test.js'
+      - '.github/workflows/llera-updater-restore.yml'
+  pull_request:
+    paths:
+      - 'llera/reconstructed-monolith/src/signed-update-lifecycle.js'
+      - 'llera/reconstructed-monolith/src/verified-update-install-coordinator.js'
+      - 'llera/reconstructed-monolith/test/signed-update-*.test.js'
+      - '.github/workflows/llera-updater-restore.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  signed-updater:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: llera/reconstructed-monolith
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check src/signed-update-lifecycle.js && node --check src/verified-update-install-coordinator.js
+      - name: Signed updater lifecycle
+        run: node test/signed-update-lifecycle.test.js
+      - name: Resume hardening
+        run: node test/signed-update-resume-hardening.test.js
+      - name: Rollback binding
+        run: node test/signed-update-rollback-binding.test.js
+      - name: Verified install bridge
+        run: node test/verified-update-install-coordinator.test.js
+      - name: Verified manifest byte binding
+        run: node test/signed-update-manifest-binding.test.js

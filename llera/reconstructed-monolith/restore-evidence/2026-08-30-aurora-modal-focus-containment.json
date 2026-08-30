@@ -1,0 +1,58 @@
+{
+  "milestone": "AURORA modal focus containment hardening",
+  "date": "2026-08-30",
+  "baseline": "reconstructed-monolith",
+  "historical_contract": {
+    "v5_4_source_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "exact_v5_4_bytes_recovered": false,
+    "requirements": [
+      "keyboard-first command palette",
+      "strong focus-visible accessibility",
+      "reduced-motion support",
+      "responsive AURORA behavior"
+    ]
+  },
+  "source": [
+    {
+      "path": "llera/reconstructed-monolith/src/aurora-focus-trap.js",
+      "commit": "7b0df95a1292bd7805c1a4c1f420ce0cbc5f7b73"
+    },
+    {
+      "path": "llera/reconstructed-monolith/src/aurora-accessibility-controller.js",
+      "commit": "84106f916d038f3fec216ebfce39053a2711356f"
+    }
+  ],
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/aurora-focus-trap-controller.test.js",
+    "commit": "ac0c1905b0acc9a12f6db62a4cd8d3714f0f90f6",
+    "coverage": [
+      "forward Tab cycling",
+      "Shift+Tab reverse cycling",
+      "wrap-around containment",
+      "external-focus containment",
+      "Escape focus restoration",
+      "command activation focus restoration"
+    ]
+  },
+  "ci_gate": {
+    "path": ".github/workflows/llera-aurora-restore.yml",
+    "commit": "79218cdbe3808f36fb67621438b33f9313feaf4d",
+    "run_id": 33293188915,
+    "status": "completed",
+    "conclusion": "failure",
+    "runner_id": 0,
+    "steps": [],
+    "interpretation": "runner provisioning failure before any test step; PASS not claimed"
+  },
+  "verification": {
+    "container_execution": "BLOCKED",
+    "container_blocker": "raw.githubusercontent.com DNS resolution failed",
+    "github_actions_execution": "NOT_STARTED",
+    "pass_claimed": false
+  },
+  "exact_v5_4_claimed": false,
+  "full_parity_claimed": false,
+  "physical_windows_gpu_claimed": false,
+  "stable_json_modified": false,
+  "release_published": false
+}

@@ -1,0 +1,31 @@
+{
+  "milestone": "runtime-completion-generation-guard",
+  "date": "2026-08-30",
+  "scope": "reconstructed MONOLITH OMEGA runtime lifecycle hardening",
+  "change": {
+    "guard": "src/runtime-completion-guard.js",
+    "coordinator": "src/runtime-inference-coordinator.js",
+    "regression": "test/runtime-completion-runtime-generation-guard.test.js"
+  },
+  "behavior": [
+    "generation-bound completion now cross-checks the actual runtime task generation before mutating runtime/governor/coordinator state",
+    "a same-id task belonging to a newer runtime generation survives stale completion from an older generation",
+    "blocked completion remains observable as runtime-generation-completion-blocked",
+    "legacy unbound completion remains backward-compatible"
+  ],
+  "verification": {
+    "isolated_node_regression": "PASS",
+    "marker": "RUNTIME_COMPLETION_RUNTIME_GENERATION_GUARD_PASS",
+    "guard_sha256": "ab2e14e78db49a49bae20b68be678769606351f26be07f0493e925f9e7c2b81d"
+  },
+  "recovery_status": {
+    "exact_v5_3_5_bytes_recovered": false,
+    "exact_v5_4_bytes_recovered": false,
+    "physical_windows_gpu_validation": false,
+    "windows_grade_final": false
+  },
+  "release_policy": {
+    "stable_json_modified": false,
+    "release_published": false
+  }
+}

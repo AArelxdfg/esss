@@ -118,19 +118,22 @@ class MissionEngine {
 
   _completionMatchesAttempt(checkpoint, step) {
     if (!checkpoint || !checkpoint.payload || checkpoint.payload.type !== 'step-complete' || checkpoint.payload.stepId !== step.id) return false;
+    if (!Array.isArray(checkpoint.completedStepIds) || !checkpoint.completedStepIds.includes(step.id)) return false;
+    if (checkpoint.currentStepId === step.id) return false;
+
+    const checkpointAt = Number(checkpoint.at);
+    const stepStartedAt = Number(step.startedAt);
+    if (!Number.isFinite(checkpointAt) || !Number.isFinite(stepStartedAt) || checkpointAt < stepStartedAt) return false;
+
     const payloadAttempt = Number(checkpoint.payload.attempt);
     const stepAttempt = Number(step.attempts);
     if (Number.isFinite(payloadAttempt)) {
       if (!Number.isFinite(stepAttempt) || payloadAttempt !== stepAttempt) return false;
       const payloadStartedAt = Number(checkpoint.payload.startedAt);
-      const stepStartedAt = Number(step.startedAt);
-      if (Number.isFinite(payloadStartedAt) && Number.isFinite(stepStartedAt) && payloadStartedAt !== stepStartedAt) return false;
+      if (!Number.isFinite(payloadStartedAt) || payloadStartedAt !== stepStartedAt) return false;
       return true;
     }
-    const checkpointAt = Number(checkpoint.at);
-    const stepStartedAt = Number(step.startedAt);
-    if (!Number.isFinite(checkpointAt) || !Number.isFinite(stepStartedAt) || checkpointAt < stepStartedAt) return false;
-    return Array.isArray(checkpoint.completedStepIds) && checkpoint.completedStepIds.includes(step.id);
+    return true;
   }
 
   _repairInterruptedState() {

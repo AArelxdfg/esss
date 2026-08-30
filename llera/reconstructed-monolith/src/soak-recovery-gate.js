@@ -16,7 +16,7 @@ class SoakRecoveryGate {
     if (!Number.isInteger(pressureEvery) || pressureEvery < 1) throw new Error('pressureEvery must be an integer >= 1');
     if (!Number.isInteger(maxRecoveryCount) || maxRecoveryCount < 0) throw new Error('maxRecoveryCount must be an integer >= 0');
     const startedAt = this.now();
-    const report = { schema: 3, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
+    const report = { schema: 4, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
       pressureEvents: 0, missionResumes: 0, watchdogSafeModeEvents: 0, evidenceChecks: 0,
       watchdogStabilityCommitted: false, failures: [] };
     await this.runtime.ensureRunning(model, 'soak-start');
@@ -98,8 +98,10 @@ class SoakRecoveryGate {
         });
       } else {
         try {
+          const stabilityCommitRequestedAt = this.now();
+          report.watchdogStabilityCommitRequestedAt = stabilityCommitRequestedAt;
           const stableState = await this.watchdog.markStable();
-          if (!isDurableStabilityAcknowledgement(stableState, startedAt)) {
+          if (!isDurableStabilityAcknowledgement(stableState, stabilityCommitRequestedAt)) {
             throw new Error('watchdog returned an invalid or stale stability acknowledgement');
           }
           report.watchdogStabilityCommitted = true;
@@ -127,9 +129,10 @@ function isHealthyMissionStatus(status) {
   return normalized === 'running' || normalized === 'completed';
 }
 
-function isDurableStabilityAcknowledgement(state, startedAt) {
+function isDurableStabilityAcknowledgement(state, commitRequestedAt) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
-  if (!Number.isFinite(state.lastStableAt) || state.lastStableAt < startedAt) return false;
+  if (!Number.isFinite(commitRequestedAt)) return false;
+  if (!Number.isFinite(state.lastStableAt) || state.lastStableAt < commitRequestedAt) return false;
   if (!Array.isArray(state.crashes) || state.crashes.length !== 0) return false;
   if (state.safeModeUntil != null) {
     if (!Number.isFinite(state.safeModeUntil)) return false;

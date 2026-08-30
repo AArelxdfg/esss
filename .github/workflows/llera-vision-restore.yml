@@ -1,0 +1,39 @@
+name: LLera vision restore
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'llera/reconstructed-monolith/src/vision-pipeline.js'
+      - 'llera/reconstructed-monolith/src/vision-runtime-adapter.js'
+      - 'llera/reconstructed-monolith/test/vision-runtime-adapter.test.js'
+      - 'llera/reconstructed-monolith/test/vision-backend-recovery.test.js'
+      - 'llera/reconstructed-monolith/test/vision-hostguard.test.js'
+      - 'llera/reconstructed-monolith/test/vision-input-snapshot-isolation.test.js'
+      - '.github/workflows/llera-vision-restore.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vision-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Syntax
+        run: |
+          node --check llera/reconstructed-monolith/src/vision-pipeline.js
+          node --check llera/reconstructed-monolith/src/vision-runtime-adapter.js
+      - name: Vision runtime adapter
+        run: node llera/reconstructed-monolith/test/vision-runtime-adapter.test.js
+      - name: Vision backend recovery
+        run: node llera/reconstructed-monolith/test/vision-backend-recovery.test.js
+      - name: Vision HOSTGUARD admission
+        run: node llera/reconstructed-monolith/test/vision-hostguard.test.js
+      - name: Vision immutable input snapshot
+        run: node llera/reconstructed-monolith/test/vision-input-snapshot-isolation.test.js

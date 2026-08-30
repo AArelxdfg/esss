@@ -1,0 +1,26 @@
+{
+  "milestone": "soak-stability-commit-epoch-binding",
+  "date": "2026-08-30",
+  "baseline": "reconstructed-monolith",
+  "source_commit": "55d82e9594da31a3f19b52f0f0a70eb9a9f09c77",
+  "source_blob_sha": "65e1b58c217bf796401a687ca0c41f6f1bb63dd8",
+  "test_commit": "48392cf515371bc417b7be5e660507e9ad0a13f4",
+  "test_blob_sha": "c917480c76d9e34055d2b01f5b195ebbfe5fddbc",
+  "contract": {
+    "problem": "A pre-existing watchdog lastStableAt timestamp could satisfy the final soak acknowledgement if it was only compared with soak startedAt.",
+    "repair": "Capture watchdogStabilityCommitRequestedAt immediately before markStable and require lastStableAt to be at or after that commit request epoch.",
+    "fail_closed": true,
+    "report_schema": 4
+  },
+  "regression": {
+    "same_tick_preexisting_ack": "must block final pass",
+    "stale_ack": "must block final pass",
+    "watchdog_write_failure": "must block final pass",
+    "successful_ack": "must bind to the recorded commit request epoch"
+  },
+  "verification_status": "source-and-regression-persisted; executable test run not claimed in this evidence record",
+  "exact_v54_claimed": false,
+  "physical_windows_claimed": false,
+  "stable_json_modified": false,
+  "release_published": false
+}

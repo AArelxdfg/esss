@@ -1,0 +1,28 @@
+{
+  "milestone": "soak-active-model-identity-fail-closed",
+  "date": "2026-08-30",
+  "parity_area": "local llama.cpp runtime/model lifecycle and Windows soak/recovery gates",
+  "source_commit": "3cc7f830957ee0b18ec697370a34fde6a05e357a",
+  "source_blob_sha": "04f06658e992e627b563e750825647cb3cbf231f",
+  "test_commit": "b78cb351cc6bee0c003049cd798c7fa2c6ffd07a",
+  "test_blob_sha": "d4a845ccc4fec527c1a9523948d6d8745c7549ac",
+  "ci_workflow_commit": "f32198560bb3b1411ca1b8ff00c759f692d67ebc",
+  "ci_run_id": 33302212604,
+  "behavior": [
+    "final soak stability now requires both desiredModel and the actual active runtime model to equal the requested model",
+    "desired-model intent can no longer mask an actual serving-model drift or rollback",
+    "watchdog stability debt remains uncleared when active model identity diverges",
+    "runtime recovery CI now includes soak recovery, active-model identity and mission-health regressions"
+  ],
+  "verification": {
+    "regression_added": true,
+    "ci_conclusion": "BLOCKED_BY_RUNNER_ALLOCATION",
+    "ci_detail": "GitHub Actions completed as failure with runner_id=0 and steps=[] across jobs; no executable regression PASS is claimed"
+  },
+  "exact_v5_4_source_recovered": false,
+  "physical_windows_gpu_validated": false,
+  "windows_x64_artifacts_rebuilt_verified": false,
+  "release_published": false,
+  "stable_json_modified": false,
+  "stable_json_blob_sha": "5a30e0ed7ae47d09b476fd741cd18307f6d7d81e"
+}

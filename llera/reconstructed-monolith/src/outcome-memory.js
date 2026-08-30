@@ -27,6 +27,8 @@ class OutcomeMemory {
     this.saveBackend = save;
     this.now = now;
     this.state = { schema: 1, outcomes: [], skillCandidates: [] };
+    this.durableState = clone(this.state);
+    this.persistenceInFlight = false;
     this.loaded = false;
   }
 
@@ -39,6 +41,7 @@ class OutcomeMemory {
       }
       this.state = clone(persisted);
     }
+    this.durableState = clone(this.state);
     this.loaded = true;
     return this.snapshot();
   }
@@ -47,6 +50,7 @@ class OutcomeMemory {
 
   async recordOutcome({ missionId, goal, status, summary = '', failurePattern = null, tags = [], verification = {} } = {}) {
     this._requireLoaded();
+    this._requirePersistenceIdle();
     if (!missionId || !goal) throw new Error('missionId and goal are required');
     if (!['completed', 'failed', 'partial'].includes(status)) throw new Error('invalid outcome status');
 
@@ -114,6 +118,7 @@ class OutcomeMemory {
 
   async proposeSkill({ missionId, name, description, procedure, evidenceIds = [], verification = {} } = {}) {
     this._requireLoaded();
+    this._requirePersistenceIdle();
     if (!missionId || !name || !description || !Array.isArray(procedure) || procedure.length === 0) {
       throw new Error('missionId/name/description/procedure are required');
     }
@@ -176,7 +181,27 @@ class OutcomeMemory {
   }
 
   _requireLoaded() { if (!this.loaded) throw new Error('outcome memory is not initialized'); }
-  async _persist() { await this.saveBackend(clone(this.state)); }
+  _requirePersistenceIdle() {
+    if (this.persistenceInFlight) {
+      const error = new Error('outcome memory persistence transaction already in progress');
+      error.code = 'OUTCOME_MEMORY_PERSISTENCE_IN_PROGRESS';
+      throw error;
+    }
+  }
+  async _persist() {
+    this._requirePersistenceIdle();
+    this.persistenceInFlight = true;
+    try {
+      const candidate = clone(this.state);
+      await this.saveBackend(candidate);
+      this.durableState = clone(candidate);
+    } catch (error) {
+      this.state = clone(this.durableState);
+      throw error;
+    } finally {
+      this.persistenceInFlight = false;
+    }
+  }
 }
 
 module.exports = { OutcomeMemory };

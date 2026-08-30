@@ -45,6 +45,7 @@ class SignedUpdateLifecycle {
     this.publicKey = publicKey;
     this.fetchImpl = fetchImpl;
     this.onProgress = onProgress;
+    this._verifiedManifestPayloads = new Map();
     this.paths = {
       downloads: path.join(this.rootDir, 'downloads'), staging: path.join(this.rootDir, 'staging'),
       current: path.join(this.rootDir, 'current'), backup: path.join(this.rootDir, 'rollback'),
@@ -53,6 +54,16 @@ class SignedUpdateLifecycle {
   }
   async init() {
     await Promise.all([fsp.mkdir(this.paths.downloads,{recursive:true}),fsp.mkdir(this.paths.staging,{recursive:true}),fsp.mkdir(this.paths.backup,{recursive:true})]);
+  }
+  _manifestPayloadSha256(manifest) {
+    return sha256Buffer(Buffer.from(stableStringify(manifest)));
+  }
+  _requireVerifiedManifest(manifest) {
+    if (!manifest || typeof manifest !== 'object') throw new Error('manifest required');
+    const payloadSha256 = this._manifestPayloadSha256(manifest);
+    const verified = this._verifiedManifestPayloads.get(payloadSha256);
+    if (!verified) throw new Error('manifest not verified for update lifecycle');
+    return { payloadSha256, ...verified };
   }
   verifySignedManifest(manifest, signatureBase64) {
     if (!manifest || typeof manifest !== 'object') throw new Error('manifest required');
@@ -67,9 +78,13 @@ class SignedUpdateLifecycle {
     let artifactUrl;
     try { artifactUrl = new URL(String(manifest.artifact.url || '')); } catch { throw new Error('artifact url invalid'); }
     if (artifactUrl.protocol !== 'https:') throw new Error('artifact url must use https');
-    return { verified: true, payloadSha256: sha256Buffer(payload) };
+    const payloadSha256 = sha256Buffer(payload);
+    const signatureSha256 = sha256Buffer(signature);
+    this._verifiedManifestPayloads.set(payloadSha256, { signatureSha256 });
+    return { verified: true, payloadSha256, signatureSha256 };
   }
   async downloadArtifact(manifest, { resume = true } = {}) {
+    this._requireVerifiedManifest(manifest);
     await this.init();
     const artifact = manifest.artifact;
     const version = safeVersionSegment(manifest.version);
@@ -110,15 +125,18 @@ class SignedUpdateLifecycle {
     return {path:finalPath,sha256:digest,size:st.size};
   }
   async stageArtifact(manifest, downloadedPath) {
+    this._requireVerifiedManifest(manifest);
     const version = safeVersionSegment(manifest.version);
     const stageDir = path.join(this.paths.staging,version);
     await fsp.rm(stageDir,{recursive:true,force:true}); await fsp.mkdir(stageDir,{recursive:true});
     const staged = path.join(stageDir,'LLera-update.bin'); await fsp.copyFile(downloadedPath,staged);
     const digest = await sha256File(staged);
     if (digest.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) throw new Error('staged artifact integrity mismatch');
-    await this._writeJournal({state:'staged',version,staged,sha256:digest}); return staged;
+    const verifiedManifest=this._requireVerifiedManifest(manifest);
+    await this._writeJournal({state:'staged',version,staged,sha256:digest,manifestPayloadSha256:verifiedManifest.payloadSha256,manifestSignatureSha256:verifiedManifest.signatureSha256}); return staged;
   }
   async activateStaged(manifest, stagedPath) {
+    const verifiedManifest=this._requireVerifiedManifest(manifest);
     await this.init(); const version = safeVersionSegment(manifest.version);
     const currentFile=path.join(this.paths.current,'LLera.bin'), backupFile=path.join(this.paths.backup,'LLera.previous.bin');
     await fsp.mkdir(this.paths.current,{recursive:true}); await fsp.mkdir(this.paths.backup,{recursive:true});
@@ -136,7 +154,9 @@ class SignedUpdateLifecycle {
       state:'activated',version,currentFile,
       backupFile:hadCurrent?backupFile:null,
       backupSha256:hadCurrent?backupSha256:null,
-      sha256:digest
+      sha256:digest,
+      manifestPayloadSha256:verifiedManifest.payloadSha256,
+      manifestSignatureSha256:verifiedManifest.signatureSha256
     });
     this.onProgress({phase:'activated',percent:100,version}); return {currentFile,backupAvailable:hadCurrent,backupSha256};
   }
@@ -144,6 +164,7 @@ class SignedUpdateLifecycle {
     const journal=await this.readJournal();
     if(!journal||journal.state!=='activated'||!journal.backupFile) throw new Error('rollback unavailable');
     if(!/^[a-f0-9]{64}$/i.test(String(journal.backupSha256 || ''))) throw new Error('rollback backup digest unavailable');
+    if(!/^[a-f0-9]{64}$/i.test(String(journal.manifestPayloadSha256 || '')) || !/^[a-f0-9]{64}$/i.test(String(journal.manifestSignatureSha256 || ''))) throw new Error('rollback manifest provenance unavailable');
     const currentFile=journal.currentFile, backupDigest=await sha256File(journal.backupFile);
     if (backupDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
       throw new Error('rollback backup integrity mismatch');
@@ -158,7 +179,9 @@ class SignedUpdateLifecycle {
     await fsp.rename(tmp,currentFile);
     await this._writeJournal({
       state:'rolled-back',fromVersion:journal.version,currentFile,
-      restoredSha256:backupDigest,expectedBackupSha256:journal.backupSha256
+      restoredSha256:backupDigest,expectedBackupSha256:journal.backupSha256,
+      manifestPayloadSha256:journal.manifestPayloadSha256,
+      manifestSignatureSha256:journal.manifestSignatureSha256
     });
     this.onProgress({phase:'rolled-back',percent:100}); return {currentFile,restoredSha256:backupDigest};
   }

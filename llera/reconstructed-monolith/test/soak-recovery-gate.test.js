@@ -3,14 +3,19 @@
 const assert = require('assert');
 const { SoakRecoveryGate, isDurableStabilityAcknowledgement } = require('../src/soak-recovery-gate');
 
-function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStableState = null } = {}) {
+function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStableState = null, pressureResetThrows = false } = {}) {
   let generation = 0;
   let stableCalls = 0;
+  const appliedPressures = [];
   let runtimeState = { state: 'stopped', model: null, desiredModel: null, generation: 0, recoveryCount: 0 };
   const runtime = {
     async ensureRunning(model) { generation += 1; runtimeState = { ...runtimeState, state: 'ready', model, desiredModel: model, generation }; return this.snapshot(); },
     async recover() { generation += 1; runtimeState = { ...runtimeState, state: 'ready', model: runtimeState.desiredModel, generation, recoveryCount: runtimeState.recoveryCount + 1 }; return this.snapshot(); },
-    async applyHostPressure(level) { return { level, aborted: ['low-priority-simulated'] }; },
+    async applyHostPressure(level) {
+      appliedPressures.push(level);
+      if (pressureResetThrows && level === 'NORMAL' && appliedPressures.includes('CRITICAL')) throw new Error('pressure reset failed');
+      return { level, aborted: level === 'CRITICAL' ? ['low-priority-simulated'] : [] };
+    },
     snapshot() { return { ...runtimeState }; },
   };
   const mission = { id: 'mission_soak', status: 'running', resumeCount: 0, checkpoints: [{ id: 'cp_1' }], toolTrace: [{ id: 'trace_1', tool: 'system_info' }] };
@@ -30,7 +35,7 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   const evidenceVerifier = async ({ cycle, runtime }) =>
     cycle !== evidenceFailsAt && runtime && runtime.state === 'ready' && runtime.desiredModel === 'qwen3-next-80b-q4km';
 
-  return { runtime, missionEngine, watchdog, hostGuard, evidenceVerifier, mission, stableCalls: () => stableCalls };
+  return { runtime, missionEngine, watchdog, hostGuard, evidenceVerifier, mission, stableCalls: () => stableCalls, appliedPressures };
 }
 
 (async () => {
@@ -45,18 +50,33 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   const gate = new SoakRecoveryGate({ ...ok, now: (() => { let t = 1000; return () => ++t; })(), sleep: async () => {} });
   const report = await gate.run({ model: 'qwen3-next-80b-q4km', cycles: 35, recoveryEvery: 7, pressureEvery: 5, missionId: ok.mission.id, maxRecoveryCount: 5 });
   assert.strictEqual(report.pass, true);
-  assert.strictEqual(report.schema, 4);
+  assert.strictEqual(report.schema, 5);
   assert.strictEqual(report.watchdogStabilityCommitted, true);
   assert.strictEqual(report.gates.watchdogStabilityCommitted, true);
+  assert.strictEqual(report.gates.pressureRestored, true);
+  assert.strictEqual(report.finalRuntimePressure, 'NORMAL');
+  assert.strictEqual(report.pressureResets, 1, 'a soak ending on CRITICAL must explicitly restore NORMAL');
+  assert(ok.appliedPressures.includes('CRITICAL'), 'soak must exercise CRITICAL pressure');
+  assert.strictEqual(ok.appliedPressures.at(-1), 'NORMAL', 'synthetic pressure must be cleared before stability commit');
   assert(Number.isFinite(report.watchdogStabilityCommitRequestedAt));
   assert(report.watchdogStableState.lastStableAt >= report.watchdogStabilityCommitRequestedAt);
   assert.strictEqual(ok.stableCalls(), 1);
 
-  const failed = fixtures({ evidenceFailsAt: 3 });
+  const failed = fixtures({ evidenceFailsAt: 5 });
   const failedGate = new SoakRecoveryGate({ ...failed, now: (() => { let t = 2000; return () => ++t; })(), sleep: async () => {} });
-  const failedReport = await failedGate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, missionId: failed.mission.id });
+  const failedReport = await failedGate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, pressureEvery: 5, missionId: failed.mission.id });
   assert.strictEqual(failedReport.pass, false);
   assert.strictEqual(failed.stableCalls(), 0, 'failed soak must never erase watchdog debt');
+  assert.strictEqual(failed.appliedPressures.at(-1), 'NORMAL', 'failed soak must also clear synthetic CRITICAL pressure');
+  assert.strictEqual(failedReport.pressureResets, 1);
+
+  const resetFailure = fixtures({ pressureResetThrows: true });
+  const resetFailureGate = new SoakRecoveryGate({ ...resetFailure, now: (() => { let t = 2500; return () => ++t; })(), sleep: async () => {} });
+  const resetFailureReport = await resetFailureGate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, pressureEvery: 5, missionId: resetFailure.mission.id });
+  assert.strictEqual(resetFailureReport.pass, false, 'failed pressure restoration must fail the final gate');
+  assert.strictEqual(resetFailureReport.gates.pressureRestored, false);
+  assert.strictEqual(resetFailure.stableCalls(), 0, 'pressure restoration failure must preserve watchdog debt');
+  assert(resetFailureReport.failures.some(x => x.message.includes('host pressure reset failed')));
 
   const commitFailure = fixtures({ markStableThrows: true });
   const commitGate = new SoakRecoveryGate({ ...commitFailure, now: (() => { let t = 3000; return () => ++t; })(), sleep: async () => {} });
@@ -86,9 +106,12 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, recoveryEvery: 0, missionId: ok.mission.id }), /recoveryEvery/);
   assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, pressureEvery: 0, missionId: ok.mission.id }), /pressureEvery/);
 
-  console.log('MONOLITH soak/watchdog durable stability acknowledgement PASS', {
+  console.log('MONOLITH soak/watchdog durable stability and pressure restoration PASS', {
     verifiedSoakClearsDebt: true,
     failedSoakCannotClearDebt: true,
+    criticalPressureRestored: true,
+    failedSoakPressureRestored: true,
+    pressureResetFailureBlocksPass: true,
     stabilityWriteFailureBlocksPass: true,
     staleStabilityAckBlocksPass: true,
     sameTickPreexistingAckBlocksPass: true,

@@ -50,19 +50,26 @@ assert.strictEqual(activated.action, 'activate');
 assert.strictEqual(activated.surface, 'work');
 assert.strictEqual(activated.focusTarget, 'composer');
 assert.strictEqual(ui.getPaletteState().open, false);
+assert.ok(activated.liveRegion);
+assert.strictEqual(activated.liveRegion.role, 'status');
+assert.strictEqual(activated.liveRegion.ariaLive, 'polite');
+assert.strictEqual(activated.liveRegion.message, 'Open Work Mode activated');
+assert.strictEqual(ui.getLiveRegionState().message, 'Open Work Mode activated');
 
 const a11y = controller.getAccessibilityContract();
 assert.strictEqual(a11y.paletteUsesCyclicFocusTrap, true);
 assert.strictEqual(a11y.paletteContainsExternalFocus, true);
 assert.strictEqual(a11y.paletteSupportsReverseTab, true);
+assert.strictEqual(a11y.paletteActivationAnnounced, true);
 
 const self = controller.selfTest();
 assert.strictEqual(self.ok, true);
-assert.strictEqual(self.schema, 542);
+assert.strictEqual(self.schema, 543);
 assert.strictEqual(self.focusTrap.forwardWrap, true);
 assert.strictEqual(self.focusTrap.backwardWrap, true);
 assert.strictEqual(self.focusTrap.containment, true);
 assert.strictEqual(self.focusTrap.focusRestoration, true);
+assert.strictEqual(self.accessibility.paletteActivationAnnounced, true);
 
 console.log('AURORA focus trap controller PASS', {
   cyclicTab: true,
@@ -70,4 +77,5 @@ console.log('AURORA focus trap controller PASS', {
   externalFocusContainment: true,
   focusRestoration: true,
   commandActivationRestoration: true,
+  commandActivationAnnouncement: true,
 });

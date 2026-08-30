@@ -25,6 +25,19 @@ class HostguardRuntimeCoordinator {
     const policy = snapshot.policy || this.governor.policy();
     const actions = [];
 
+    // Fence new inference admissions before runtime preemption begins. Without
+    // this ordering, applyHostPressure('critical') can await an abort callback
+    // while the inference governor still exposes the previous profile. A new
+    // Council/Adversarial task admitted in that window is absent from the
+    // runtime victim snapshot and can survive CRITICAL pressure. Applying the
+    // governor profile first closes that race; runtime cancellation then drains
+    // the already-active low-priority work.
+    if (this.inferenceGovernor && policy.pressure !== this.lastApplied.inferencePressure) {
+      const governed = await this.inferenceGovernor.applyPressure(policy.pressure);
+      actions.push({ type: 'inference-governor', pressure: policy.pressure, profile: governed && governed.profile ? governed.profile : null, preemptionCandidates: Array.isArray(governed && governed.preemptionCandidates) ? governed.preemptionCandidates.map(x => x.id || x) : [] });
+      this.lastApplied.inferencePressure = policy.pressure;
+    }
+
     if (policy.pressure !== this.lastApplied.pressure) {
       const pressureResult = await this.runtime.applyHostPressure(policy.pressure);
       const aborted = Array.isArray(pressureResult && pressureResult.aborted) ? [...pressureResult.aborted] : [];
@@ -48,12 +61,6 @@ class HostguardRuntimeCoordinator {
       }
 
       this.lastApplied.pressure = policy.pressure;
-    }
-
-    if (this.inferenceGovernor && policy.pressure !== this.lastApplied.inferencePressure) {
-      const governed = await this.inferenceGovernor.applyPressure(policy.pressure);
-      actions.push({ type: 'inference-governor', pressure: policy.pressure, profile: governed && governed.profile ? governed.profile : null, preemptionCandidates: Array.isArray(governed && governed.preemptionCandidates) ? governed.preemptionCandidates.map(x => x.id || x) : [] });
-      this.lastApplied.inferencePressure = policy.pressure;
     }
 
     if (this.downloader && policy.downloadWorkers !== this.lastApplied.downloadWorkers) {

@@ -20,6 +20,7 @@ class AuroraAccessibilityController {
       paletteUsesCyclicFocusTrap: true,
       paletteContainsExternalFocus: true,
       paletteSupportsReverseTab: true,
+      paletteActivationAnnounced: true,
     };
   }
   getComposerState() { return this.ui.getComposerState ? this.ui.getComposerState() : null; }
@@ -74,7 +75,16 @@ class AuroraAccessibilityController {
       const uiResult = this.ui.handleShortcut(event);
       if (before.open && !this.ui.getPaletteState().open && uiResult.action === 'activate') {
         const trapResult = this.focusTrap.deactivate({ restoreFocus: true });
-        return { ...uiResult, focusTarget: trapResult.focusTarget, focusTrap: trapResult };
+        const activationLabel = String(uiResult.command?.label || uiResult.surface || 'Command').trim();
+        const liveRegion = typeof this.ui.announce === 'function'
+          ? this.ui.announce(`${activationLabel} activated`)
+          : null;
+        return {
+          ...uiResult,
+          focusTarget: trapResult.focusTarget,
+          focusTrap: trapResult,
+          liveRegion,
+        };
       }
       return uiResult;
     }
@@ -92,7 +102,7 @@ class AuroraAccessibilityController {
     const base = typeof this.ui.selfTest === 'function' ? this.ui.selfTest() : { ok: true };
     return {
       ok: Boolean(base.ok && focus.ok),
-      schema: 542,
+      schema: 543,
       ui: base,
       focusTrap: focus,
       accessibility: this.getAccessibilityContract(),

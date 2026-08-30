@@ -1,0 +1,34 @@
+{
+  "milestone": "HOSTGUARD critical admission fence",
+  "date": "2026-08-30",
+  "baseline": "reconstructed-monolith",
+  "source": {
+    "path": "llera/reconstructed-monolith/src/hostguard-runtime-coordinator.js",
+    "blob_sha": "423e40d1b00f10f62d2cb0597555ea9e1ca3181c",
+    "commit": "b307ce9242b4e1dc87f5b2d2d2a36b781526b0b3"
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/hostguard-critical-admission-fence.test.js",
+    "blob_sha": "4779e81645b1cf53b0e76143c102d31a8536bf47",
+    "commit": "3e8b75d8a13203176725be4f160c4bd905ae95f9"
+  },
+  "ci_gate": {
+    "path": ".github/workflows/llera-hostguard-restore.yml",
+    "commit": "4d8950ea7c8e1a6bb8cddb9bdac08c5b838ab267"
+  },
+  "behavior": [
+    "Inference governor pressure profile is applied before runtime critical preemption awaits.",
+    "Council and Adversarial admissions are blocked during the runtime abort window under CRITICAL pressure.",
+    "Already-active low-priority runtime tasks remain subject to runtime preemption and later reconciliation."
+  ],
+  "verification": {
+    "committed_bytes_fetched_from_github": true,
+    "local_execution": "BLOCKED",
+    "blocker": "container DNS could not resolve github.com during clone",
+    "pass_claimed": false
+  },
+  "exact_v5_4_claimed": false,
+  "full_parity_claimed": false,
+  "stable_json_modified": false,
+  "release_published": false
+}

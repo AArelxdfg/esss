@@ -152,11 +152,13 @@ class DualVerifier {
     });
     const strictSignatures = new Set(strictChecks.map(signature));
     const adversarialSignatures = new Set(adversarialChecks.map(signature));
-    const identical =
-      strictSignatures.size === adversarialSignatures.size &&
-      [...strictSignatures].every(sig => adversarialSignatures.has(sig));
-    if (identical) {
-      return {ok:false, reason:'identical_verifier_checks'};
+    const sharedSignatures = [...strictSignatures].filter(sig => adversarialSignatures.has(sig));
+    if (sharedSignatures.length > 0) {
+      return {
+        ok:false,
+        reason:'overlapping_verifier_checks',
+        sharedCount:sharedSignatures.length
+      };
     }
 
     return {ok:true, reason:'independent_verifier_channels'};

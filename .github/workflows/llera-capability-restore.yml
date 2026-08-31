@@ -16,6 +16,7 @@ on:
       - 'llera/reconstructed-monolith/test/tool-surface-62.test.js'
       - 'llera/reconstructed-monolith/test/target-bound-verification-debt.test.js'
       - 'llera/reconstructed-monolith/test/independent-verification-debt.test.js'
+      - 'llera/reconstructed-monolith/test/restored-tool-classification-authority.test.js'
       - 'llera/reconstructed-monolith/test/evidence-verifier.test.js'
       - 'llera/reconstructed-monolith/test/evidence-id-binding.test.js'
       - 'llera/reconstructed-monolith/test/dual-verifier-evidence-coverage.test.js'
@@ -56,6 +57,8 @@ jobs:
         run: node llera/reconstructed-monolith/test/target-bound-verification-debt.test.js
       - name: Independent verification debt
         run: node llera/reconstructed-monolith/test/independent-verification-debt.test.js
+      - name: Authoritative restart tool classification
+        run: node llera/reconstructed-monolith/test/restored-tool-classification-authority.test.js
       - name: Evidence and dual verifier baseline
         run: |
           node llera/reconstructed-monolith/test/evidence-verifier.test.js

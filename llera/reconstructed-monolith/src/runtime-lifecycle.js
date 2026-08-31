@@ -25,6 +25,9 @@ class RuntimeLifecycle {
     this.recoveryCount = 0;
     this.switchRollbackCount = 0;
     this.transitionLog = [];
+    this.lifecycleSequence = 0;
+    this.lifecycleOperation = null;
+    this.lifecycleQueue = Promise.resolve();
   }
 
   snapshot() {
@@ -34,7 +37,8 @@ class RuntimeLifecycle {
       desiredModel: this.desiredModel,
       pid: this.pid,
       generation: this.generation,
-      activeInference: [...this.activeInference.values()].map(x => ({ id: x.id, priority: x.priority, startedAt: x.startedAt })),
+      activeInference: [...this.activeInference.values()].map(x => ({ id: x.id, priority: x.priority, startedAt: x.startedAt, generation: x.generation })),
+      lifecycleOperation: this.lifecycleOperation ? { ...this.lifecycleOperation } : null,
       lastError: this.lastError,
       lastSwitchFailure: this.lastSwitchFailure,
       lastBackendExit: this.lastBackendExit ? { ...this.lastBackendExit } : null,
@@ -43,7 +47,35 @@ class RuntimeLifecycle {
     };
   }
 
-  _transition(next, reason) {
+  _runLifecycle(type, operation) {
+    const owner = `${type}:${++this.lifecycleSequence}`;
+    const scheduled = this.lifecycleQueue.then(async () => {
+      if (this.lifecycleOperation) {
+        const error = new Error(`runtime lifecycle owner collision: ${this.lifecycleOperation.owner}`);
+        error.code = 'RUNTIME_LIFECYCLE_OWNER_COLLISION';
+        throw error;
+      }
+      this.lifecycleOperation = { owner, type, startedAt: this.now() };
+      try {
+        return await operation(owner);
+      } finally {
+        if (this.lifecycleOperation?.owner === owner) this.lifecycleOperation = null;
+      }
+    });
+    this.lifecycleQueue = scheduled.then(() => undefined, () => undefined);
+    return scheduled;
+  }
+
+  _assertTransitionOwner(owner) {
+    if (!owner || this.lifecycleOperation?.owner !== owner) {
+      const error = new Error('runtime transition requires the active lifecycle owner');
+      error.code = 'RUNTIME_TRANSITION_OWNER_REQUIRED';
+      throw error;
+    }
+  }
+
+  _transition(next, reason, owner) {
+    this._assertTransitionOwner(owner);
     const allowed = {
       stopped: new Set(['starting']),
       starting: new Set(['ready', 'failed', 'stopping']),
@@ -53,7 +85,7 @@ class RuntimeLifecycle {
       failed: new Set(['recovering', 'starting', 'stopping'])
     };
     if (!allowed[this.state]?.has(next)) throw new Error(`illegal runtime transition ${this.state} -> ${next}`);
-    this.transitionLog.push({ from: this.state, to: next, reason, at: this.now() });
+    this.transitionLog.push({ from: this.state, to: next, reason, owner, at: this.now() });
     this.state = next;
   }
 
@@ -130,7 +162,7 @@ class RuntimeLifecycle {
     }
   }
 
-  async _rollbackFailedSwitch({ previousModel, failedModel, originalError }) {
+  async _rollbackFailedSwitch({ previousModel, failedModel, originalError, owner }) {
     const switchFailure = String(originalError?.message || originalError);
     this.lastSwitchFailure = {
       from: previousModel,
@@ -142,7 +174,7 @@ class RuntimeLifecycle {
 
     try {
       this.desiredModel = previousModel;
-      const restored = await this.ensureRunning(previousModel, `model-switch-rollback:${failedModel}->${previousModel}`);
+      const restored = await this._ensureRunning(previousModel, `model-switch-rollback:${failedModel}->${previousModel}`, owner);
       this.desiredModel = failedModel;
       this.switchRollbackCount += 1;
       this.lastSwitchFailure = {
@@ -205,19 +237,23 @@ class RuntimeLifecycle {
   }
 
   async ensureRunning(model, reason = 'ensure') {
+    return this._runLifecycle('ensure-running', owner => this._ensureRunning(model, reason, owner));
+  }
+
+  async _ensureRunning(model, reason, owner) {
     if (!model) throw new Error('model is required');
 
     this.desiredModel = model;
     if (this.state === 'ready' && this.model === model) {
       const reconciled = await this._reconcileTrackedPid('ensure-ready-probe');
       if (!reconciled.reconciled) return this.snapshot();
-      this._transition('failed', 'external-kill-detected');
+      this._transition('failed', 'external-kill-detected', owner);
     }
 
     const previousModel = this.state === 'ready' && this.model !== model ? this.model : null;
     if (previousModel) {
       await this.drainActiveInference(`model-switch:${previousModel}->${model}`);
-      await this.stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true });
+      await this._stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true }, owner);
     }
     if (this.state === 'starting') throw new Error('runtime start already in progress');
     if (this.state === 'stopping') throw new Error('runtime stop in progress');
@@ -229,9 +265,9 @@ class RuntimeLifecycle {
         throw error;
       }
     }
-    if (this.state === 'failed') this._transition('recovering', reason);
-    if (this.state === 'recovering') this._transition('starting', reason);
-    else if (this.state === 'stopped') this._transition('starting', reason);
+    if (this.state === 'failed') this._transition('recovering', reason, owner);
+    if (this.state === 'recovering') this._transition('starting', reason, owner);
+    else if (this.state === 'stopped') this._transition('starting', reason, owner);
 
     let started = null;
     try {
@@ -245,7 +281,7 @@ class RuntimeLifecycle {
 
       this.generation += 1;
       this.lastError = null;
-      this._transition('ready', reason);
+      this._transition('ready', reason, owner);
       return this.snapshot();
     } catch (err) {
       const cleanupPid = started && started.pid ? started.pid : this.pid;
@@ -265,11 +301,11 @@ class RuntimeLifecycle {
         this.model = null;
         this.activeInference.clear();
       }
-      this._transition('failed', cleanup.error ? 'start-failed-cleanup-failed' : 'start-failed-cleaned');
+      this._transition('failed', cleanup.error ? 'start-failed-cleanup-failed' : 'start-failed-cleaned', owner);
 
       if (previousModel && !cleanup.error) {
         try {
-          await this._rollbackFailedSwitch({ previousModel, failedModel: model, originalError: err });
+          await this._rollbackFailedSwitch({ previousModel, failedModel: model, originalError: err, owner });
         } catch (_) {
           // Preserve the original switch failure for the caller while state records rollback failure.
         }
@@ -279,6 +315,10 @@ class RuntimeLifecycle {
   }
 
   async stop(reason = 'stop', { preserveDesiredModel = false } = {}) {
+    return this._runLifecycle('stop', owner => this._stop(reason, { preserveDesiredModel }, owner));
+  }
+
+  async _stop(reason, { preserveDesiredModel = false } = {}, owner) {
     if (this.state === 'stopped') return this.snapshot();
     if (!['ready', 'failed', 'starting'].includes(this.state)) throw new Error(`cannot stop from ${this.state}`);
 
@@ -289,23 +329,24 @@ class RuntimeLifecycle {
       throw err;
     }
 
-    this._transition('stopping', reason);
+    this._transition('stopping', reason, owner);
     try {
       if (this.pid) await this._stopBackendBounded({ pid:this.pid, model:this.model, reason });
       this.pid = null;
       this.model = null;
       this.activeInference.clear();
       if (!preserveDesiredModel) this.desiredModel = null;
-      this._transition('stopped', reason);
+      this._transition('stopped', reason, owner);
       return this.snapshot();
     } catch (err) {
       this.lastError = String(err?.message || err);
-      this._transition('failed', 'stop-failed');
+      this._transition('failed', 'stop-failed', owner);
       throw err;
     }
   }
 
   registerInference(id, { priority = 'normal', abort } = {}) {
+    if (this.lifecycleOperation) throw new Error('runtime lifecycle transition in progress');
     if (this.state !== 'ready') throw new Error('runtime is not ready');
     if (!id || this.activeInference.has(id)) throw new Error('unique inference id required');
     if (typeof abort !== 'function') throw new Error('abort callback required');
@@ -314,11 +355,24 @@ class RuntimeLifecycle {
     return task;
   }
 
-  completeInference(id) { return this.activeInference.delete(id); }
+  completeInference(id, generation) {
+    const task = this.activeInference.get(id);
+    if (!task || !Number.isSafeInteger(generation) || generation !== task.generation) return false;
+    return this.activeInference.delete(id);
+  }
 
   async applyHostPressure(level) {
     const normalized = String(level || '').toUpperCase();
     if (normalized !== 'CRITICAL') return { level: normalized, aborted: [], failures: [] };
+    if (this.lifecycleOperation) {
+      return {
+        level: normalized,
+        aborted: [],
+        failures: [],
+        deferred: true,
+        reason: 'lifecycle-transition-in-progress'
+      };
+    }
 
     const victims = [...this.activeInference.values()]
       .filter(t => t.priority === 'low')
@@ -346,6 +400,10 @@ class RuntimeLifecycle {
   }
 
   async recover(reason = 'health-failure') {
+    return this._runLifecycle('recover', owner => this._recover(reason, owner));
+  }
+
+  async _recover(reason, owner) {
     if (!['ready', 'failed'].includes(this.state)) throw new Error(`cannot recover from ${this.state}`);
     const desiredModel = this.desiredModel || this.model;
     if (!desiredModel) throw new Error('no desired model to recover');
@@ -357,13 +415,13 @@ class RuntimeLifecycle {
       throw err;
     }
 
-    this._transition('recovering', reason);
+    this._transition('recovering', reason, owner);
     if (this.pid) {
       try {
         await this._stopBackendBounded({ pid:this.pid, model:this.model, reason:`recovery-stop:${reason}` });
       } catch (err) {
         this.lastError = `recovery stop failed: ${String(err?.message || err)}`;
-        this._transition('failed', 'recovery-stop-failed');
+        this._transition('failed', 'recovery-stop-failed', owner);
         throw err;
       }
     }
@@ -371,7 +429,7 @@ class RuntimeLifecycle {
     this.model = null;
     this.activeInference.clear();
     this.recoveryCount += 1;
-    return this.ensureRunning(desiredModel, `recovery:${reason}`);
+    return this._ensureRunning(desiredModel, `recovery:${reason}`, owner);
   }
 }
 

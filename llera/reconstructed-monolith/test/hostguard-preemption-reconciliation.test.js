@@ -7,8 +7,8 @@ const { HostguardRuntimeCoordinator } = require('../src/hostguard-runtime-coordi
   const runtimeTasks=new Map();
   const governorActive=new Set();
   const runtime={
-    registerInference(id,{priority,abort}){ runtimeTasks.set(id,{priority,abort}); return {generation:1}; },
-    completeInference(id){ return runtimeTasks.delete(id); },
+    registerInference(id,{priority,abort}){ runtimeTasks.set(id,{priority,abort,generation:1}); return {generation:1}; },
+    completeInference(id,generation){ const task=runtimeTasks.get(id); if(!task||task.generation!==generation)return false; return runtimeTasks.delete(id); },
     async applyHostPressure(level){
       const aborted=[];
       if(level==='critical'){
@@ -27,7 +27,8 @@ const { HostguardRuntimeCoordinator } = require('../src/hostguard-runtime-coordi
   };
   const coordinator=new RuntimeInferenceCoordinator({runtime,governor:inferenceGovernor});
   let aborts=0;
-  assert.strictEqual(coordinator.begin({id:'interactive-1',className:'interactive',abort:()=>aborts++}).allow,true);
+  const interactive=coordinator.begin({id:'interactive-1',className:'interactive',abort:()=>aborts++});
+  assert.strictEqual(interactive.allow,true);
   assert.strictEqual(coordinator.begin({id:'council-1',className:'council',abort:()=>aborts++}).allow,true);
   assert.strictEqual(coordinator.begin({id:'adversarial-1',className:'adversarial',abort:()=>aborts++}).allow,true);
   assert.strictEqual(governorActive.size,3);
@@ -52,7 +53,7 @@ const { HostguardRuntimeCoordinator } = require('../src/hostguard-runtime-coordi
   assert.strictEqual(repeated.actions.some(x=>x.type==='inference-reconcile'),false);
   assert.deepStrictEqual([...governorActive],['interactive-1']);
 
-  coordinator.complete('interactive-1');
+  coordinator.complete('interactive-1',interactive.generation);
   assert.strictEqual(governorActive.size,0);
   assert.strictEqual(runtimeTasks.size,0);
 

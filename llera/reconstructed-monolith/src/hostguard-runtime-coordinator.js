@@ -44,8 +44,17 @@ class HostguardRuntimeCoordinator {
       const failures = Array.isArray(pressureResult && pressureResult.failures)
         ? pressureResult.failures.map(x => ({ id: x && x.id || null, error: String(x && x.error || 'unknown preemption failure') }))
         : [];
+      const deferred = Boolean(pressureResult && pressureResult.deferred);
       const degraded = Boolean(pressureResult && pressureResult.degraded) || failures.length > 0;
-      actions.push({ type: 'runtime-pressure', pressure: policy.pressure, aborted, failures, degraded });
+      actions.push({
+        type: 'runtime-pressure',
+        pressure: policy.pressure,
+        aborted,
+        failures,
+        degraded,
+        deferred,
+        reason: deferred ? String(pressureResult && pressureResult.reason || 'runtime-transition') : null
+      });
 
       if (this.inferenceCoordinator && aborted.length) {
         const reconciled = this.inferenceCoordinator.reconcileRuntimeAborts(aborted, { reason: `host-pressure-${policy.pressure}` });
@@ -60,7 +69,21 @@ class HostguardRuntimeCoordinator {
         });
       }
 
-      this.lastApplied.pressure = policy.pressure;
+      if (deferred) {
+        // Do not mark runtime pressure as applied. RuntimeLifecycle deliberately
+        // defers HOSTGUARD cancellation while a stop/recovery/model-switch owns
+        // the inference drain. That transition can fail and reopen admission
+        // with low-priority work still present. Keeping lastApplied.pressure
+        // unchanged guarantees the next telemetry sample retries CRITICAL
+        // preemption instead of treating a deferred pass as completed.
+        actions.push({
+          type: 'runtime-pressure-retry-pending',
+          pressure: policy.pressure,
+          reason: String(pressureResult && pressureResult.reason || 'runtime-transition')
+        });
+      } else {
+        this.lastApplied.pressure = policy.pressure;
+      }
     }
 
     if (this.downloader && policy.downloadWorkers !== this.lastApplied.downloadWorkers) {

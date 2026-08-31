@@ -48,6 +48,8 @@ jobs:
             test/skill-exact-outcome-binding.test.js
             test/verified-learning-receipt-boundary.test.js
             test/verified-learning-skill-recovery.test.js
+            test/failure-doctrine-sealed-restore.test.js
+            test/failure-doctrine-legacy-trust-boundary.test.js
             test/agent-tool-router-62.test.js
             test/monolith-computer-executor.test.js
             test/verified-mission-finalizer.test.js

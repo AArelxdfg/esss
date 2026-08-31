@@ -385,16 +385,20 @@ class MonolithComputerExecutor {
     const command=String(args.command||args.cmd||'');if(!command)throw new Error('command is required');
     const shell=String(args.shell||'system').toLowerCase();
     if(shell==='powershell')return {file:process.platform==='win32'?'powershell.exe':'pwsh',argv:['-NoProfile','-NonInteractive','-Command',command]};
-    if(shell==='cmd')return {file:process.platform==='win32'?'cmd.exe':'sh',argv:process.platform==='win32'?['/d','/s','/c',command]:['-lc',command]};
+    if(shell==='cmd')return process.platform==='win32'
+      ? {file:'cmd.exe',argv:['/d','/s','/c',`"${command}"`],windowsVerbatimArguments:true}
+      : {file:'sh',argv:['-lc',command]};
     if(shell==='wsl')return {file:'wsl.exe',argv:['--','bash','-lc',command]};
-    return process.platform==='win32'?{file:'powershell.exe',argv:['-NoProfile','-NonInteractive','-Command',command]}:{file:'/bin/sh',argv:['-lc',command]};
+    return process.platform==='win32'
+      ? {file:'cmd.exe',argv:['/d','/s','/c',`"${command}"`],windowsVerbatimArguments:true}
+      : {file:'/bin/sh',argv:['-lc',command]};
   }
 
   async runCommand(args, context = {}) {
     await this.assertCommandAllowed(args, context);
     const cwd=this.resolvePath(args.cwd||'.');const spec=this.commandSpec(args);const timeoutMs=Math.min(20*60*1000,Math.max(100,Number(args.timeout_ms||args.timeoutMs||120000)));
     return new Promise((resolve,reject)=>{
-      const child=spawn(spec.file,spec.argv,{cwd,windowsHide:true,stdio:['ignore','pipe','pipe']});
+      const child=spawn(spec.file,spec.argv,{cwd,windowsHide:true,windowsVerbatimArguments:Boolean(spec.windowsVerbatimArguments),stdio:['ignore','pipe','pipe']});
       let stdout='',stderr='',settled=false,timedOut=false;
       const append=(which,chunk)=>{const next=capText((which==='out'?stdout:stderr)+chunk,this.maxOutputBytes);if(which==='out')stdout=next;else stderr=next;};
       child.stdout.on('data',c=>append('out',c));child.stderr.on('data',c=>append('err',c));
@@ -407,7 +411,7 @@ class MonolithComputerExecutor {
   async startProcess(args, context = {}) {
     await this.assertCommandAllowed(args, context);
     const cwd=this.resolvePath(args.cwd||'.');const spec=this.commandSpec(args);const id=crypto.randomUUID();
-    const child=spawn(spec.file,spec.argv,{cwd,windowsHide:true,stdio:['ignore','pipe','pipe']});
+    const child=spawn(spec.file,spec.argv,{cwd,windowsHide:true,windowsVerbatimArguments:Boolean(spec.windowsVerbatimArguments),stdio:['ignore','pipe','pipe']});
     const job={id,pid:child.pid,command:String(args.command||args.cmd||''),cwd,state:'running',exitCode:null,signal:null,stdout:'',stderr:'',startedAt:this.now(),endedAt:null,child};
     this.jobs.set(id,job);
     const append=(field,chunk)=>{job[field]=capText(job[field]+chunk,this.maxOutputBytes);};

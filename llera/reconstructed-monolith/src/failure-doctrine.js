@@ -42,6 +42,23 @@ function failureEventSeal(event) {
   });
 }
 
+function failureEventIdentity(event) {
+  if (event && /^[a-f0-9]{64}$/i.test(String(event.eventSeal || ''))) {
+    return `sealed:${String(event.eventSeal).toLowerCase()}`;
+  }
+  return `legacy:${stableFingerprint({
+    missionId: String(event && event.missionId || ''),
+    stepId: String(event && event.stepId || ''),
+    tool: String(event && event.tool || ''),
+    argsFingerprint: String(event && event.argsFingerprint || '').toLowerCase(),
+    failureClass: event && event.failureClass,
+    fingerprint: String(event && event.fingerprint || '').toLowerCase(),
+    material: Boolean(event && event.material),
+    message: String(event && event.message || ''),
+    at: Number(event && event.at),
+  })}`;
+}
+
 function structurallyValidFailure(event) {
   return Boolean(
     event &&
@@ -107,6 +124,7 @@ class FailureDoctrine {
 
   restore(toolTrace = []) {
     const diagnostics = { restored: 0, legacyUnsealed: 0, rejected: 0 };
+    const known = new Set(this.history.map(failureEventIdentity));
 
     for (const item of toolTrace) {
       if (!item || item.ok !== false || !item.failure) continue;
@@ -139,6 +157,10 @@ class FailureDoctrine {
         at: Number(failure.at),
         eventSeal: failure.eventSeal ? String(failure.eventSeal).toLowerCase() : null,
       };
+
+      const identity = failureEventIdentity(restored);
+      if (known.has(identity)) continue;
+      known.add(identity);
       this.history.push(restored);
       diagnostics.restored += 1;
     }
@@ -162,5 +184,6 @@ module.exports = {
   FAILURE_CLASS,
   stableFingerprint,
   failureEventSeal,
+  failureEventIdentity,
   structurallyValidFailure,
 };

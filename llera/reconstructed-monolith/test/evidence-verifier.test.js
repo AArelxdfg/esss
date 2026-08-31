@@ -5,13 +5,13 @@ const { DualVerifier } = require('../src/dual-verifier');
 
 const ledger = new EvidenceLedger({missionId:'mission-1'});
 const bytes = Buffer.from('verified artifact bytes');
-const ev = ledger.add({stepId:'step-verify', kind:'artifact', target:'C:/LLera/LLera.exe', bytes, metadata:{source:'post-action-read'}});
+const ev = ledger.add({stepId:'step-verify', tool:'read_file', kind:'artifact', target:'C:/LLera/LLera.exe', bytes, summary:'Read the executable after the material action', metadata:{source:'post-action-read'}});
 assert.ok(ev.id.startsWith('ev_'));
 assert.equal(ev.sha256, sha256(bytes));
-assert.equal(ledger.verifyBinding(ev.id, {target:'C:/LLera/LLera.exe', bytes}).ok, true);
-assert.equal(ledger.verifyBinding(ev.id, {target:'C:/LLera/Other.exe', bytes}).reason, 'target_mismatch');
-assert.equal(ledger.verifyBinding(ev.id, {target:'C:/LLera/LLera.exe', bytes:Buffer.from('tampered')}).reason, 'sha256_mismatch');
-assert.throws(() => ledger.add({stepId:'s2', kind:'artifact', target:'x', bytes, digest:'0'.repeat(64)}), /digest mismatch/);
+assert.equal(ledger.verifyBinding(ev.id, {target:'C:/LLera/LLera.exe', tool:'read_file', bytes}).ok, true);
+assert.equal(ledger.verifyBinding(ev.id, {target:'C:/LLera/Other.exe', tool:'read_file', bytes}).reason, 'target_mismatch');
+assert.equal(ledger.verifyBinding(ev.id, {target:'C:/LLera/LLera.exe', tool:'read_file', bytes:Buffer.from('tampered artifact bytes')}).reason, 'sha256_mismatch');
+assert.throws(() => ledger.add({stepId:'s2', tool:'read_file', kind:'artifact', target:'x', bytes, digest:'0'.repeat(64), summary:'Digest mismatch probe'}), /digest mismatch/);
 
 const verifier = new DualVerifier();
 const pass = verifier.verify({

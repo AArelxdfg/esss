@@ -4,7 +4,7 @@ const { EvidenceLedger } = require('../src/evidence-ledger');
 const { StrictEvidenceVerifier, AdversarialEvidenceVerifier, DualVerifier } = require('../src/dual-verifier');
 
 const ledger = new EvidenceLedger({missionId:'m-independent'});
-const ev = ledger.add({stepId:'s1',kind:'state',target:'x',bytes:Buffer.from('x')});
+const ev = ledger.add({stepId:'s1',tool:'read_file',kind:'state',target:'x',bytes:Buffer.from('x'),summary:'Observed x state'});
 
 const dual = new DualVerifier();
 assert.notStrictEqual(dual.strictVerifier, dual.adversarialVerifier);

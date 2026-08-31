@@ -21,15 +21,36 @@ const { VisionPipeline } = require('../src/vision-pipeline');
   assert.match(result.inputId,/^vision_[a-f0-9]{24}$/);
   assert.strictEqual(original.toString(),'canonical-image-bytes');
 
-  const equivalent = pipeline.normalizeInput({kind:'image',mime:'image/png',source:'C:/LLera/input.png',bytes:Buffer.from('canonical-image-bytes')});
+  const equivalent = pipeline.normalizeInput({kind:' IMAGE ',mime:' IMAGE/PNG ',source:' C:/LLera/input.png ',bytes:Buffer.from('canonical-image-bytes')});
   assert.strictEqual(equivalent.inputId,result.inputId);
+  assert.strictEqual(equivalent.source,'C:/LLera/input.png');
+  assert.strictEqual(equivalent.mime,'image/png');
   assert.throws(() => pipeline.normalizeInput({kind:'image',mime:'image/png',source:'safe\nspoof',bytes:Buffer.from('x')}),/unsafe vision input source/);
   assert.throws(() => pipeline.normalizeInput({kind:'image',mime:'image/png',source:'safe\0spoof',bytes:Buffer.from('x')}),/unsafe vision input source/);
+  assert.throws(() => pipeline.normalizeInput({kind:'image',mime:'image/png\ntext/plain',source:'safe',bytes:Buffer.from('x')}),/unsafe vision input mime/);
+  assert.throws(() => pipeline.normalizeInput({kind:'image',mime:'image/png\0spoof',source:'safe',bytes:Buffer.from('x')}),/unsafe vision input mime/);
+
+  let pressureBackendCalls = 0;
+  const blocked = await pipeline.analyze(
+    {kind:'screen',mime:'image/png',source:'desktop-1',bytes:Buffer.from('screen')},
+    {
+      pressure:' CRITICAL ',
+      visionModel: async () => { pressureBackendCalls += 1; return {caption:'must-not-run'}; },
+      ocr: async () => { pressureBackendCalls += 1; return 'must-not-run'; }
+    }
+  );
+  assert.strictEqual(blocked.ok,false);
+  assert.strictEqual(blocked.blocked,true);
+  assert.strictEqual(blocked.reason,'host-critical-pressure');
+  assert.match(blocked.inputId,/^vision_[a-f0-9]{24}$/);
+  assert.strictEqual(pressureBackendCalls,0);
 
   console.log('MONOLITH vision input provenance PASS', {
     immutableCanonicalSnapshot:true,
     isolatedBackendBuffers:true,
     deterministicInputId:true,
-    sourceSpoofRejected:true
+    sourceSpoofRejected:true,
+    mimeSpoofRejected:true,
+    criticalPressureNormalized:true
   });
 })().catch(error => { console.error(error); process.exit(1); });

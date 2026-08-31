@@ -1,0 +1,33 @@
+{
+  "milestone": "AURORA surface-aware command activation focus routing",
+  "date": "2026-08-31",
+  "baseline": "reconstructed MONOLITH OMEGA; Recovery/Native demo shells deprecated",
+  "contract": "V5.4 AURORA keyboard-first command palette, focus-visible accessibility, reduced-motion-safe product behavior",
+  "problem": "Command palette activation could change MONOLITH surface while restoring focus to an origin control such as the conversation composer that is no longer relevant or visible on the newly active surface.",
+  "repair": [
+    "Capture active surface before command activation.",
+    "If activation changes surface, route focus to the newly active roving-tab navigation target nav-<surface>.",
+    "If activation remains on the same surface, preserve normal origin focus restoration.",
+    "Expose paletteActivationFocusFollowsSurface in the accessibility contract.",
+    "Advance accessibility controller self-test schema to 544.",
+    "Add dedicated regression and wire it into the AURORA GitHub Actions workflow."
+  ],
+  "source_commit": "5cf31d05bc609459ac0eb78386de4af967566318",
+  "source_blob": "2cd15d707807ba4540a39f6959aeba131986abcb",
+  "updated_regression_commit": "5fc7f17e8c609f5593415dbec9e3a649355c3458",
+  "new_regression_commit": "81b0fc0a952fbe5ffb5319e40dd09ceafd542d0e",
+  "workflow_commit": "ecf16d0efb9722b2c5a406939f5436d34cdc0aee",
+  "claims": {
+    "exact_v5_4_source_recovered": false,
+    "full_parity": false,
+    "physical_windows_gpu_validation": false,
+    "windows_grade_final": false,
+    "stable_json_modified": false,
+    "release_published": false
+  },
+  "exact_source_targets": {
+    "v5_3_5_source_zip_sha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_source_zip_sha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471"
+  },
+  "verification_note": "Source, regression and workflow are persisted on GitHub. No repository-wide executable PASS, rebuilt Windows EXE/source ZIP, or physical Windows rendering claim is made by this record."
+}

@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "captured_at": "2026-08-31T06:41:18+03:00",
+  "milestone": "signed updater rollback journal path binding",
+  "baseline": "MONOLITH OMEGA reconstructed source",
+  "source": {
+    "path": "llera/reconstructed-monolith/src/signed-update-lifecycle.js",
+    "commit": "f9d6544480114ba0ed3e114dd909b066aa8e42e7",
+    "blob": "bec83a0e5b7d170a13d90e98f586641f72a60de0"
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/signed-update-rollback-journal-path-binding.test.js",
+    "commit": "507fd0c4f1ecdc044f7a6e76bf1dcf17b504862e",
+    "coverage": [
+      "tampered journal currentFile redirect rejected",
+      "tampered journal backupFile substitution rejected",
+      "canonical bound rollback preserved"
+    ]
+  },
+  "security_property": "rollback journal paths are rebound to the lifecycle-owned canonical current and rollback files before any backup read or target replacement",
+  "verification": {
+    "source_refetched_from_main": true,
+    "workflow_runs_for_test_commit": 0,
+    "repository_exact_executable_pass_claimed": false
+  },
+  "exact_recovery": {
+    "v5_3_5_installer_sha256": "1852b9c116fca9c4107e814b556956028d4732f4f04a00f606908d47667b9d2e",
+    "v5_4_installer_sha256": "0304fc6586a0002b2c327ee113dfa9348a220e83668ebbb5aa3c1ef405fd969a",
+    "v5_3_5_source_sha256_target": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "v5_4_source_sha256_target": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "exact_source_bytes_recovered_this_run": false
+  },
+  "policy": {
+    "stable_json_modified": false,
+    "release_published": false,
+    "exact_v5_4_claimed": false,
+    "full_parity_claimed": false,
+    "physical_windows_gpu_validation_claimed": false
+  }
+}

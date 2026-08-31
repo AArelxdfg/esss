@@ -38,6 +38,7 @@ jobs:
             test/mission-multi-recovery-snapshot-debt.test.js \
             test/mission-persistence-fail-closed.test.js \
             test/mission-concurrent-persistence-guard.test.js \
+            test/mission-order-orphan-recovery.test.js \
             test/recovery-snapshot-checkpoint-head-binding.test.js
           do
             echo "=== $test ==="

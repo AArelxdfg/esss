@@ -15,7 +15,7 @@ async function writeJournal(root, value) {
   const tx = new WindowsUninstallTransaction({ rootDir: root });
 
   await writeJournal(root, {
-    schema: 2,
+    schema: 3,
     state: 'uninstalling',
     keepData: true,
     keepModels: true,
@@ -34,8 +34,24 @@ async function writeJournal(root, value) {
   assert.strictEqual(journal.keepModels, true);
   assert.deepStrictEqual(journal.completed, ['stop-app']);
 
+  await fs.mkdir(path.join(root, 'data'), { recursive: true });
+  await fs.mkdir(path.join(root, 'models'), { recursive: true });
+  await fs.writeFile(path.join(root, 'data', 'sentinel.txt'), 'data');
+  await fs.writeFile(path.join(root, 'models', 'sentinel.txt'), 'models');
   await writeJournal(root, {
-    schema: 2,
+    schema: 3,
+    state: 'uninstalling',
+    keepData: false,
+    keepModels: false,
+    completed: ['stop-app'],
+    at: 1
+  });
+  await assert.rejects(() => tx.resume(), /explicit data deletion confirmation/);
+  assert.strictEqual(await fs.readFile(path.join(root, 'data', 'sentinel.txt'), 'utf8'), 'data');
+  assert.strictEqual(await fs.readFile(path.join(root, 'models', 'sentinel.txt'), 'utf8'), 'models');
+
+  await writeJournal(root, {
+    schema: 3,
     state: 'uninstalling',
     keepData: true,
     keepModels: true,
@@ -45,7 +61,7 @@ async function writeJournal(root, value) {
   await assert.rejects(() => tx.resume(), /steps invalid/);
 
   await writeJournal(root, {
-    schema: 2,
+    schema: 3,
     state: 'uninstalling',
     keepData: true,
     keepModels: true,
@@ -55,7 +71,7 @@ async function writeJournal(root, value) {
   await assert.rejects(() => tx.resume(), /steps invalid/);
 
   await writeJournal(root, {
-    schema: 2,
+    schema: 3,
     state: 'uninstalling',
     keepData: true,
     keepModels: true,
@@ -76,6 +92,7 @@ async function writeJournal(root, value) {
 
   console.log('MONOLITH uninstall journal hardening PASS', {
     activeIntentCannotBeOverwritten:true,
+    destructiveJournalTamperCannotDeleteWithoutReaffirmation:true,
     unknownStepsRejected:true,
     duplicateStepsRejected:true,
     aggregateShortcutForgeryRejected:true,

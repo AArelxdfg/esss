@@ -19,11 +19,12 @@ function activeRuntimeGeneration(runtime, id) {
 }
 
 function canCompleteRuntimeInference(runtime, id, expectedGeneration) {
+  const activeGeneration = activeRuntimeGeneration(runtime, id);
+
   if (expectedGeneration === null || expectedGeneration === undefined) {
-    return { allow: true, activeGeneration: activeRuntimeGeneration(runtime, id), reason: 'legacy-unbound' };
+    return { allow: false, activeGeneration, reason: 'runtime-generation-required' };
   }
 
-  const activeGeneration = activeRuntimeGeneration(runtime, id);
   if (activeGeneration === null || activeGeneration === undefined) {
     return { allow: false, activeGeneration: null, reason: 'runtime-generation-unobservable' };
   }

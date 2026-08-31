@@ -26,7 +26,7 @@ assert.ok(entry.summary.length <= SUMMARY_MAX_CHARS);
 assert.match(entry.sha256, /^[a-f0-9]{64}$/);
 assert.match(entry.bindingSha256, /^[a-f0-9]{64}$/);
 assert.equal(entry.bindingSha256, evidenceBindingSeal(entry));
-assert.deepEqual(ledger.verifyBinding(entry.id, {target:entry.target, bytes}), {ok:true, entry});
+assert.deepEqual(ledger.verifyBinding(entry.id, {target:entry.target, tool:entry.tool, bytes}), {ok:true, entry});
 
 const sealed = ledger.export({sealed:true});
 assert.equal(sealed.entries[0].tool, entry.tool);

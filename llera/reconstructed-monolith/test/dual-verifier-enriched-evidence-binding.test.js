@@ -31,12 +31,12 @@ assert.strictEqual(pass.missionId, 'mission-enriched');
 const tamperedTool = {...ev, tool:'filesystem.write'};
 const toolReject = verifyOne(verifier, [tamperedTool]);
 assert.strictEqual(toolReject.ok, false);
-assert.strictEqual(toolReject.reason, 'evidence_binding_seal_mismatch');
+assert.strictEqual(toolReject.reason, 'evidence_id_binding_mismatch');
 
 const tamperedBytes = {...ev, byteCount:ev.byteCount + 1};
 const byteReject = verifyOne(verifier, [tamperedBytes]);
 assert.strictEqual(byteReject.ok, false);
-assert.strictEqual(byteReject.reason, 'evidence_binding_seal_mismatch');
+assert.strictEqual(byteReject.reason, 'evidence_id_binding_mismatch');
 
 const tamperedSeal = {...ev, bindingSha256:'0'.repeat(64)};
 const sealReject = verifyOne(verifier, [tamperedSeal]);
@@ -47,7 +47,7 @@ const missingTool = {...ev};
 delete missingTool.tool;
 const missingToolReject = verifyOne(verifier, [missingTool]);
 assert.strictEqual(missingToolReject.ok, false);
-assert.strictEqual(missingToolReject.reason, 'invalid_evidence_tool');
+assert.strictEqual(missingToolReject.reason, 'incomplete_evidence_binding');
 
 const oversizedSummary = {...ev, summary:'x'.repeat(513)};
 const summaryReject = verifyOne(verifier, [oversizedSummary]);
@@ -60,7 +60,8 @@ const other = otherLedger.add({
   tool:'filesystem.read',
   kind:'artifact',
   target:'C:/LLera/other.bin',
-  bytes:Buffer.from('other-output')
+  bytes:Buffer.from('other-output'),
+  summary:'Observed output from a different mission'
 });
 const mixedMission = verifyOne(verifier, [ev, other], 'mixed mission claim');
 assert.strictEqual(mixedMission.ok, false);

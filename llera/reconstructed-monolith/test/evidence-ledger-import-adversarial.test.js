@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { EvidenceLedger } = require('../src/evidence-ledger');
+const { EvidenceLedger, ledgerSeal } = require('../src/evidence-ledger');
 
 const observedAt = '2026-08-31T10:00:00.000Z';
 const source = new EvidenceLedger({missionId:'mission-evidence'});
@@ -24,32 +24,34 @@ assert.strictEqual(entry.tool, 'read_file');
 assert.strictEqual(entry.summary, input.summary);
 assert.strictEqual(entry.observedAt, observedAt);
 assert.strictEqual(source.verifyBinding(entry.id,{target:entry.target,tool:entry.tool,bytes:input.bytes}).ok,true);
-assert.strictEqual(source.verifyBinding(entry.id,{tool:entry.tool,bytes:input.bytes}).reason,'target_missing');
-assert.strictEqual(source.verifyBinding(entry.id,{target:entry.target,bytes:input.bytes}).reason,'tool_missing');
+assert.strictEqual(source.verifyBinding(entry.id,{tool:entry.tool,bytes:input.bytes}).reason,'target_required');
+assert.strictEqual(source.verifyBinding(entry.id,{target:entry.target,bytes:input.bytes}).reason,'tool_required');
 assert.strictEqual(source.verifyBinding(entry.id,{target:entry.target,tool:entry.tool,digest:entry.sha256}).reason,'digest_only_rejected');
 assert.strictEqual(source.verifyBinding(entry.id,{target:'C:/LLera/forged.json',tool:entry.tool,bytes:input.bytes}).reason,'target_mismatch');
 assert.strictEqual(source.verifyBinding(entry.id,{target:entry.target,tool:'system_info',bytes:input.bytes}).reason,'tool_mismatch');
 assert.strictEqual(source.verifyBinding(entry.id,{target:entry.target,tool:entry.tool,bytes:Buffer.from('state-B')}).reason,'sha256_mismatch');
 assert.throws(() => source.add(input), error => error && error.code === 'EVIDENCE_LEDGER_DUPLICATE');
 
-const exported = source.export();
+const exported = source.export({sealed:true});
 const restored = new EvidenceLedger({missionId:'mission-evidence'});
-assert.deepStrictEqual(restored.import(exported), exported);
-assert.notStrictEqual(restored.export(), exported);
+assert.deepStrictEqual(restored.import(exported), exported.entries);
+assert.notStrictEqual(restored.export({sealed:true}), exported);
+function reseal(state) { const next = JSON.parse(JSON.stringify(state)); next.stateSha256 = ledgerSeal(next); return next; }
 
-const forgedTarget = exported.map(item => ({...item,target:'C:/LLera/forged.json'}));
+const forgedTarget = reseal({...exported,entries:exported.entries.map(item => ({...item,target:'C:/LLera/forged.json'}))});
 assert.throws(() => restored.import(forgedTarget), error => error && error.code === 'EVIDENCE_LEDGER_ENTRY_TAMPERED');
-const forgedDigest = exported.map(item => ({...item,sha256:'f'.repeat(64)}));
+const forgedDigest = reseal({...exported,entries:exported.entries.map(item => ({...item,sha256:'f'.repeat(64)}))});
 assert.throws(() => restored.import(forgedDigest), error => error && error.code === 'EVIDENCE_LEDGER_ENTRY_TAMPERED');
-const forgedTool = exported.map(item => ({...item,tool:'system_info'}));
+const forgedTool = reseal({...exported,entries:exported.entries.map(item => ({...item,tool:'system_info'}))});
 assert.throws(() => restored.import(forgedTool), error => error && error.code === 'EVIDENCE_LEDGER_ENTRY_TAMPERED');
-assert.throws(() => restored.import([...exported,...exported]), error => error && error.code === 'EVIDENCE_LEDGER_IMPORT_DUPLICATE');
+const duplicateImport = reseal({...exported,entries:[...exported.entries,...exported.entries]});
+assert.throws(() => restored.import(duplicateImport), error => error && error.code === 'EVIDENCE_LEDGER_STORE_DUPLICATE');
 
 const foreignMission = new EvidenceLedger({missionId:'mission-foreign'});
-assert.throws(() => foreignMission.import(exported), error => error && error.code === 'EVIDENCE_LEDGER_ENTRY_INVALID');
+assert.throws(() => foreignMission.import(exported), error => error && error.code === 'EVIDENCE_LEDGER_STORE_INVALID');
 
 const beforeInvalidImport = restored.snapshot();
-assert.throws(() => restored.import([...exported,...forgedDigest]), error => error && error.code === 'EVIDENCE_LEDGER_ENTRY_TAMPERED');
+assert.throws(() => restored.import(reseal({...exported,entries:[...exported.entries,...forgedDigest.entries]})), error => error && error.code === 'EVIDENCE_LEDGER_ENTRY_TAMPERED');
 assert.deepStrictEqual(restored.snapshot(), beforeInvalidImport);
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'llera-evidence-import-'));
@@ -60,7 +62,7 @@ try {
   persistenceProbe.import(exported);
   const beforePersistenceFailure = persistenceProbe.snapshot();
   persistenceProbe.storagePath = blockedPath;
-  assert.throws(() => persistenceProbe.import([]), error => error && error.code === 'EVIDENCE_LEDGER_PERSIST_FAILED');
+  assert.throws(() => persistenceProbe.import({schema:3,missionId:'mission-evidence',entries:[],stateSha256:ledgerSeal({schema:3,missionId:'mission-evidence',entries:[]})}), error => error && error.code === 'EVIDENCE_LEDGER_PERSIST_FAILED');
   assert.deepStrictEqual(persistenceProbe.snapshot(), beforePersistenceFailure);
 } finally {
   fs.rmSync(dir,{recursive:true,force:true});

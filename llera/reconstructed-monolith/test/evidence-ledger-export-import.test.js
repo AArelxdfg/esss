@@ -8,15 +8,15 @@ const { EvidenceLedger } = require('../src/evidence-ledger');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'llera-evidence-import-'));
 try {
   const source = new EvidenceLedger({missionId:'mission-export'});
-  const first = source.add({stepId:'s1',kind:'artifact',target:'C:/LLera/app.exe',bytes:Buffer.from('artifact-v1'),metadata:{summary:'built'}});
-  source.add({stepId:'s2',kind:'observation',target:'C:/LLera/app.exe',bytes:Buffer.from('artifact-v1'),metadata:{summary:'read-back'}});
+  const first = source.add({stepId:'s1',tool:'build_installer',kind:'artifact',target:'C:/LLera/app.exe',bytes:Buffer.from('artifact-v1'),metadata:{summary:'built'}});
+  source.add({stepId:'s2',tool:'read_file',kind:'observation',target:'C:/LLera/app.exe',bytes:Buffer.from('artifact-v1'),metadata:{summary:'read-back'}});
 
   const plain = source.export();
   assert.ok(Array.isArray(plain));
   assert.strictEqual(plain.length, 2);
 
   const sealed = source.export({sealed:true});
-  assert.strictEqual(sealed.schema, 2);
+  assert.strictEqual(sealed.schema, 3);
   assert.strictEqual(sealed.missionId, 'mission-export');
   assert.match(sealed.stateSha256, /^[a-f0-9]{64}$/);
 
@@ -24,7 +24,7 @@ try {
   const restored = new EvidenceLedger({missionId:'mission-export',storagePath:store});
   const imported = restored.import(sealed);
   assert.strictEqual(imported.length, 2);
-  assert.strictEqual(restored.verifyBinding(first.id,{target:'C:/LLera/app.exe',bytes:Buffer.from('artifact-v1')}).ok,true);
+  assert.strictEqual(restored.verifyBinding(first.id,{target:'C:/LLera/app.exe',tool:'build_installer',bytes:Buffer.from('artifact-v1')}).ok,true);
   assert.strictEqual(fs.existsSync(store), true);
 
   const beforeTamper = restored.snapshot();

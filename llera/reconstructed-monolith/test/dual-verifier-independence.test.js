@@ -59,10 +59,35 @@ assert.strictEqual(result.adversarial.score,0.5);
 assert.strictEqual(result.adversarial.ok,true);
 assert.strictEqual(result.ok,false);
 
+const sharedChecks = [{name:'shared',ok:true,evidenceIds:[ev.id]}];
+const sameReference = dual.verify({claim:'same reference',evidence:[ev],strictChecks:sharedChecks,adversarialChecks:sharedChecks});
+assert.strictEqual(sameReference.reason,'verifier_check_independence_reject');
+assert.strictEqual(sameReference.independence.sameCheckReference,true);
+
+const clonedChecks = [{name:'same semantic check',detail:'identical',ok:true,evidenceIds:[ev.id]}];
+const cloned = dual.verify({claim:'cloned checks',evidence:[ev],strictChecks:clonedChecks,adversarialChecks:JSON.parse(JSON.stringify(clonedChecks))});
+assert.strictEqual(cloned.reason,'verifier_check_independence_reject');
+assert.strictEqual(cloned.independence.sameCheckSet,true);
+
+const overlap = dual.verify({
+  claim:'overlapping semantics', evidence:[ev],
+  strictChecks:[{name:'different names',semanticKey:'same-contract',ok:true,evidenceIds:[ev.id]}],
+  adversarialChecks:[{name:'different name too',semanticKey:'same-contract',ok:true,evidenceIds:[ev.id]}]
+});
+assert.strictEqual(overlap.reason,'verifier_check_independence_reject');
+assert.deepStrictEqual(overlap.independence.semanticOverlap,['explicit:same-contract']);
+
+const permitted = new DualVerifier({requireIndependentChecks:false}).verify({
+  claim:'contract does not require independence', evidence:[ev], strictChecks:sharedChecks, adversarialChecks:sharedChecks
+});
+assert.strictEqual(permitted.ok,true);
+
 console.log('MONOLITH dual verifier structural independence PASS', {
   distinctClasses:true,
   distinctInstances:true,
   distinctEngineIds:true,
   independentPolicies:true,
+  repeatedOrOverlappingChecksRejected:true,
+  contractCanExplicitlyAllowOverlap:true,
   adversarialCriticalFailureFailClosed:true
 });

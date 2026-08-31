@@ -18,9 +18,8 @@ function validateEnrichedEvidence(item) {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return {ok:false, reason:'invalid_evidence_binding'};
   if (typeof item.id !== 'string' || !/^ev_[a-f0-9]{24}$/i.test(item.id)) return {ok:false, reason:'invalid_evidence_id'};
   if (typeof item.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256)) return {ok:false, reason:'invalid_evidence_binding'};
-  const required = ['missionId','stepId','kind','target'];
+  const required = ['missionId','stepId','tool','kind','target','observedAt','summary'];
   if (required.some(key => !String(item[key] || '').trim())) return {ok:false, reason:'incomplete_evidence_binding'};
-  if (typeof item.tool !== 'string' || !item.tool.trim()) return {ok:false, reason:'invalid_evidence_tool'};
   if (!Number.isSafeInteger(item.byteCount) || item.byteCount < 0) return {ok:false, reason:'invalid_evidence_byte_count'};
   if (typeof item.bindingSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.bindingSha256)) {
     return {ok:false, reason:'invalid_evidence_binding_sha256'};
@@ -34,8 +33,12 @@ function validateEnrichedEvidence(item) {
     missionId:item.missionId,
     stepId:item.stepId,
     kind:item.kind,
+    tool:item.tool,
     target:item.target,
-    sha256:normalizedDigest
+    sha256:normalizedDigest,
+    byteCount:item.byteCount,
+    observedAt:item.observedAt,
+    summary:item.summary
   });
   if (expectedId !== item.id) return {ok:false, reason:'evidence_id_binding_mismatch'};
 
@@ -46,12 +49,39 @@ function validateEnrichedEvidence(item) {
     kind:item.kind,
     target:item.target,
     sha256:normalizedDigest,
-    byteCount:item.byteCount
+    byteCount:item.byteCount,
+    observedAt:item.observedAt,
+    summary:item.summary
   });
   if (expectedBinding !== item.bindingSha256.toLowerCase()) {
     return {ok:false, reason:'evidence_binding_seal_mismatch'};
   }
   return {ok:true};
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((out, key) => {
+      out[key] = canonical(value[key]);
+      return out;
+    }, {});
+  }
+  return value;
+}
+
+function checkSetSignature(checks) {
+  return JSON.stringify(canonical(Array.isArray(checks) ? checks : []));
+}
+
+function semanticKeys(checks) {
+  if (!Array.isArray(checks)) return new Set();
+  return new Set(checks.map((check, index) => {
+    if (!check || typeof check !== 'object') return `invalid:${index}`;
+    const explicit = check.independenceKey ?? check.semanticKey;
+    if (explicit !== undefined && String(explicit).trim()) return `explicit:${String(explicit).trim()}`;
+    return `implicit:${String(check.name || '').trim()}\u0000${String(check.detail || '').trim()}`;
+  }));
 }
 
 class StrictEvidenceVerifier {
@@ -202,6 +232,7 @@ class DualVerifier {
     adversarialThreshold = 0.62,
     minEvidenceCoverage = 1,
     requireEvidenceRefs = true,
+    requireIndependentChecks = true,
     strictVerifier = null,
     adversarialVerifier = null
   } = {}) {
@@ -215,6 +246,7 @@ class DualVerifier {
       minEvidenceCoverage,
       requireEvidenceRefs
     });
+    this.requireIndependentChecks = requireIndependentChecks !== false;
 
     if (this.strictVerifier === this.adversarialVerifier) {
       throw new Error('strict and adversarial verifiers must be separate instances');
@@ -234,12 +266,35 @@ class DualVerifier {
     if (!claim) return {ok:false, reason:'claim_required'};
     if (!Array.isArray(evidence) || evidence.length === 0) return {ok:false, reason:'evidence_required'};
 
+    // Validate malformed evidence before deriving mission scope so malformed
+    // records cannot be disguised as a mixed-mission rejection.
+    for (const item of evidence) {
+      const invalid = typeof this.strictVerifier.validateEvidence === 'function'
+        ? this.strictVerifier.validateEvidence(item)
+        : validateEnrichedEvidence(item);
+      if (!invalid.ok) return {ok:false, reason:invalid.reason, strict:null, adversarial:null};
+    }
+
     const ids = evidence.map(e => e && e.id);
     if (new Set(ids).size !== ids.length) return {ok:false, reason:'duplicate_evidence_id'};
 
     const missionIds = [...new Set(evidence.map(e => String(e && e.missionId || '').trim()).filter(Boolean))];
     if (missionIds.length !== 1 || evidence.some(e => !e || !String(e.missionId || '').trim())) {
       return {ok:false, reason:'mixed_mission_evidence_reject', missionIds};
+    }
+
+    const sameCheckReference = strictChecks === adversarialChecks;
+    const sameCheckSet = checkSetSignature(strictChecks) === checkSetSignature(adversarialChecks);
+    const strictSemanticKeys = semanticKeys(strictChecks);
+    const adversarialSemanticKeys = semanticKeys(adversarialChecks);
+    const semanticOverlap = [...strictSemanticKeys].filter(key => adversarialSemanticKeys.has(key));
+    if (this.requireIndependentChecks && (sameCheckReference || sameCheckSet || semanticOverlap.length > 0)) {
+      return {
+        ok:false,
+        reason:'verifier_check_independence_reject',
+        missionId:missionIds[0],
+        independence:{sameCheckReference,sameCheckSet,semanticOverlap,required:true}
+      };
     }
 
     const strict = this.strictVerifier.verify({ claim, evidence, checks:strictChecks });
@@ -270,7 +325,11 @@ class DualVerifier {
         strictEngineId:this.strictVerifier.engineId,
         adversarialEngineId:this.adversarialVerifier.engineId,
         distinctInstances:true,
-        distinctEngineIds:true
+        distinctEngineIds:true,
+        sameCheckReference,
+        sameCheckSet,
+        semanticOverlap,
+        required:this.requireIndependentChecks
       },
       reason: ok
         ? 'dual_verifier_pass'
@@ -284,6 +343,8 @@ class DualVerifier {
 module.exports = {
   EVIDENCE_BINDING_REASONS,
   validateEnrichedEvidence,
+  checkSetSignature,
+  semanticKeys,
   StrictEvidenceVerifier,
   AdversarialEvidenceVerifier,
   DualVerifier

@@ -56,6 +56,8 @@ jobs:
             test/material-evidence-continuity.test.js
             test/integrity-sentinel-symlink-escape.test.js
             test/vision-input-provenance.test.js
+            test/hostguard-hysteresis.test.js
+            test/hostguard-invalid-telemetry-failclosed.test.js
           )
           for test_file in "${tests[@]}"; do
             echo "===== RUN $test_file ====="

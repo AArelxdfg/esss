@@ -1,0 +1,5 @@
+{
+  "declaredToolCount": 62,
+  "verification": "Covered by agent-tool-surface-integrity.test.js and tool-surface-62.test.js in the 94-test regression run.",
+  "source": "llera/reconstructed-monolith/src/tool-surface.js"
+}

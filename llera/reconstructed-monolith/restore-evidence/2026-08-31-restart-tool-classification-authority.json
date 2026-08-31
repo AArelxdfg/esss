@@ -1,0 +1,41 @@
+{
+  "milestone": "restart-tool-classification-authority",
+  "date": "2026-08-31",
+  "contract": "MONOLITH OMEGA V5.3.3 anti-loop and material-action verification debt",
+  "finding": "Persisted toolTrace metadata could set material=false for a canonical material tool during restore, preventing verification debt reconstruction after restart; persisted observation=true could also override canonical observation classification.",
+  "fix": {
+    "source": "llera/reconstructed-monolith/src/tool-surface.js",
+    "commit": "6fa09ab3866d4e365149182447e128184ed0a8e6",
+    "blob": "e00f5872a2968f21805e8416f9801a2578c62eb0",
+    "behavior": [
+      "canonical material classification cannot be downgraded by persisted metadata",
+      "persisted metadata cannot self-promote a non-observation tool into an observation",
+      "persisted material=true remains conservatively honored for unknown historical actions"
+    ]
+  },
+  "regression": {
+    "path": "llera/reconstructed-monolith/test/restored-tool-classification-authority.test.js",
+    "commit": "c2091ce71b0b5a7836186b80f9016f611d67aab4",
+    "cases": [
+      "write_file material=false downgrade rejected on restore",
+      "write_file observation=true self-promotion rejected",
+      "evidence_record cannot discharge restored write verification debt",
+      "same-target hash_file observation can discharge debt",
+      "unknown historical material=true remains conservative"
+    ]
+  },
+  "ci_gate": {
+    "workflow": ".github/workflows/llera-capability-restore.yml",
+    "commit": "15da1984fcd585775d5af126318995c73dabb351",
+    "run_id": 33394249032,
+    "status": "completed",
+    "conclusion": "failure-before-steps",
+    "runner_id": 0,
+    "steps": [],
+    "executable_pass_claimed": false
+  },
+  "exact_v5_4_claimed": false,
+  "full_parity_claimed": false,
+  "physical_windows_gpu_claimed": false,
+  "stable_json_modified": false
+}

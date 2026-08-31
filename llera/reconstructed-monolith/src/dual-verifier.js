@@ -1,9 +1,61 @@
 'use strict';
 
-const { evidenceId } = require('./evidence-ledger');
+const { evidenceId, evidenceBindingSeal, SUMMARY_MAX_CHARS } = require('./evidence-ledger');
+
+const EVIDENCE_BINDING_REASONS = Object.freeze([
+  'invalid_evidence_binding',
+  'invalid_evidence_id',
+  'incomplete_evidence_binding',
+  'invalid_evidence_tool',
+  'invalid_evidence_byte_count',
+  'invalid_evidence_binding_sha256',
+  'evidence_id_binding_mismatch',
+  'evidence_binding_seal_mismatch',
+  'evidence_summary_too_long'
+]);
+
+function validateEnrichedEvidence(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return {ok:false, reason:'invalid_evidence_binding'};
+  if (typeof item.id !== 'string' || !/^ev_[a-f0-9]{24}$/i.test(item.id)) return {ok:false, reason:'invalid_evidence_id'};
+  if (typeof item.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256)) return {ok:false, reason:'invalid_evidence_binding'};
+  const required = ['missionId','stepId','kind','target'];
+  if (required.some(key => !String(item[key] || '').trim())) return {ok:false, reason:'incomplete_evidence_binding'};
+  if (typeof item.tool !== 'string' || !item.tool.trim()) return {ok:false, reason:'invalid_evidence_tool'};
+  if (!Number.isSafeInteger(item.byteCount) || item.byteCount < 0) return {ok:false, reason:'invalid_evidence_byte_count'};
+  if (typeof item.bindingSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.bindingSha256)) {
+    return {ok:false, reason:'invalid_evidence_binding_sha256'};
+  }
+  if (item.summary !== undefined && String(item.summary).length > SUMMARY_MAX_CHARS) {
+    return {ok:false, reason:'evidence_summary_too_long'};
+  }
+
+  const normalizedDigest = item.sha256.toLowerCase();
+  const expectedId = evidenceId({
+    missionId:item.missionId,
+    stepId:item.stepId,
+    kind:item.kind,
+    target:item.target,
+    sha256:normalizedDigest
+  });
+  if (expectedId !== item.id) return {ok:false, reason:'evidence_id_binding_mismatch'};
+
+  const expectedBinding = evidenceBindingSeal({
+    missionId:item.missionId,
+    stepId:item.stepId,
+    tool:item.tool,
+    kind:item.kind,
+    target:item.target,
+    sha256:normalizedDigest,
+    byteCount:item.byteCount
+  });
+  if (expectedBinding !== item.bindingSha256.toLowerCase()) {
+    return {ok:false, reason:'evidence_binding_seal_mismatch'};
+  }
+  return {ok:true};
+}
 
 class StrictEvidenceVerifier {
-  constructor({ threshold = 0.62, minEvidenceCoverage = 1, requireEvidenceRefs = true, engineId = 'strict-evidence-v1' } = {}) {
+  constructor({ threshold = 0.62, minEvidenceCoverage = 1, requireEvidenceRefs = true, engineId = 'strict-evidence-v2' } = {}) {
     this.threshold = threshold;
     this.minEvidenceCoverage = minEvidenceCoverage;
     this.requireEvidenceRefs = requireEvidenceRefs;
@@ -11,7 +63,7 @@ class StrictEvidenceVerifier {
   }
 
   verify({ evidence = [], checks = [] } = {}) {
-    const knownIds = new Set(evidence.map(e => e.id));
+    const knownIds = new Set(evidence.map(e => e && e.id));
     for (const item of evidence) {
       const invalid = this.validateEvidence(item);
       if (!invalid.ok) return { ok:false, reason:invalid.reason, score:0, coverage:0, checks:[] };
@@ -65,23 +117,12 @@ class StrictEvidenceVerifier {
   }
 
   validateEvidence(item) {
-    if (!item || typeof item !== 'object') return {ok:false, reason:'invalid_evidence_binding'};
-    if (!item.id || !/^ev_[a-f0-9]{24}$/i.test(item.id)) return {ok:false, reason:'invalid_evidence_id'};
-    if (!/^[a-f0-9]{64}$/i.test(item.sha256 || '')) return {ok:false, reason:'invalid_evidence_binding'};
-    if (!item.missionId || !item.stepId || !item.kind || !item.target) return {ok:false, reason:'incomplete_evidence_binding'};
-    const expected = evidenceId({
-      missionId:item.missionId,
-      stepId:item.stepId,
-      kind:item.kind,
-      target:item.target,
-      sha256:String(item.sha256).toLowerCase()
-    });
-    return expected === item.id ? {ok:true} : {ok:false, reason:'evidence_id_binding_mismatch'};
+    return validateEnrichedEvidence(item);
   }
 }
 
 class AdversarialEvidenceVerifier {
-  constructor({ threshold = 0.62, minEvidenceCoverage = 1, requireEvidenceRefs = true, engineId = 'adversarial-evidence-v1' } = {}) {
+  constructor({ threshold = 0.62, minEvidenceCoverage = 1, requireEvidenceRefs = true, engineId = 'adversarial-evidence-v2' } = {}) {
     this.threshold = threshold;
     this.minEvidenceCoverage = minEvidenceCoverage;
     this.requireEvidenceRefs = requireEvidenceRefs;
@@ -89,7 +130,7 @@ class AdversarialEvidenceVerifier {
   }
 
   verify({ evidence = [], checks = [] } = {}) {
-    const knownIds = new Set(evidence.map(e => e.id));
+    const knownIds = new Set(evidence.map(e => e && e.id));
     for (const item of evidence) {
       const invalid = this.validateEvidence(item);
       if (!invalid.ok) return { ok:false, reason:invalid.reason, score:0, coverage:0, checks:[] };
@@ -151,20 +192,7 @@ class AdversarialEvidenceVerifier {
   }
 
   validateEvidence(item) {
-    if (item === null || typeof item !== 'object') return {ok:false, reason:'invalid_evidence_binding'};
-    if (typeof item.id !== 'string' || !/^ev_[0-9a-f]{24}$/i.test(item.id)) return {ok:false, reason:'invalid_evidence_id'};
-    if (typeof item.sha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(item.sha256)) return {ok:false, reason:'invalid_evidence_binding'};
-    const required = ['missionId','stepId','kind','target'];
-    if (required.some(key => !String(item[key] || '').trim())) return {ok:false, reason:'incomplete_evidence_binding'};
-    const expectedId = evidenceId({
-      missionId:item.missionId,
-      stepId:item.stepId,
-      target:item.target,
-      sha256:item.sha256.toLowerCase(),
-      kind:item.kind
-    });
-    if (item.id !== expectedId) return {ok:false, reason:'evidence_id_binding_mismatch'};
-    return {ok:true};
+    return validateEnrichedEvidence(item);
   }
 }
 
@@ -205,16 +233,22 @@ class DualVerifier {
   verify({claim, evidence = [], strictChecks = [], adversarialChecks = []}) {
     if (!claim) return {ok:false, reason:'claim_required'};
     if (!Array.isArray(evidence) || evidence.length === 0) return {ok:false, reason:'evidence_required'};
+
     const ids = evidence.map(e => e && e.id);
     if (new Set(ids).size !== ids.length) return {ok:false, reason:'duplicate_evidence_id'};
 
+    const missionIds = [...new Set(evidence.map(e => String(e && e.missionId || '').trim()).filter(Boolean))];
+    if (missionIds.length !== 1 || evidence.some(e => !e || !String(e.missionId || '').trim())) {
+      return {ok:false, reason:'mixed_mission_evidence_reject', missionIds};
+    }
+
     const strict = this.strictVerifier.verify({ claim, evidence, checks:strictChecks });
-    if (strict.reason && ['invalid_evidence_binding','invalid_evidence_id','incomplete_evidence_binding','evidence_id_binding_mismatch'].includes(strict.reason)) {
-      return {ok:false, reason:strict.reason, strict, adversarial:null};
+    if (strict.reason && EVIDENCE_BINDING_REASONS.includes(strict.reason)) {
+      return {ok:false, reason:strict.reason, missionId:missionIds[0], strict, adversarial:null};
     }
     const adversarial = this.adversarialVerifier.verify({ claim, evidence, checks:adversarialChecks });
-    if (adversarial.reason && ['invalid_evidence_binding','invalid_evidence_id','incomplete_evidence_binding','evidence_id_binding_mismatch'].includes(adversarial.reason)) {
-      return {ok:false, reason:adversarial.reason, strict, adversarial};
+    if (adversarial.reason && EVIDENCE_BINDING_REASONS.includes(adversarial.reason)) {
+      return {ok:false, reason:adversarial.reason, missionId:missionIds[0], strict, adversarial};
     }
 
     const evidenceCoverage = Math.min(strict.coverage || 0, adversarial.coverage || 0);
@@ -222,6 +256,7 @@ class DualVerifier {
     return {
       ok,
       claim,
+      missionId:missionIds[0],
       strict,
       adversarial,
       evidenceCoverage,
@@ -246,4 +281,10 @@ class DualVerifier {
   }
 }
 
-module.exports = { StrictEvidenceVerifier, AdversarialEvidenceVerifier, DualVerifier };
+module.exports = {
+  EVIDENCE_BINDING_REASONS,
+  validateEnrichedEvidence,
+  StrictEvidenceVerifier,
+  AdversarialEvidenceVerifier,
+  DualVerifier
+};

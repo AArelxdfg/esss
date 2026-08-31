@@ -24,6 +24,7 @@ class MissionEngine {
     if (persisted) {
       if (persisted.schema !== 1 || !persisted.missions || !Array.isArray(persisted.order)) throw new Error('unsupported or corrupt mission state');
       this.state = clone(persisted); this.durableState = clone(persisted);
+      this._repairMissionOrder();
       this._repairInterruptedState(); await this._persist();
     }
     this.loaded = true; return this.snapshot();
@@ -135,6 +136,28 @@ class MissionEngine {
       return true;
     }
     return true;
+  }
+
+  _repairMissionOrder() {
+    const repaired = [];
+    const seen = new Set();
+    for (const rawId of this.state.order) {
+      const id = String(rawId || '');
+      if (!id || seen.has(id) || !this.state.missions[id]) continue;
+      seen.add(id);
+      repaired.push(id);
+    }
+
+    const orphanIds = Object.keys(this.state.missions)
+      .filter(id => !seen.has(id))
+      .sort((a, b) => {
+        const aCreated = Number(this.state.missions[a] && this.state.missions[a].createdAt || 0);
+        const bCreated = Number(this.state.missions[b] && this.state.missions[b].createdAt || 0);
+        if (aCreated !== bCreated) return bCreated - aCreated;
+        return a.localeCompare(b);
+      });
+
+    this.state.order = repaired.concat(orphanIds);
   }
 
   _repairInterruptedState() {

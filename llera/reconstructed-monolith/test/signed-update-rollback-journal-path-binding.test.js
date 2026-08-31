@@ -23,17 +23,24 @@ const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
   const activeBytes = Buffer.from('active signed candidate');
   const previousBytes = Buffer.from('previous verified candidate');
   const victimBytes = Buffer.from('do not overwrite me');
-  const manifest = {
-    version: '5.4-reconstructed',
-    artifact: {
-      url: 'https://updates.example.invalid/LLera.bin',
-      size: activeBytes.length,
-      sha256: sha256(activeBytes)
-    }
+
+  const makeProvenance = (version, bytes) => {
+    const manifest = {
+      version,
+      artifact: { url: `https://updates.example.invalid/${version}.bin`, size: bytes.length, sha256: sha256(bytes) }
+    };
+    const payload = Buffer.from(stableStringify(manifest));
+    const signature = crypto.sign(null, payload, privateKey);
+    return {
+      manifest,
+      manifestPayloadSha256: sha256(payload),
+      manifestSignatureSha256: sha256(signature),
+      manifestSignatureBase64: signature.toString('base64')
+    };
   };
-  const payload = Buffer.from(stableStringify(manifest));
-  const signature = crypto.sign(null, payload, privateKey);
-  const signatureBase64 = signature.toString('base64');
+
+  const activeProvenance = makeProvenance('5.4-reconstructed', activeBytes);
+  const backupProvenance = makeProvenance('5.3.5-reconstructed', previousBytes);
 
   await fs.writeFile(current, activeBytes);
   await fs.writeFile(backup, previousBytes);
@@ -42,15 +49,13 @@ const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 
   const baseJournal = {
     state: 'activated',
-    version: manifest.version,
+    version: activeProvenance.manifest.version,
     currentFile: current,
     backupFile: backup,
     backupSha256: sha256(previousBytes),
-    sha256: manifest.artifact.sha256,
-    manifestPayloadSha256: sha256(payload),
-    manifestSignatureSha256: sha256(signature),
-    signedManifest: manifest,
-    manifestSignatureBase64: signatureBase64
+    backupProvenance,
+    sha256: sha256(activeBytes),
+    activeProvenance
   };
 
   await lifecycle._writeJournal({ ...baseJournal, currentFile: externalCurrent });
@@ -70,6 +75,6 @@ const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
     redirectedCurrentRejected: true,
     substitutedBackupRejected: true,
     canonicalRollbackPreserved: true,
-    signedJournalProvenance: true
+    signedActiveAndBackupProvenance: true
   });
 })().catch(err => { console.error(err); process.exit(1); });

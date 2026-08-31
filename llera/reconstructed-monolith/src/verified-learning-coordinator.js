@@ -59,56 +59,108 @@ class VerifiedLearningCoordinator {
     const strictScore = receiptValidation.strictScore;
     const adversarialScore = receiptValidation.adversarialScore;
     const confidence = receiptValidation.confidence;
-
-    const tag = `final-receipt:${receipt.sha256}`;
-    const existing = findOutcomeByReceipt(this.outcomeMemory.snapshot(), tag);
-    if (existing) {
-      if (existing.missionId !== missionId || !existing.verification || existing.verification.receiptSha256 !== receipt.sha256) {
-        const error = new Error('receipt idempotency collision with mismatched persisted outcome');
-        error.code = 'VERIFIED_LEARNING_RECEIPT_COLLISION';
-        throw error;
-      }
-      this.state.receipts[receipt.sha256] = { status: 'committed', missionId, outcomeId: existing.id || null };
-      await this.saveState(this.snapshot());
-      return { ok: true, learned: false, idempotent: true, receiptSha256: receipt.sha256, outcome: existing };
-    }
-
-    this.state.receipts[receipt.sha256] = { status: 'applying', missionId };
-    await this.saveState(this.snapshot());
-
     const verifiedContext = {
       strict: true,
       adversarial: true,
       confidence,
       evidenceIds,
-      receipt:{...receipt},
-      receiptSha256:receipt.sha256
+      receipt: { ...receipt },
+      receiptSha256: receipt.sha256
     };
+
+    const tag = `final-receipt:${receipt.sha256}`;
+    const existing = findOutcomeByReceipt(this.outcomeMemory.snapshot(), tag);
+    if (existing) {
+      const persistedEvidenceIds = existing.verification && existing.verification.evidenceIds;
+      if (
+        existing.missionId !== missionId ||
+        !existing.verification ||
+        existing.verification.receiptSha256 !== receipt.sha256 ||
+        !sameStringSet(persistedEvidenceIds, evidenceIds)
+      ) {
+        const error = new Error('receipt idempotency collision with mismatched persisted outcome');
+        error.code = 'VERIFIED_LEARNING_RECEIPT_COLLISION';
+        throw error;
+      }
+
+      const skillCandidate = await this._ensureSkillCandidate({
+        missionId, goal, claim, summary, evidenceIds, receipt, verifiedContext, outcome: existing, skill
+      });
+      this.state.receipts[receipt.sha256] = {
+        status: 'committed',
+        missionId,
+        outcomeId: existing.id || null,
+        skillCandidateId: skillCandidate && skillCandidate.id || null
+      };
+      await this.saveState(this.snapshot());
+      return {
+        ok: true,
+        learned: Boolean(skillCandidate),
+        idempotent: true,
+        resumedSkillEvolution: Boolean(skillCandidate),
+        receiptSha256: receipt.sha256,
+        outcome: existing,
+        skillCandidate
+      };
+    }
+
+    this.state.receipts[receipt.sha256] = { status: 'applying', missionId };
+    await this.saveState(this.snapshot());
+
     const outcome = await this.outcomeMemory.recordOutcome({
       missionId, goal, status: 'completed', summary,
       tags: [...new Set([...tags, tag])], verification: verifiedContext
     });
 
-    let skillCandidate = null;
-    let proposal = skill;
-    if (!proposal && this.deriveSkill) proposal = await this.deriveSkill({ missionId, goal, claim, summary, evidenceIds, receipt: { ...receipt } });
-    if (proposal && typeof this.outcomeMemory.proposeSkill === 'function') {
-      const current = this.outcomeMemory.snapshot();
-      const duplicate = (current.skillCandidates || []).find(c => c && c.missionId === missionId && c.name === proposal.name && c.sourceOutcomeId === outcome.id);
-      skillCandidate = duplicate || await this.outcomeMemory.proposeSkill({
-        missionId, name: proposal.name, description: proposal.description, procedure: proposal.procedure,
-        evidenceIds, verification: verifiedContext
-      });
-    }
+    const skillCandidate = await this._ensureSkillCandidate({
+      missionId, goal, claim, summary, evidenceIds, receipt, verifiedContext, outcome, skill
+    });
 
-    this.state.receipts[receipt.sha256] = { status: 'committed', missionId, outcomeId: outcome.id || null, skillCandidateId: skillCandidate && skillCandidate.id || null };
+    this.state.receipts[receipt.sha256] = {
+      status: 'committed',
+      missionId,
+      outcomeId: outcome.id || null,
+      skillCandidateId: skillCandidate && skillCandidate.id || null
+    };
     await this.saveState(this.snapshot());
     return { ok: true, learned: true, idempotent: false, receiptSha256: receipt.sha256, outcome, skillCandidate };
+  }
+
+  async _ensureSkillCandidate({ missionId, goal, claim, summary, evidenceIds, receipt, verifiedContext, outcome, skill }) {
+    if (typeof this.outcomeMemory.proposeSkill !== 'function') return null;
+    let proposal = skill;
+    if (!proposal && this.deriveSkill) {
+      proposal = await this.deriveSkill({ missionId, goal, claim, summary, evidenceIds, receipt: { ...receipt } });
+    }
+    if (!proposal) return null;
+
+    const current = this.outcomeMemory.snapshot();
+    const duplicate = (current.skillCandidates || []).find(c =>
+      c && c.missionId === missionId && c.name === proposal.name && c.sourceOutcomeId === outcome.id
+    );
+    if (duplicate) return duplicate;
+
+    return this.outcomeMemory.proposeSkill({
+      missionId,
+      name: proposal.name,
+      description: proposal.description,
+      procedure: proposal.procedure,
+      evidenceIds,
+      verification: verifiedContext
+    });
   }
 }
 
 function findOutcomeByReceipt(snapshot, tag) {
   return ((snapshot && snapshot.outcomes) || []).find(o => o && Array.isArray(o.tags) && o.tags.includes(tag)) || null;
+}
+function normalizeStringSet(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map(value => String(value)))].sort();
+}
+function sameStringSet(a, b) {
+  const aa = normalizeStringSet(a);
+  const bb = normalizeStringSet(b);
+  return aa.length === bb.length && aa.every((value, index) => value === bb[index]);
 }
 function isSha256(value) { return /^[a-f0-9]{64}$/i.test(String(value || '')); }
 module.exports = { VerifiedLearningCoordinator, findOutcomeByReceipt };

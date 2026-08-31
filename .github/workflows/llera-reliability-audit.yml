@@ -55,6 +55,7 @@ jobs:
             test/verified-mission-finalizer.test.js
             test/material-evidence-continuity.test.js
             test/integrity-sentinel-symlink-escape.test.js
+            test/vision-input-provenance.test.js
           )
           for test_file in "${tests[@]}"; do
             echo "===== RUN $test_file ====="

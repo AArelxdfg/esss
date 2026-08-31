@@ -49,6 +49,7 @@ jobs:
             test/monolith-computer-executor.test.js
             test/verified-mission-finalizer.test.js
             test/material-evidence-continuity.test.js
+            test/integrity-sentinel-symlink-escape.test.js
           )
           for test_file in "${tests[@]}"; do
             echo "===== RUN $test_file ====="

@@ -23,18 +23,31 @@ class HostPressureHysteresis {
   }
 
   update(sample = {}) {
+    const telemetry = this._telemetryValidity(sample);
+    if (!telemetry.valid) {
+      const snap = this.snapshot(sample, this._stateFloorScore());
+      snap.telemetryValid = false;
+      snap.telemetryRejected = true;
+      snap.invalidTelemetryFields = telemetry.invalidFields;
+      return snap;
+    }
+
     const pressure = this.score(sample);
     const desired = this._desired(pressure);
     const now = this.now();
     if (desired === this.state) {
       this.pending = null;
-      return this.snapshot(sample, pressure);
+      const snap = this.snapshot(sample, pressure);
+      snap.telemetryValid = true;
+      return snap;
     }
     const isRecovery = this._rank(desired) < this._rank(this.state);
     const requiredDwell = isRecovery ? this.recoveryDwellMs : this.dwellMs;
     if (!this.pending || this.pending.state !== desired) {
       this.pending = { state: desired, since: now };
-      return this.snapshot(sample, pressure);
+      const snap = this.snapshot(sample, pressure);
+      snap.telemetryValid = true;
+      return snap;
     }
     if (now - this.pending.since >= requiredDwell) {
       const previous = this.state;
@@ -43,9 +56,12 @@ class HostPressureHysteresis {
       this.pending = null;
       const snap = this.snapshot(sample, pressure);
       snap.transition = { from: previous, to: desired, at: now };
+      snap.telemetryValid = true;
       return snap;
     }
-    return this.snapshot(sample, pressure);
+    const snap = this.snapshot(sample, pressure);
+    snap.telemetryValid = true;
+    return snap;
   }
 
   policy() {
@@ -65,6 +81,23 @@ class HostPressureHysteresis {
     const paging = clamp01((Number(sample.pagesPerSec) || 0) / 2000);
     const cpu = clamp01(sample.cpuPercent);
     return Math.max(commit, disk * 0.92, queue * 0.90, paging * 0.88, cpu * 0.82);
+  }
+
+  _telemetryValidity(sample) {
+    if (!sample || typeof sample !== 'object' || Array.isArray(sample)) {
+      return { valid:false, invalidFields:['sample'] };
+    }
+    const fields = ['commitPercent','diskActivePercent','diskQueue','pagesPerSec','cpuPercent'];
+    const present = fields.filter(field => Object.prototype.hasOwnProperty.call(sample, field));
+    if (!present.length) return { valid:false, invalidFields:['telemetry-empty'] };
+    const invalidFields = present.filter(field => !Number.isFinite(Number(sample[field])));
+    return { valid:invalidFields.length === 0, invalidFields };
+  }
+
+  _stateFloorScore() {
+    if (this.state === 'critical') return this.thresholds.criticalExit;
+    if (this.state === 'elevated') return this.thresholds.elevatedExit;
+    return 0;
   }
 
   _desired(score) {

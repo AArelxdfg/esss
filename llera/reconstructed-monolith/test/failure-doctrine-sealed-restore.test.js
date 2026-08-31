@@ -24,6 +24,22 @@ let d = cleanRestore.restore([{ ok:false, failure:recorded }]);
 assert.deepEqual(d, {restored:1, legacyUnsealed:0, rejected:0});
 assert.equal(cleanRestore.history.length, 1);
 
+// Replaying the same persisted trace during repeated restart/recovery must not
+// inflate doctrine history or consume retry budget twice.
+d = cleanRestore.restore([{ ok:false, failure:recorded }]);
+assert.deepEqual(d, {restored:0, legacyUnsealed:0, rejected:0});
+assert.equal(cleanRestore.history.length, 1);
+assert.equal(cleanRestore.summarize('m1').total, 1);
+
+// Duplicate entries inside one persisted trace are equally idempotent.
+const duplicateBatch = new FailureDoctrine();
+d = duplicateBatch.restore([
+  { ok:false, failure:recorded },
+  { ok:false, failure:recorded }
+]);
+assert.deepEqual(d, {restored:1, legacyUnsealed:0, rejected:0});
+assert.equal(duplicateBatch.history.length, 1);
+
 const tamperedClass = { ...recorded, failureClass:'integrity' };
 const tamperedRestore = new FailureDoctrine();
 d = tamperedRestore.restore([{ ok:false, failure:tamperedClass }]);
@@ -56,10 +72,19 @@ d = legacyRestore.restore([{ok:false, failure:legacy}]);
 assert.deepEqual(d, {restored:1, legacyUnsealed:1, rejected:0});
 assert.equal(legacyRestore.history[0].eventSeal, null);
 
+// Legacy traces have no eventSeal, so identity is derived from their complete
+// normalized failure tuple and must still be replay-safe.
+d = legacyRestore.restore([{ok:false, failure:legacy}]);
+assert.deepEqual(d, {restored:0, legacyUnsealed:1, rejected:0});
+assert.equal(legacyRestore.history.length, 1);
+
 console.log('MONOLITH failure doctrine sealed restore PASS', {
   sealedEventRestored:true,
+  repeatedRestoreIdempotent:true,
+  duplicateBatchIdempotent:true,
   retryDecisionTamperRejected:true,
   malformedTraceRejected:true,
   legacyTraceCompatibility:true,
+  legacyRestoreIdempotent:true,
   legacyTrustDebtSurfaced:true
 });

@@ -43,6 +43,13 @@ class RecoverySnapshotCoordinator {
     if (!mission) throw new Error(`unknown mission ${missionId}`);
 
     const evidence = this.evidenceLedger.export();
+    const checkpoints = Array.isArray(mission.checkpoints) ? mission.checkpoints : [];
+    const checkpointHeadRecord = checkpoints.length ? checkpoints[checkpoints.length - 1] : null;
+    const checkpointHead = checkpointHeadRecord ? {
+      id: checkpointHeadRecord.id,
+      index: checkpoints.length - 1,
+      digest: sha256(stableStringify(checkpointHeadRecord))
+    } : null;
     const payload = {
       schema: 1,
       createdAt: this.now(),
@@ -50,7 +57,8 @@ class RecoverySnapshotCoordinator {
       missionId,
       missionState,
       toolTrace: Array.isArray(mission.toolTrace) ? mission.toolTrace : [],
-      evidence
+      evidence,
+      checkpointHead
     };
 
     const canonical = stableStringify(payload);
@@ -92,8 +100,37 @@ class RecoverySnapshotCoordinator {
       throw new Error('snapshot toolTrace diverges from mission state');
     }
 
-    this.evidenceLedger.import(payload.evidence);
-    this.toolGuard.restore(trace);
+    const checkpoints = Array.isArray(mission.checkpoints) ? mission.checkpoints : [];
+    const expectedHeadRecord = checkpoints.length ? checkpoints[checkpoints.length - 1] : null;
+    if (!expectedHeadRecord) {
+      if (payload.checkpointHead !== null) throw new Error('snapshot checkpoint head mismatch');
+    } else {
+      const expectedHead = {
+        id: expectedHeadRecord.id,
+        index: checkpoints.length - 1,
+        digest: sha256(stableStringify(expectedHeadRecord))
+      };
+      if (stableStringify(payload.checkpointHead) !== stableStringify(expectedHead)) {
+        throw new Error('snapshot checkpoint head mismatch');
+      }
+    }
+
+    const priorEvidence = this.evidenceLedger.export();
+    const priorGuardHistory = Array.isArray(this.toolGuard.history) ? JSON.parse(JSON.stringify(this.toolGuard.history)) : null;
+    const priorVerificationDebt = this.toolGuard.verificationDebt == null
+      ? null
+      : JSON.parse(JSON.stringify(this.toolGuard.verificationDebt));
+    try {
+      this.toolGuard.restore(trace);
+      this.evidenceLedger.import(payload.evidence);
+    } catch (error) {
+      try { this.evidenceLedger.import(priorEvidence); } catch (_) {}
+      try {
+        if (priorGuardHistory) this.toolGuard.restore(priorGuardHistory);
+        else this.toolGuard.verificationDebt = priorVerificationDebt;
+      } catch (_) {}
+      throw error;
+    }
 
     return {
       missionId,

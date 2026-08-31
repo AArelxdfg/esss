@@ -1,7 +1,8 @@
 'use strict';
 
 const assert = require('assert');
-const { RecoverySnapshotCoordinator } = require('../src/recovery-snapshot-coordinator');
+const crypto = require('crypto');
+const { RecoverySnapshotCoordinator, stableStringify } = require('../src/recovery-snapshot-coordinator');
 
 (async () => {
   let persisted = null;
@@ -46,9 +47,13 @@ const { RecoverySnapshotCoordinator } = require('../src/recovery-snapshot-coordi
   };
 
   let evidenceStore = [{ id: 'ev1', target: 'x.txt', sha256: 'a'.repeat(64) }];
+  let failEvidenceImport = false;
   const evidenceLedger = {
     export: () => JSON.parse(JSON.stringify(evidenceStore)),
-    import: value => { evidenceStore = JSON.parse(JSON.stringify(value)); }
+    import: value => {
+      evidenceStore = JSON.parse(JSON.stringify(value));
+      if (failEvidenceImport) throw new Error('evidence import failed');
+    }
   };
 
   const coordinator = new RecoverySnapshotCoordinator({
@@ -64,6 +69,9 @@ const { RecoverySnapshotCoordinator } = require('../src/recovery-snapshot-coordi
   assert.strictEqual(created.schema, 1);
   assert.strictEqual(created.integrity.algorithm, 'sha256');
   assert.strictEqual(created.integrity.digest.length, 64);
+  assert.strictEqual(created.checkpointHead.id, 'cp1');
+  assert.strictEqual(created.checkpointHead.index, 0);
+  assert.strictEqual(created.checkpointHead.digest.length, 64);
 
   evidenceStore = [];
   const restored = await coordinator.restore({ missionId: 'm1' });
@@ -81,11 +89,28 @@ const { RecoverySnapshotCoordinator } = require('../src/recovery-snapshot-coordi
   }
   assert.strictEqual(tamperBlocked, true);
 
+  persisted = JSON.parse(JSON.stringify(created));
+  persisted.checkpointHead.id = 'forged-head';
+  const { integrity, ...forgedPayload } = persisted;
+  persisted.integrity.digest = crypto.createHash('sha256').update(stableStringify(forgedPayload)).digest('hex');
+  await assert.rejects(() => coordinator.restore({ missionId:'m1' }), /checkpoint head mismatch/);
+
+  persisted = JSON.parse(JSON.stringify(created));
+  evidenceStore = [{ id:'prior-evidence' }];
+  toolGuard.verificationDebt = { tool:'prior-tool', traceId:'prior-trace' };
+  failEvidenceImport = true;
+  await assert.rejects(() => coordinator.restore({ missionId:'m1' }), /evidence import failed/);
+  assert.deepStrictEqual(evidenceStore, [{ id:'prior-evidence' }]);
+  assert.deepStrictEqual(toolGuard.verificationDebt, { tool:'prior-tool', traceId:'prior-trace' });
+  failEvidenceImport = false;
+
   console.log('recovery snapshot coordinator PASS', {
     integrityBound: true,
     verificationDebtRestored: true,
     evidenceRestored: true,
-    tamperBlocked: true
+    tamperBlocked: true,
+    checkpointHeadBound:true,
+    atomicRestoreRollback:true
   });
 })().catch(err => {
   console.error(err);

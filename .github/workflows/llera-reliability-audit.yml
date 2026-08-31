@@ -44,7 +44,10 @@ jobs:
             test/runtime-switch-rollback.test.js
             test/runtime-inference-coordinator.test.js
             test/outcome-memory.test.js
+            test/skill-evidence-provenance.test.js
+            test/skill-exact-outcome-binding.test.js
             test/verified-learning-receipt-boundary.test.js
+            test/verified-learning-skill-recovery.test.js
             test/agent-tool-router-62.test.js
             test/monolith-computer-executor.test.js
             test/verified-mission-finalizer.test.js

@@ -5,7 +5,9 @@ on:
     branches: [main]
     paths:
       - 'llera/reconstructed-monolith/src/mission-engine.js'
+      - 'llera/reconstructed-monolith/src/recovery-snapshot-coordinator.js'
       - 'llera/reconstructed-monolith/test/mission-*.test.js'
+      - 'llera/reconstructed-monolith/test/recovery-snapshot-*.test.js'
       - '.github/workflows/llera-mission-restore.yml'
   workflow_dispatch:
 
@@ -35,7 +37,8 @@ jobs:
             test/mission-recovery-snapshot-debt.test.js \
             test/mission-multi-recovery-snapshot-debt.test.js \
             test/mission-persistence-fail-closed.test.js \
-            test/mission-concurrent-persistence-guard.test.js
+            test/mission-concurrent-persistence-guard.test.js \
+            test/recovery-snapshot-checkpoint-head-binding.test.js
           do
             echo "=== $test ==="
             node "$test"

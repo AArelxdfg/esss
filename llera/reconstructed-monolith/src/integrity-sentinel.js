@@ -23,10 +23,30 @@ class IntegritySentinel {
     this.quarantineDir = path.resolve(quarantineDir || path.join(this.rootDir, '.quarantine'));
   }
 
-  resolveSafe(relativePath) {
+  resolveSafe(relativePath, { mustExist = false, rejectSymlinks = true } = {}) {
     const target = path.resolve(this.rootDir, relativePath);
     const prefix = this.rootDir.endsWith(path.sep) ? this.rootDir : this.rootDir + path.sep;
     if (target !== this.rootDir && !target.startsWith(prefix)) throw new Error(`integrity path escape blocked: ${relativePath}`);
+
+    if (!fs.existsSync(this.rootDir)) throw new Error(`integrity root missing: ${this.rootDir}`);
+    const rootReal = fs.realpathSync.native ? fs.realpathSync.native(this.rootDir) : fs.realpathSync(this.rootDir);
+    const rel = path.relative(this.rootDir, target);
+    const parts = rel && rel !== '.' ? rel.split(path.sep).filter(Boolean) : [];
+    let cursor = this.rootDir;
+
+    for (const part of parts) {
+      cursor = path.join(cursor, part);
+      if (!fs.existsSync(cursor)) {
+        if (mustExist) throw new Error(`integrity path missing: ${relativePath}`);
+        break;
+      }
+      const stat = fs.lstatSync(cursor);
+      if (rejectSymlinks && stat.isSymbolicLink()) throw new Error(`integrity symlink blocked: ${relativePath}`);
+      const real = fs.realpathSync.native ? fs.realpathSync.native(cursor) : fs.realpathSync(cursor);
+      const realPrefix = rootReal.endsWith(path.sep) ? rootReal : rootReal + path.sep;
+      if (real !== rootReal && !real.startsWith(realPrefix)) throw new Error(`integrity realpath escape blocked: ${relativePath}`);
+    }
+
     return target;
   }
 
@@ -39,8 +59,15 @@ class IntegritySentinel {
   }
 
   verifyFile(entry) {
-    const fullPath = this.resolveSafe(entry.path);
+    let fullPath;
+    try {
+      fullPath = this.resolveSafe(entry.path, { mustExist: true, rejectSymlinks: true });
+    } catch (error) {
+      return { ok: false, path: entry.path, reason: 'unsafe-path', detail: String(error && error.message || error) };
+    }
     if (!fs.existsSync(fullPath)) return { ok: false, path: entry.path, reason: 'missing' };
+    const stat = fs.lstatSync(fullPath);
+    if (!stat.isFile()) return { ok: false, path: entry.path, reason: 'not-regular-file' };
     const bytes = fs.readFileSync(fullPath);
     const actual = sha256Bytes(bytes);
     if (Number.isFinite(Number(entry.size)) && Number(entry.size) !== bytes.length) {
@@ -60,8 +87,14 @@ class IntegritySentinel {
   }
 
   quarantine(relativePath, reason = 'integrity-failure') {
-    const source = this.resolveSafe(relativePath);
+    let source;
+    try {
+      source = this.resolveSafe(relativePath, { mustExist: true, rejectSymlinks: true });
+    } catch (error) {
+      return { moved: false, reason: 'unsafe-path', path: relativePath, detail: String(error && error.message || error) };
+    }
     if (!fs.existsSync(source)) return { moved: false, reason: 'missing', path: relativePath };
+    if (!fs.lstatSync(source).isFile()) return { moved: false, reason: 'not-regular-file', path: relativePath };
     fs.mkdirSync(this.quarantineDir, { recursive: true });
     const suffix = sha256Bytes(Buffer.from(`${relativePath}:${reason}:${Date.now()}`)).slice(0, 12);
     const target = path.join(this.quarantineDir, `${path.basename(relativePath)}.${suffix}.quarantine`);

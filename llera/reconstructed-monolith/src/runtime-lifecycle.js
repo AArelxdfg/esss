@@ -192,7 +192,8 @@ class RuntimeLifecycle {
   completeInference(id, expectedGeneration = null) {
     const task = this.activeInference.get(id);
     if (!task) return false;
-    if (expectedGeneration !== null && expectedGeneration !== undefined && task.generation !== expectedGeneration) return false;
+    if (expectedGeneration === null || expectedGeneration === undefined) return false;
+    if (task.generation !== expectedGeneration) return false;
     return this.activeInference.delete(id);
   }
 

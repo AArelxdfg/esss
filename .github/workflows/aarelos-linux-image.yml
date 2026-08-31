@@ -1,0 +1,100 @@
+name: AArel OS Linux ISO Build
+
+on:
+  push:
+    branches: [aarelos-linux-one-day]
+    paths:
+      - 'aarelos-linux/**'
+      - '.github/workflows/aarelos-linux-image.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'aarelos-linux/**'
+      - '.github/workflows/aarelos-linux-image.yml'
+  workflow_dispatch:
+
+jobs:
+  build-iso:
+    runs-on: [self-hosted, linux, x64, aarelos]
+    timeout-minutes: 360
+    steps:
+      - name: Checkout without external actions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git init .
+          git remote remove origin || true
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git reset --hard FETCH_HEAD
+          git clean -ffd
+
+      - name: Host dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            acl curl xorriso squashfs-tools rsync qemu-system-x86 ovmf \
+            imagemagick tesseract-ocr python3 python3-pil
+          if [[ -e /dev/kvm ]]; then
+            sudo setfacl -m "u:${USER}:rw" /dev/kvm
+          fi
+
+      - name: Build genuine AArel hybrid ISO
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo -E env \
+            AAREL_CACHE="$HOME/.cache/aarelos-linux" \
+            AAREL_WORK="$HOME/.cache/aarelos-linux/work" \
+            AAREL_OUT="$GITHUB_WORKSPACE/AArelOS-Linux-Preview-amd64.iso" \
+            bash aarelos-linux/build-preview.sh
+
+      - name: Replace upstream boot-menu branding
+        shell: bash
+        run: |
+          set -euxo pipefail
+          bash aarelos-linux/brand-boot-menu.sh AArelOS-Linux-Preview-amd64.iso
+          sha256sum -c AArelOS-Linux-Preview-amd64.iso.sha256
+
+      - name: UEFI QEMU screenshot smoke test
+        shell: bash
+        env:
+          AAREL_BOOT_WAIT: '150'
+          AAREL_EVIDENCE: aarelos-linux-evidence
+        run: |
+          set -euxo pipefail
+          bash aarelos-linux/qemu-smoke.sh AArelOS-Linux-Preview-amd64.iso
+
+      - name: Legacy BIOS QEMU screenshot smoke test
+        shell: bash
+        env:
+          AAREL_LEGACY_BOOT_WAIT: '210'
+          AAREL_EVIDENCE_LEGACY: aarelos-linux-evidence-legacy
+        run: |
+          set -euxo pipefail
+          bash aarelos-linux/qemu-legacy-smoke.sh AArelOS-Linux-Preview-amd64.iso
+
+      - name: Publish local delivery bundle
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p AArelOS-Linux-Preview
+          if [[ -s AArelOS-Linux-Preview-amd64.iso ]]; then
+            cp -f --reflink=never AArelOS-Linux-Preview-amd64.iso AArelOS-Linux-Preview/
+            (cd AArelOS-Linux-Preview && sha256sum AArelOS-Linux-Preview-amd64.iso > AArelOS-Linux-Preview-amd64.iso.sha256)
+            (cd AArelOS-Linux-Preview && sha256sum -c AArelOS-Linux-Preview-amd64.iso.sha256)
+          fi
+          cp -a aarelos-linux-evidence AArelOS-Linux-Preview/ 2>/dev/null || true
+          cp -a aarelos-linux-evidence-legacy AArelOS-Linux-Preview/ 2>/dev/null || true
+          cp -f aarelos-linux/ONE_DAY_PIVOT.md AArelOS-Linux-Preview/ 2>/dev/null || true
+          echo "## AArel OS Linux ISO" >> "$GITHUB_STEP_SUMMARY"
+          find AArelOS-Linux-Preview -maxdepth 3 -type f -printf '%p %s bytes\n' | sort >> "$GITHUB_STEP_SUMMARY"
+          if [[ -s AArelOS-Linux-Preview/AArelOS-Linux-Preview-amd64.iso && -d /mnt/c/Users/arelx/Desktop ]]; then
+            rm -rf /mnt/c/Users/arelx/Desktop/AArelOS-Linux-Preview
+            cp -a --reflink=never AArelOS-Linux-Preview /mnt/c/Users/arelx/Desktop/
+            (cd /mnt/c/Users/arelx/Desktop/AArelOS-Linux-Preview && sha256sum -c AArelOS-Linux-Preview-amd64.iso.sha256)
+            echo "Copied to C:\\Users\\arelx\\Desktop\\AArelOS-Linux-Preview" >> "$GITHUB_STEP_SUMMARY"
+          fi

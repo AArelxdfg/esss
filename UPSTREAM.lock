@@ -1,0 +1,5 @@
+# AArel OS SerenityForge Native upstream lock
+# SPDX-License-Identifier: BSD-2-Clause
+SERENITY_REPOSITORY=https://github.com/SerenityOS/serenity.git
+SERENITY_COMMIT=f0056dbba76bbf28fb38247a35c465746034fedd
+SERENITY_LICENSE=BSD-2-Clause

@@ -1,0 +1,13 @@
+[Unit]
+Description=AArel OS live-session autologin compatibility
+ConditionPathExists=/cdrom/casper/minimal.squashfs
+Before=sddm.service
+After=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/aarel/live-autologin.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target

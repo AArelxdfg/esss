@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=AArel MMonolith OS
+Comment=AArel Plasma Wayland session
+Exec=/usr/bin/startplasma-wayland
+TryExec=/usr/bin/startplasma-wayland
+Type=Application
+DesktopNames=KDE
+X-KDE-PluginInfo-Version=6.6.6

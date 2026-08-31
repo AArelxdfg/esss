@@ -142,11 +142,25 @@ class SealedIntegritySentinel {
 
   release(targetPath, expectedCurrentSha256, approver) {
     const target = norm(targetPath);
-    if (!this.state.quarantine[target]) return { released:false, reason:'not-quarantined' };
+    const quarantine = this.state.quarantine[target];
+    if (!quarantine) return { released:false, reason:'not-quarantined' };
     if (!String(approver || '').trim()) throw new Error('SEALED_RELEASE_APPROVER_REQUIRED');
     if (!this.exists(targetPath)) throw new Error('SEALED_RELEASE_TARGET_MISSING');
+
+    // A release may only bless the exact bytes that produced the currently bound
+    // quarantine incident. If the file changes again after observation, callers must
+    // re-check it first so a fresh incident is sealed before any trust-anchor update.
+    const incident = this.state.incidents.find(item => item && item.id === quarantine.incidentId);
+    if (!incident || incident.target !== target) throw new Error('SEALED_RELEASE_INCIDENT_BINDING_INVALID');
+    if (!incident.actualSha256) throw new Error('SEALED_RELEASE_REOBSERVATION_REQUIRED');
+
     const current = sha256(this.readFile(targetPath));
-    if (current !== String(expectedCurrentSha256 || '').toLowerCase()) throw new Error('SEALED_RELEASE_DIGEST_MISMATCH');
+    const expected = String(expectedCurrentSha256 || '').toLowerCase();
+    if (current !== expected) throw new Error('SEALED_RELEASE_DIGEST_MISMATCH');
+    if (current !== incident.actualSha256 || expected !== incident.actualSha256) {
+      throw new Error('SEALED_RELEASE_REOBSERVATION_REQUIRED');
+    }
+
     const entry = {
       ...this.state.baselines[target],
       sha256:current,
@@ -157,7 +171,7 @@ class SealedIntegritySentinel {
     this.state.baselines[target] = entry;
     delete this.state.quarantine[target];
     this.persist();
-    return { released:true, target, sha256:current };
+    return { released:true, target, sha256:current, incidentId:incident.id };
   }
 
   persist() {

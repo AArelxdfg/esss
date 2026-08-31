@@ -21,7 +21,7 @@ Module._load = function(request,parent,isMain){
   }
   return originalLoad.apply(this,arguments);
 };
-const {VerifiedMissionFinalizer,evidenceIdsForMaterial}=require('../src/verified-mission-finalizer');
+const {VerifiedMissionFinalizer,evidenceIdsForMaterial,verificationTraceForMaterial}=require('../src/verified-mission-finalizer');
 Module._load=originalLoad;
 
 (async()=>{
@@ -29,9 +29,10 @@ Module._load=originalLoad;
     id:'m1',
     status:'completed',
     toolTrace:[
-      {id:'t1',stepId:'s1',tool:'write_file',outcome:'success',material:true,verification:false,evidenceIds:[]},
-      {id:'t2',stepId:'s1',tool:'read_file',outcome:'observed',material:false,verification:true,evidenceIds:['ev1']},
-      {id:'t3',stepId:'s2',tool:'write_file',outcome:'success',material:true,verification:false,evidenceIds:['ev2']}
+      {id:'t1',stepId:'s1',tool:'write_file',outcome:'success',material:true,verification:false,argumentsHash:'fp-1',scope:'path:x.txt',evidenceIds:['ev-action-1']},
+      {id:'t2',stepId:'s1',tool:'read_file',outcome:'observed',material:false,verification:true,observation:true,verifiesFingerprint:'fp-1',scope:'path:x.txt',evidenceIds:['ev1']},
+      {id:'t3',stepId:'s2',tool:'write_file',outcome:'success',material:true,verification:false,argumentsHash:'fp-2',scope:'path:y.txt',evidenceIds:['ev-action-2']},
+      {id:'t4',stepId:'s2',tool:'hash_file',outcome:'verified',material:false,verification:true,observation:true,verifiesFingerprint:'fp-2',scope:'path:y.txt',evidenceIds:['ev2']}
     ]
   };
   const checkpoints=[];
@@ -48,6 +49,8 @@ Module._load=originalLoad;
     now:()=>12345
   });
 
+  assert.strictEqual(verificationTraceForMaterial(mission.toolTrace,0).id,'t2');
+  assert.strictEqual(verificationTraceForMaterial(mission.toolTrace,2).id,'t4');
   assert.deepStrictEqual(evidenceIdsForMaterial(mission.toolTrace,0),['ev1']);
   assert.deepStrictEqual(evidenceIdsForMaterial(mission.toolTrace,2),['ev2']);
 
@@ -61,22 +64,42 @@ Module._load=originalLoad;
   ]);
   assert.strictEqual(checkpoints[0].payload.verification.materialBindings.length,2);
 
+  const directActionEvidenceOnly=[
+    {id:'a',stepId:'s1',outcome:'success',material:true,argumentsHash:'fp-a',scope:'path:a.txt',evidenceIds:['ev-action']}
+  ];
+  assert.deepStrictEqual(evidenceIdsForMaterial(directActionEvidenceOnly,0),[]);
+
+  const wrongFingerprint=[
+    {id:'a',stepId:'s1',outcome:'success',material:true,argumentsHash:'fp-a',scope:'path:a.txt',evidenceIds:[]},
+    {id:'v',stepId:'s1',outcome:'observed',verification:true,observation:true,verifiesFingerprint:'fp-other',scope:'path:a.txt',evidenceIds:['ev-wrong']}
+  ];
+  assert.deepStrictEqual(evidenceIdsForMaterial(wrongFingerprint,0),[]);
+
+  const scopedHistorical=[
+    {id:'a',stepId:'s1',outcome:'success',material:true,scope:'path:a.txt',evidenceIds:[]},
+    {id:'v',stepId:'s1',outcome:'observed',verification:true,observation:true,scope:'path:a.txt',evidenceIds:['ev-scoped']}
+  ];
+  assert.deepStrictEqual(evidenceIdsForMaterial(scopedHistorical,0),['ev-scoped']);
+
   const noLeak=[
-    {id:'a',stepId:'s1',outcome:'success',material:true,evidenceIds:[]},
-    {id:'b',stepId:'s1',outcome:'success',material:true,evidenceIds:['ev-b']},
-    {id:'c',stepId:'s1',outcome:'observed',verification:true,evidenceIds:['ev-c']}
+    {id:'a',stepId:'s1',outcome:'success',material:true,argumentsHash:'fp-a',scope:'path:a.txt',evidenceIds:[]},
+    {id:'b',stepId:'s1',outcome:'success',material:true,argumentsHash:'fp-b',scope:'path:b.txt',evidenceIds:['ev-b-action']},
+    {id:'c',stepId:'s1',outcome:'observed',verification:true,observation:true,verifiesFingerprint:'fp-b',scope:'path:b.txt',evidenceIds:['ev-c']}
   ];
   assert.deepStrictEqual(evidenceIdsForMaterial(noLeak,0),[]);
-  assert.deepStrictEqual(evidenceIdsForMaterial(noLeak,1),['ev-b']);
+  assert.deepStrictEqual(evidenceIdsForMaterial(noLeak,1),['ev-c']);
 
   const crossStep=[
-    {id:'a',stepId:'s1',outcome:'success',material:true,evidenceIds:[]},
-    {id:'v',stepId:'s2',outcome:'observed',verification:true,evidenceIds:['ev-wrong']}
+    {id:'a',stepId:'s1',outcome:'success',material:true,argumentsHash:'fp-a',scope:'path:a.txt',evidenceIds:[]},
+    {id:'v',stepId:'s2',outcome:'observed',verification:true,observation:true,verifiesFingerprint:'fp-a',scope:'path:a.txt',evidenceIds:['ev-wrong']}
   ];
   assert.deepStrictEqual(evidenceIdsForMaterial(crossStep,0),[]);
 
   console.log('material evidence continuity PASS',{
-    postActionEvidence:true,
+    independentReObservationRequired:true,
+    exactFingerprintBinding:true,
+    historicalScopeBinding:true,
+    noDirectActionEvidenceBypass:true,
     noCrossMaterialLeak:true,
     noCrossStepLeak:true,
     finalReceiptBound:true

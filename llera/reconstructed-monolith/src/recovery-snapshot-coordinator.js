@@ -14,6 +14,12 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+function checkpointHead(mission) {
+  const checkpoints = mission && Array.isArray(mission.checkpoints) ? mission.checkpoints : [];
+  const checkpoint = checkpoints.at(-1);
+  return checkpoint && checkpoint.id ? String(checkpoint.id) : null;
+}
+
 class RecoverySnapshotCoordinator {
   constructor({ missionEngine, toolGuard, evidenceLedger, saveSnapshot, loadSnapshot, now = () => Date.now() } = {}) {
     if (!missionEngine || typeof missionEngine.snapshot !== 'function') {
@@ -86,6 +92,18 @@ class RecoverySnapshotCoordinator {
       payload.missionState.missions[missionId];
     if (!mission) throw new Error('snapshot mission state missing');
 
+    // Recovery context must match the durable mission's latest checkpoint. Without
+    // this binding an older, internally valid snapshot can replace newer evidence
+    // and tool verification debt after missionEngine.init() repairs the mission.
+    const currentState = this.missionEngine.snapshot();
+    const currentMission = currentState.missions && currentState.missions[missionId];
+    if (!currentMission) throw new Error('current mission state missing');
+    const snapshotHead = checkpointHead(mission);
+    const currentHead = checkpointHead(currentMission);
+    if (snapshotHead !== currentHead) {
+      throw new Error(`recovery snapshot checkpoint head mismatch: snapshot=${snapshotHead || 'none'} current=${currentHead || 'none'}`);
+    }
+
     const trace = Array.isArray(payload.toolTrace) ? payload.toolTrace : [];
     const missionTrace = Array.isArray(mission.toolTrace) ? mission.toolTrace : [];
     if (stableStringify(trace) !== stableStringify(missionTrace)) {
@@ -98,6 +116,7 @@ class RecoverySnapshotCoordinator {
     return {
       missionId,
       restored: true,
+      checkpointHeadId: currentHead,
       verificationDebt: this.toolGuard.verificationDebt ? { ...this.toolGuard.verificationDebt } : null,
       evidenceCount: Array.isArray(payload.evidence) ? payload.evidence.length : 0,
       digest: integrity.digest
@@ -105,4 +124,4 @@ class RecoverySnapshotCoordinator {
   }
 }
 
-module.exports = { RecoverySnapshotCoordinator, stableStringify };
+module.exports = { RecoverySnapshotCoordinator, stableStringify, checkpointHead };

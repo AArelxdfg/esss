@@ -67,13 +67,17 @@ class EvidenceLedger {
     return clone(entry);
   }
 
-  verifyBinding(id, {target, bytes, digest}) {
+  verifyBinding(id, {target, bytes, digest} = {}) {
     const entry = this.entries.find(x => x.id === id);
     if (!entry) return {ok:false, reason:'evidence_not_found'};
-    if (target && target !== entry.target) return {ok:false, reason:'target_mismatch'};
-    const actual = digest || (bytes === undefined ? null : sha256(bytes));
-    if (!actual) return {ok:false, reason:'digest_missing'};
-    if (actual.toLowerCase() !== entry.sha256) return {ok:false, reason:'sha256_mismatch'};
+    if (!target) return {ok:false, reason:'target_required'};
+    if (target !== entry.target) return {ok:false, reason:'target_mismatch'};
+    if (bytes === undefined) return {ok:false, reason:'bytes_required'};
+    const actual = sha256(bytes);
+    if (digest && (!/^[a-f0-9]{64}$/i.test(String(digest)) || String(digest).toLowerCase() !== actual)) {
+      return {ok:false, reason:'digest_mismatch'};
+    }
+    if (actual !== entry.sha256) return {ok:false, reason:'sha256_mismatch'};
     return {ok:true, entry:clone(entry)};
   }
 

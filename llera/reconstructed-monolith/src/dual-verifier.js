@@ -23,6 +23,11 @@ class DualVerifier {
     const invalid = validation.find(v => !v.ok);
     if (invalid) return {ok:false, reason:invalid.reason};
 
+    const missionIds = [...new Set(evidence.map(e => e.missionId))];
+    if (missionIds.length !== 1) {
+      return {ok:false, reason:'mixed_mission_evidence_reject', missionIds};
+    }
+
     const ids = evidence.map(e => e.id);
     if (new Set(ids).size !== ids.length) return {ok:false, reason:'duplicate_evidence_id'};
 
@@ -47,6 +52,7 @@ class DualVerifier {
     return {
       ok,
       claim,
+      missionId: missionIds[0],
       strict,
       adversarial,
       independence,

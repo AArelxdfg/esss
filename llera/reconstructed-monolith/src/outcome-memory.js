@@ -165,15 +165,17 @@ class OutcomeMemory {
     return { ...base, maxAttemptsPerStep, verificationReserve, priorRelated: related.length, priorFailures: failures, priorVerifiedSuccesses: successes };
   }
 
-  async proposeSkill({ missionId, name, description, procedure, evidenceIds = [], verification = {} } = {}) {
+  async proposeSkill({ missionId, sourceOutcomeId = null, name, description, procedure, evidenceIds = [], verification = {} } = {}) {
     return this._exclusive(async () => {
     this._requireLoaded();
     if (!missionId || !name || !description || !Array.isArray(procedure) || procedure.length === 0) {
       throw new Error('missionId/name/description/procedure are required');
     }
 
-    const sourceOutcome = [...this.state.outcomes].reverse().find(o => o.missionId === missionId);
-    if (!sourceOutcome || sourceOutcome.status !== 'completed' || !sourceOutcome.verified) {
+    const sourceOutcome = sourceOutcomeId
+      ? this.state.outcomes.find(o => o && o.id === sourceOutcomeId)
+      : [...this.state.outcomes].reverse().find(o => o.missionId === missionId);
+    if (!sourceOutcome || sourceOutcome.missionId !== missionId || sourceOutcome.status !== 'completed' || !sourceOutcome.verified) {
       throw new Error('skill candidates require a verified completed mission outcome');
     }
 

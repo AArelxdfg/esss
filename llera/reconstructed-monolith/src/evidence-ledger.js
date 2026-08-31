@@ -59,7 +59,7 @@ class EvidenceLedger {
       observedAt
     };
     const existing = this.entries.find(x => x.id === entry.id);
-    if (existing) return existing;
+    if (existing) return clone(existing);
 
     const next = [...this.entries, entry];
     if (this.storagePath) this.#persist(next);
@@ -84,6 +84,29 @@ class EvidenceLedger {
   forStep(stepId) { return this.entries.filter(x => x.stepId === stepId).map(clone); }
   snapshot() { return this.entries.map(x => clone({...x, metadata:canonical(x.metadata)})); }
 
+  // Default export stays compatible with the AURORA view-model, which consumes
+  // a plain evidence array. sealed=true produces a portable, integrity-bound
+  // state object suitable for backup/restore and cross-process handoff.
+  export({sealed = false} = {}) {
+    const entries = this.snapshot();
+    if (!sealed) return entries;
+    const state = {schema:LEDGER_SCHEMA, missionId:this.missionId, entries};
+    state.stateSha256 = ledgerSeal(state);
+    return clone(state);
+  }
+
+  // Import is fail-closed and atomic with respect to both memory and disk:
+  // every binding is validated before the current ledger is touched; when a
+  // storagePath exists, persistence succeeds before this.entries is replaced.
+  import(state) {
+    const parsed = clone(state);
+    this.#assertState(parsed);
+    const next = parsed.entries.map(entry => clone({...entry, metadata:canonical(entry.metadata || {})}));
+    if (this.storagePath) this.#persist(next);
+    this.entries = next;
+    return this.snapshot();
+  }
+
   #loadPersistent() {
     if (!fs.existsSync(this.storagePath)) return;
     let parsed;
@@ -94,6 +117,11 @@ class EvidenceLedger {
       wrapped.code = 'EVIDENCE_LEDGER_STORE_CORRUPT';
       throw wrapped;
     }
+    this.#assertState(parsed);
+    this.entries = parsed.entries.map(clone);
+  }
+
+  #assertState(parsed) {
     if (!parsed || parsed.schema !== LEDGER_SCHEMA || parsed.missionId !== this.missionId || !Array.isArray(parsed.entries) || !/^[a-f0-9]{64}$/i.test(parsed.stateSha256 || '')) {
       const error = new Error('evidence ledger store schema/mission invalid');
       error.code = 'EVIDENCE_LEDGER_STORE_INVALID';
@@ -115,7 +143,6 @@ class EvidenceLedger {
       }
       seen.add(entry.id);
     }
-    this.entries = parsed.entries.map(clone);
   }
 
   #assertEntry(entry) {

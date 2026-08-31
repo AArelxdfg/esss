@@ -16,7 +16,8 @@ const { GuardedMonolithToolBroker, executionSucceeded } = require('../src/guarde
       }
       throw new Error(`unexpected:${tool}`);
     },
-    guard: new ToolExecutionGuard()
+    guard: new ToolExecutionGuard(),
+    actionAuthorizer:async () => true
   });
 
   assert.strictEqual(executionSucceeded('read_file', { ok:false }), false);

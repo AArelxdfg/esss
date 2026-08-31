@@ -25,10 +25,10 @@ class Guard {
 const originalLoad = Module._load;
 Module._load = function(request, parent, isMain) {
   if (parent && parent.filename === brokerPath && request === './tool-surface') {
-    return { RESTORED_MONOLITH_TOOLS: Array.from({length:62}, (_,i)=>`tool_${i}`), ToolExecutionGuard: Guard };
+    return { RESTORED_MONOLITH_TOOLS: Array.from({length:62}, (_,i)=>`tool_${i}`), MATERIAL_TOOLS:new Set(['write_file']), ToolExecutionGuard: Guard };
   }
   if (parent && parent.filename === brokerPath && request === './monolith-capability-broker') {
-    return { MonolithCapabilityBroker: class { async invoke() { return {ok:true}; } } };
+    return { CAPABILITY_TOOL_BINDINGS:{}, MonolithCapabilityBroker: class { async invoke() { return {ok:true}; } } };
   }
   return originalLoad.apply(this, arguments);
 };
@@ -41,6 +41,7 @@ Module._load = originalLoad;
   const broker = new GuardedMonolithToolBroker({
     guard: new Guard(),
     failureDoctrine: new FailureDoctrine({ maxSameFailure: 2 }),
+    actionAuthorizer:async () => true,
     historicalExecutor: async (tool) => {
       if (tool === 'read_file') { const e = new Error('temporary timeout'); e.code = 'ETIMEDOUT'; throw e; }
       if (tool === 'write_file') throw new Error('write failed');
@@ -64,7 +65,7 @@ Module._load = originalLoad;
   assert.strictEqual(integrity.recovery.action, 'quarantine');
   assert.strictEqual(integrity.recovery.retry, false);
 
-  const persistedTrace = [{ tool:'read_file', ok:false, failure:{ missionId:'m2', stepId:'s1', tool:'read_file', failureClass:'transient', fingerprint:'persisted', material:false, at:1 } }];
+  const persistedTrace = [{ tool:'read_file', ok:false, failure:{ missionId:'m2', stepId:'s1', tool:'read_file', argsFingerprint:'a'.repeat(64), failureClass:'transient', fingerprint:'b'.repeat(64), material:false, message:'temporary timeout', at:1 } }];
   const restored = broker.restore(persistedTrace);
   assert.strictEqual(restored.restored.failure.restored, 1);
   assert.strictEqual(broker.status({missionId:'m2'}).failureSummary.total, 1);

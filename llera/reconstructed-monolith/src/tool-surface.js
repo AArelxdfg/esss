@@ -30,7 +30,7 @@ const OBSERVATION_TOOLS = new Set([
   'list_dir','read_file','search_files','read_text_range','file_stat','path_exists','hash_file','process_status','list_processes','read_process_output',
   'list_apps','ui_snapshot','desktop_screenshot','browser_snapshot','browser_extract','web_get','web_search','search_cyber_core','system_info',
   'clipboard_read','window_list','outcome_search','autonomy_status','knowledge_graph_search','skill_search','llera_doctor','llera_bench',
-  'vision_analyze_image','vision_ocr_screen','evidence_record','evidence_verify','update_status','host_pressure_status'
+  'vision_analyze_image','vision_ocr_screen','evidence_verify','update_status','host_pressure_status'
 ]);
 
 function stable(value) {
@@ -122,7 +122,9 @@ function observationVerifiesDebt(entry, debt) {
   const entryScope = entry.scope || verificationScope(entry.tool, entry.args || entry.arguments || {});
   if (debt.scope && entryScope) return debt.scope === entryScope;
   if (debt.scope && !entryScope) return false;
-  return Boolean(entry.verification === true);
+  // Unscoped material debt can only be cleared by an explicit exact fingerprint
+  // binding handled above. A generic persisted verification flag is not evidence.
+  return false;
 }
 
 class ToolExecutionGuard {
@@ -147,8 +149,10 @@ class ToolExecutionGuard {
         fingerprint: fp,
         semanticFingerprint: semanticFp,
         ok: persistedOk(raw),
-        material: typeof raw.material === 'boolean' ? raw.material : cls.material,
-        observation: typeof raw.observation === 'boolean' ? raw.observation : (Boolean(raw.verification) || cls.observation),
+        // Persisted classification flags are untrusted metadata. The executable
+        // canonical registry is the only authority for material/observation roles.
+        material: cls.material,
+        observation: cls.observation,
         scope: raw.scope || verificationScope(raw.tool, rawArgs)
       };
       this.history.push(entry);

@@ -30,10 +30,10 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   };
   const watchdog = {
     async launchProfile() { return { mode: 'normal' }; },
-    async markStable() {
+    async markStable({ requestedAt } = {}) {
       stableCalls += 1;
       if (markStableThrows) throw new Error('state write failed');
-      return markStableState || { crashes: [], safeModeUntil: 0, lastStableAt: 9999 };
+      return markStableState || { crashes: [], safeModeUntil: 0, lastStableAt: requestedAt };
     }
   };
   const hostGuard = { async evaluate(sample) { return { level: sample.commitPercent >= 90 ? 'CRITICAL' : 'NORMAL', workers: sample.commitPercent >= 90 ? 1 : 8 }; } };
@@ -44,18 +44,20 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
 }
 
 (async () => {
-  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 5000 }, 1000), true);
-  assert.strictEqual(isDurableStabilityAcknowledgement(null, 1000), false);
-  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 999 }, 1000), false);
-  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: ['recent-crash'], safeModeUntil: 0, lastStableAt: 5000 }, 1000), false);
-  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 6000, lastStableAt: 5000 }, 1000), false);
-  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 1000 }, Number.NaN), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 5000 }, 1000, 6000), true);
+  assert.strictEqual(isDurableStabilityAcknowledgement(null, 1000, 6000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 999 }, 1000, 6000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 6001 }, 1000, 6000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: ['recent-crash'], safeModeUntil: 0, lastStableAt: 5000 }, 1000, 6000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 6000, lastStableAt: 5000 }, 1000, 6000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 1000 }, Number.NaN, 6000), false);
+  assert.strictEqual(isDurableStabilityAcknowledgement({ crashes: [], safeModeUntil: 0, lastStableAt: 1000 }, 2000, 1000), false);
 
   const ok = fixtures();
   const gate = new SoakRecoveryGate({ ...ok, now: (() => { let t = 1000; return () => ++t; })(), sleep: async () => {} });
   const report = await gate.run({ model: 'qwen3-next-80b-q4km', cycles: 35, recoveryEvery: 7, pressureEvery: 5, missionId: ok.mission.id, maxRecoveryCount: 5 });
   assert.strictEqual(report.pass, true);
-  assert.strictEqual(report.schema, 6);
+  assert.strictEqual(report.schema, 7);
   assert.strictEqual(report.runtimeStartupSucceeded, true);
   assert.strictEqual(report.gates.runtimeStartupSucceeded, true);
   assert.strictEqual(report.watchdogStabilityCommitted, true);
@@ -66,7 +68,9 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   assert(ok.appliedPressures.includes('CRITICAL'), 'soak must exercise CRITICAL pressure');
   assert.strictEqual(ok.appliedPressures.at(-1), 'NORMAL', 'synthetic pressure must be cleared before stability commit');
   assert(Number.isFinite(report.watchdogStabilityCommitRequestedAt));
+  assert(Number.isFinite(report.watchdogStabilityCommitObservedAt));
   assert(report.watchdogStableState.lastStableAt >= report.watchdogStabilityCommitRequestedAt);
+  assert(report.watchdogStableState.lastStableAt <= report.watchdogStabilityCommitObservedAt);
   assert.strictEqual(ok.stableCalls(), 1);
 
   const startupFailure = fixtures({ startupThrows: true });
@@ -111,7 +115,16 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   assert.strictEqual(staleAckReport.watchdogStabilityCommitted, false);
   assert.strictEqual(staleAckReport.gates.watchdogStabilityCommitted, false);
   assert.strictEqual(staleAck.stableCalls(), 1);
-  assert(staleAckReport.failures.some(x => x.message.includes('invalid or stale stability acknowledgement')));
+  assert(staleAckReport.failures.some(x => x.message.includes('invalid, stale or future-dated stability acknowledgement')));
+
+  const futureAck = fixtures({ markStableState: { crashes: [], safeModeUntil: 0, lastStableAt: 999999 } });
+  const futureAckGate = new SoakRecoveryGate({ ...futureAck, now: (() => { let t = 4500; return () => ++t; })(), sleep: async () => {} });
+  const futureAckReport = await futureAckGate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, missionId: futureAck.mission.id });
+  assert.strictEqual(futureAckReport.pass, false, 'future-dated stability state must not clear watchdog debt');
+  assert.strictEqual(futureAckReport.watchdogStabilityCommitted, false);
+  assert.strictEqual(futureAckReport.gates.watchdogStabilityCommitted, false);
+  assert.strictEqual(futureAck.stableCalls(), 1);
+  assert(futureAckReport.failures.some(x => x.message.includes('future-dated stability acknowledgement')));
 
   let sameTick = 5000;
   const sameTickAck = fixtures({ markStableState: { crashes: [], safeModeUntil: 0, lastStableAt: sameTick } });
@@ -120,12 +133,12 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
   assert.strictEqual(sameTickReport.pass, false, 'pre-existing stability timestamp must not satisfy a later commit request');
   assert.strictEqual(sameTickReport.gates.watchdogStabilityCommitted, false);
   assert(sameTickReport.watchdogStabilityCommitRequestedAt > 5000);
-  assert(sameTickReport.failures.some(x => x.message.includes('invalid or stale stability acknowledgement')));
+  assert(sameTickReport.failures.some(x => x.message.includes('invalid, stale or future-dated stability acknowledgement')));
 
   assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, recoveryEvery: 0, missionId: ok.mission.id }), /recoveryEvery/);
   assert.throws(() => gate.run({ model: 'qwen3-next-80b-q4km', cycles: 10, pressureEvery: 0, missionId: ok.mission.id }), /pressureEvery/);
 
-  console.log('MONOLITH soak/watchdog startup fail-closed durability PASS', {
+  console.log('MONOLITH soak/watchdog stability acknowledgement bounds PASS', {
     verifiedSoakClearsDebt: true,
     startupFailureReturnsBlockedReport: true,
     startupFailureCannotClearDebt: true,
@@ -135,6 +148,7 @@ function fixtures({ evidenceFailsAt = null, markStableThrows = false, markStable
     pressureResetFailureBlocksPass: true,
     stabilityWriteFailureBlocksPass: true,
     staleStabilityAckBlocksPass: true,
+    futureDatedStabilityAckBlocksPass: true,
     sameTickPreexistingAckBlocksPass: true,
     invalidIntervalsRejected: true
   });

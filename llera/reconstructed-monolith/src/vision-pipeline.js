@@ -16,12 +16,17 @@ class VisionPipeline {
     const kind = String(input.kind || '').toLowerCase();
     if (!['image', 'file', 'screen'].includes(kind)) throw new Error('unsupported vision input kind');
     const mime = String(input.mime || 'application/octet-stream').toLowerCase();
+    const source = String(input.source || kind);
+    if (!source.trim() || /[\r\n\0]/.test(source)) throw new Error('unsafe vision input source');
+    const bytes = Buffer.from(input.bytes);
+    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
     return {
       kind,
       mime,
-      bytes: input.bytes,
-      sha256: crypto.createHash('sha256').update(input.bytes).digest('hex'),
-      source: String(input.source || kind)
+      bytes,
+      sha256: digest,
+      source,
+      inputId: `vision_${crypto.createHash('sha256').update(JSON.stringify({kind,mime,source,sha256:digest})).digest('hex').slice(0, 24)}`
     };
   }
 
@@ -36,6 +41,7 @@ class VisionPipeline {
       id: crypto.randomUUID(),
       startedAt: this.now(),
       sha256: n.sha256,
+      inputId: n.inputId,
       kind: n.kind
     };
     this.active = task;
@@ -53,7 +59,7 @@ class VisionPipeline {
 
       if (canVision) {
         try {
-          vision = await visionModel(n);
+          vision = await visionModel(cloneInput(n));
           backends.push('vision-4b');
         } catch (error) {
           warnings.push({ backend: 'vision-4b', reason: String(error && error.message || error) });
@@ -62,7 +68,7 @@ class VisionPipeline {
 
       if (shouldOcr && canOcr) {
         try {
-          text = String(await ocr(n) || '');
+          text = String(await ocr(cloneInput(n)) || '');
           backends.push('windows-ocr');
         } catch (error) {
           warnings.push({ backend: 'windows-ocr', reason: String(error && error.message || error) });
@@ -84,6 +90,7 @@ class VisionPipeline {
         kind: n.kind,
         source: n.source,
         sha256: n.sha256,
+        inputId: n.inputId,
         text,
         vision,
         warnings,
@@ -95,6 +102,7 @@ class VisionPipeline {
         degraded: result.degraded,
         warnings: warnings.map((w) => ({ ...w })),
         sha256: n.sha256,
+        inputId: n.inputId,
         completedAt: result.completedAt
       });
       return result;
@@ -104,4 +112,8 @@ class VisionPipeline {
   }
 }
 
-module.exports = { VisionPipeline };
+function cloneInput(input) {
+  return {...input, bytes:Buffer.from(input.bytes)};
+}
+
+module.exports = { VisionPipeline, cloneInput };

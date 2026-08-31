@@ -64,6 +64,7 @@ class OutcomeMemory {
     this.now = now;
     this.state = { schema: 1, outcomes: [], skillCandidates: [] };
     this.loaded = false;
+    this.mutationQueue = Promise.resolve();
   }
 
   async init() {
@@ -82,6 +83,7 @@ class OutcomeMemory {
   snapshot() { return clone(this.state); }
 
   async recordOutcome({ missionId, goal, status, summary = '', failurePattern = null, tags = [], verification = {} } = {}) {
+    return this._exclusive(async () => {
     this._requireLoaded();
     if (!missionId || !goal) throw new Error('missionId and goal are required');
     if (!['completed', 'failed', 'partial'].includes(status)) throw new Error('invalid outcome status');
@@ -128,6 +130,7 @@ class OutcomeMemory {
     this.state.outcomes.push(record);
     await this._persist();
     return clone(record);
+    });
   }
 
   search(query, { limit = 8, failuresOnly = false, verifiedOnly = false } = {}) {
@@ -163,6 +166,7 @@ class OutcomeMemory {
   }
 
   async proposeSkill({ missionId, name, description, procedure, evidenceIds = [], verification = {} } = {}) {
+    return this._exclusive(async () => {
     this._requireLoaded();
     if (!missionId || !name || !description || !Array.isArray(procedure) || procedure.length === 0) {
       throw new Error('missionId/name/description/procedure are required');
@@ -228,10 +232,24 @@ class OutcomeMemory {
     this.state.skillCandidates.push(candidate);
     await this._persist();
     return clone(candidate);
+    });
   }
 
   _requireLoaded() { if (!this.loaded) throw new Error('outcome memory is not initialized'); }
   async _persist() { await this.saveBackend(clone(this.state)); }
+  async _exclusive(operation) {
+    const run = this.mutationQueue.then(async () => {
+      const before = clone(this.state);
+      try {
+        return await operation();
+      } catch (error) {
+        this.state = before;
+        throw error;
+      }
+    });
+    this.mutationQueue = run.catch(() => {});
+    return run;
+  }
 }
 
 module.exports = { OutcomeMemory, validateFinalizationReceipt };

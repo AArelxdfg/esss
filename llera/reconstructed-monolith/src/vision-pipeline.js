@@ -1,10 +1,25 @@
 'use strict';
 const crypto = require('crypto');
 
+function sha256(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function canonicalInputIdentity({ kind, mime, source, sha256: bytesSha256 }) {
+  return sha256(Buffer.from(JSON.stringify({
+    schema: 'llera.vision.input.v1',
+    kind,
+    mime,
+    source,
+    bytesSha256
+  }), 'utf8'));
+}
+
 class VisionPipeline {
-  constructor({ now = () => new Date().toISOString(), maxBytes = 32 * 1024 * 1024 } = {}) {
+  constructor({ now = () => new Date().toISOString(), maxBytes = 32 * 1024 * 1024, maxSourceLength = 2048 } = {}) {
     this.now = now;
     this.maxBytes = maxBytes;
+    this.maxSourceLength = maxSourceLength;
     this.active = null;
     this.history = [];
   }
@@ -15,14 +30,22 @@ class VisionPipeline {
     if (input.bytes.length > this.maxBytes) throw new Error('vision input exceeds size limit');
     const kind = String(input.kind || '').toLowerCase();
     if (!['image', 'file', 'screen'].includes(kind)) throw new Error('unsupported vision input kind');
-    const mime = String(input.mime || 'application/octet-stream').toLowerCase();
+    const mime = String(input.mime || 'application/octet-stream').trim().toLowerCase();
+    if (!mime || /[\r\n\0]/.test(mime)) throw new Error('invalid vision input mime');
+    const source = String(input.source || kind).trim();
+    if (!source || source.length > this.maxSourceLength || /[\r\n\0]/.test(source)) {
+      throw new Error('invalid vision input source');
+    }
     const bytes = Buffer.from(input.bytes);
+    const bytesSha256 = sha256(bytes);
+    const inputId = canonicalInputIdentity({ kind, mime, source, sha256: bytesSha256 });
     return {
       kind,
       mime,
       bytes,
-      sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
-      source: String(input.source || kind)
+      sha256: bytesSha256,
+      inputId,
+      source
     };
   }
 
@@ -32,6 +55,7 @@ class VisionPipeline {
       mime: n.mime,
       bytes: Buffer.from(n.bytes),
       sha256: n.sha256,
+      inputId: n.inputId,
       source: n.source
     };
   }
@@ -39,7 +63,7 @@ class VisionPipeline {
   async analyze(input, { pressure = 'normal', visionModel, ocr } = {}) {
     const n = this.normalizeInput(input);
     if (pressure === 'critical') {
-      return { ok: false, blocked: true, reason: 'host-critical-pressure', sha256: n.sha256 };
+      return { ok: false, blocked: true, reason: 'host-critical-pressure', sha256: n.sha256, inputId: n.inputId };
     }
     if (this.active) throw new Error('vision single-flight violation');
 
@@ -47,7 +71,10 @@ class VisionPipeline {
       id: crypto.randomUUID(),
       startedAt: this.now(),
       sha256: n.sha256,
-      kind: n.kind
+      inputId: n.inputId,
+      kind: n.kind,
+      mime: n.mime,
+      source: n.source
     };
     this.active = task;
 
@@ -93,8 +120,10 @@ class VisionPipeline {
         taskId: task.id,
         backend: backends.join('+'),
         kind: n.kind,
+        mime: n.mime,
         source: n.source,
         sha256: n.sha256,
+        inputId: n.inputId,
         text,
         vision,
         warnings,
@@ -105,7 +134,11 @@ class VisionPipeline {
         backend: result.backend,
         degraded: result.degraded,
         warnings: warnings.map((w) => ({ ...w })),
+        kind: n.kind,
+        mime: n.mime,
+        source: n.source,
         sha256: n.sha256,
+        inputId: n.inputId,
         completedAt: result.completedAt
       });
       return result;
@@ -115,4 +148,4 @@ class VisionPipeline {
   }
 }
 
-module.exports = { VisionPipeline };
+module.exports = { VisionPipeline, canonicalInputIdentity };

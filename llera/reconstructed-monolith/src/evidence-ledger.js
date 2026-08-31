@@ -37,8 +37,6 @@ function boundedSummary(value, maxBytes = MAX_SUMMARY_BYTES) {
 
 function evidenceId({missionId, stepId, tool = null, target, sha256: digest, kind}) {
   const binding = {missionId, stepId, target, sha256:digest, kind};
-  // Preserve compatibility with pre-tool evidence IDs while cryptographically
-  // binding tool provenance whenever the producing tool is known.
   if (tool) binding.tool = tool;
   return `ev_${sha256(JSON.stringify(canonical(binding))).slice(0, 24)}`;
 }
@@ -93,17 +91,9 @@ class EvidenceLedger {
   verifyBinding(id, {tool = null, target, bytes, digest, byteCount = null} = {}) {
     const entry = this.entries.find(x => x.id === id);
     if (!entry) return {ok:false, reason:'evidence_not_found'};
-
-    // Evidence is useful only when the verifier proves the same resource scope
-    // that was recorded. Digest-only verification is insufficient because it
-    // allows a valid hash to be detached from its declared target.
-    if (typeof target !== 'string' || !target.trim()) {
-      return {ok:false, reason:'target_required'};
-    }
+    if (typeof target !== 'string' || !target.trim()) return {ok:false, reason:'target_required'};
     if (target !== entry.target) return {ok:false, reason:'target_mismatch'};
 
-    // Once tool provenance is present in the evidence ID it is part of the
-    // cryptographic identity and must also be supplied during verification.
     if (entry.tool) {
       if (typeof tool !== 'string' || !tool.trim()) return {ok:false, reason:'tool_required'};
       if (tool.trim() !== entry.tool) return {ok:false, reason:'tool_mismatch'};
@@ -123,6 +113,51 @@ class EvidenceLedger {
       return {ok:false, reason:'byte_count_mismatch'};
     }
     return {ok:true, entry};
+  }
+
+  export() {
+    return this.snapshot();
+  }
+
+  import(rawEntries) {
+    if (!Array.isArray(rawEntries)) throw new Error('evidence import must be an array');
+    const restored = [];
+    const seen = new Set();
+
+    for (const raw of rawEntries) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('invalid evidence entry');
+      if (raw.missionId !== this.missionId) throw new Error('evidence mission mismatch');
+      if (!raw.id || typeof raw.id !== 'string') throw new Error('evidence id required');
+      if (seen.has(raw.id)) throw new Error('duplicate evidence id');
+
+      const expectedId = evidenceId({
+        missionId: this.missionId,
+        stepId: raw.stepId,
+        tool: raw.tool || null,
+        target: raw.target,
+        sha256: String(raw.sha256 || '').toLowerCase(),
+        kind: raw.kind
+      });
+      if (expectedId !== raw.id) throw new Error('evidence id binding mismatch');
+
+      const entry = this.add({
+        stepId: raw.stepId,
+        tool: raw.tool || null,
+        kind: raw.kind,
+        target: raw.target,
+        digest: raw.sha256,
+        byteCount: raw.byteCount === undefined ? null : raw.byteCount,
+        summary: raw.summary || '',
+        metadata: raw.metadata || {},
+        observedAt: raw.observedAt
+      });
+      if (entry.id !== raw.id) throw new Error('evidence import identity mismatch');
+      seen.add(raw.id);
+      restored.push(entry);
+    }
+
+    this.entries = restored.map(x => ({...x, metadata:canonical(x.metadata)}));
+    return {restored:this.entries.length};
   }
 
   forStep(stepId) { return this.entries.filter(x => x.stepId === stepId); }

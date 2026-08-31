@@ -21,6 +21,7 @@ class AuroraAccessibilityController {
       paletteContainsExternalFocus: true,
       paletteSupportsReverseTab: true,
       paletteActivationAnnounced: true,
+      paletteActivationFocusFollowsSurface: true,
     };
   }
   getComposerState() { return this.ui.getComposerState ? this.ui.getComposerState() : null; }
@@ -72,17 +73,20 @@ class AuroraAccessibilityController {
 
     if (key === 'enter') {
       const before = this.ui.getPaletteState();
+      const activeSurfaceBefore = this.ui.activeSurface;
       const uiResult = this.ui.handleShortcut(event);
       if (before.open && !this.ui.getPaletteState().open && uiResult.action === 'activate') {
         const trapResult = this.focusTrap.deactivate({ restoreFocus: true });
+        const surfaceChanged = Boolean(uiResult.surface && uiResult.surface !== activeSurfaceBefore);
+        const focusTarget = surfaceChanged ? `nav-${uiResult.surface}` : trapResult.focusTarget;
         const activationLabel = String(uiResult.command?.label || uiResult.surface || 'Command').trim();
         const liveRegion = typeof this.ui.announce === 'function'
           ? this.ui.announce(`${activationLabel} activated`)
           : null;
         return {
           ...uiResult,
-          focusTarget: trapResult.focusTarget,
-          focusTrap: trapResult,
+          focusTarget,
+          focusTrap: { ...trapResult, focusTarget },
           liveRegion,
         };
       }
@@ -102,7 +106,7 @@ class AuroraAccessibilityController {
     const base = typeof this.ui.selfTest === 'function' ? this.ui.selfTest() : { ok: true };
     return {
       ok: Boolean(base.ok && focus.ok),
-      schema: 543,
+      schema: 544,
       ui: base,
       focusTrap: focus,
       accessibility: this.getAccessibilityContract(),

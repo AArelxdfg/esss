@@ -22,6 +22,7 @@ on:
       - 'llera/reconstructed-monolith/test/evidence-ledger-recovery-import.test.js'
       - 'llera/reconstructed-monolith/test/dual-verifier-evidence-coverage.test.js'
       - 'llera/reconstructed-monolith/test/dual-verifier-independence.test.js'
+      - 'llera/reconstructed-monolith/test/dual-verifier-mission-binding.test.js'
       - 'llera/reconstructed-monolith/test/structured-evidence-provenance.test.js'
       - '.github/workflows/llera-capability-restore.yml'
   workflow_dispatch:
@@ -67,5 +68,6 @@ jobs:
           node llera/reconstructed-monolith/test/evidence-ledger-recovery-import.test.js
           node llera/reconstructed-monolith/test/dual-verifier-evidence-coverage.test.js
           node llera/reconstructed-monolith/test/dual-verifier-independence.test.js
+          node llera/reconstructed-monolith/test/dual-verifier-mission-binding.test.js
       - name: Structured evidence provenance
         run: node llera/reconstructed-monolith/test/structured-evidence-provenance.test.js

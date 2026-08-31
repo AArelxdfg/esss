@@ -19,6 +19,7 @@ on:
       - 'llera/reconstructed-monolith/test/restored-tool-classification-authority.test.js'
       - 'llera/reconstructed-monolith/test/evidence-verifier.test.js'
       - 'llera/reconstructed-monolith/test/evidence-id-binding.test.js'
+      - 'llera/reconstructed-monolith/test/evidence-ledger-recovery-import.test.js'
       - 'llera/reconstructed-monolith/test/dual-verifier-evidence-coverage.test.js'
       - 'llera/reconstructed-monolith/test/dual-verifier-independence.test.js'
       - 'llera/reconstructed-monolith/test/structured-evidence-provenance.test.js'
@@ -63,6 +64,7 @@ jobs:
         run: |
           node llera/reconstructed-monolith/test/evidence-verifier.test.js
           node llera/reconstructed-monolith/test/evidence-id-binding.test.js
+          node llera/reconstructed-monolith/test/evidence-ledger-recovery-import.test.js
           node llera/reconstructed-monolith/test/dual-verifier-evidence-coverage.test.js
           node llera/reconstructed-monolith/test/dual-verifier-independence.test.js
       - name: Structured evidence provenance

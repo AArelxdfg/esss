@@ -147,8 +147,11 @@ class ToolExecutionGuard {
         args: rawArgs,
         fingerprint: fp,
         ok: persistedOk(raw),
-        material: typeof raw.material === 'boolean' ? raw.material : cls.material,
-        observation: typeof raw.observation === 'boolean' ? raw.observation : (Boolean(raw.verification) || cls.observation),
+        // Runtime classification is authoritative. Persisted metadata may conservatively
+        // mark an unknown/legacy action as material, but can never downgrade a canonical
+        // material tool or self-promote a non-observation tool into an observation after restart.
+        material: cls.material || raw.material === true,
+        observation: cls.observation,
         scope: raw.scope || verificationScope(raw.tool, rawArgs)
       };
       this.history.push(entry);

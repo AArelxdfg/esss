@@ -37,3 +37,4 @@ jobs:
           node llera/reconstructed-monolith/test/aurora-surface-keyboard-navigation.test.js
           node llera/reconstructed-monolith/test/aurora-monolith-view-model.test.js
           node llera/reconstructed-monolith/test/aurora-focus-trap-controller.test.js
+          node llera/reconstructed-monolith/test/aurora-command-activation-focus-routing.test.js

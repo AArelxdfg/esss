@@ -13,11 +13,12 @@ class VisionPipeline {
     if (!input || !Buffer.isBuffer(input.bytes)) throw new Error('vision input bytes required');
     if (!input.bytes.length) throw new Error('empty vision input');
     if (input.bytes.length > this.maxBytes) throw new Error('vision input exceeds size limit');
-    const kind = String(input.kind || '').toLowerCase();
+    const kind = String(input.kind || '').trim().toLowerCase();
     if (!['image', 'file', 'screen'].includes(kind)) throw new Error('unsupported vision input kind');
-    const mime = String(input.mime || 'application/octet-stream').toLowerCase();
-    const source = String(input.source || kind);
-    if (!source.trim() || /[\r\n\0]/.test(source)) throw new Error('unsafe vision input source');
+    const mime = String(input.mime || 'application/octet-stream').trim().toLowerCase();
+    if (!mime || /[\r\n\0]/.test(mime)) throw new Error('unsafe vision input mime');
+    const source = String(input.source || kind).trim();
+    if (!source || /[\r\n\0]/.test(source)) throw new Error('unsafe vision input source');
     const bytes = Buffer.from(input.bytes);
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
     return {
@@ -32,8 +33,9 @@ class VisionPipeline {
 
   async analyze(input, { pressure = 'normal', visionModel, ocr } = {}) {
     const n = this.normalizeInput(input);
-    if (pressure === 'critical') {
-      return { ok: false, blocked: true, reason: 'host-critical-pressure', sha256: n.sha256 };
+    const normalizedPressure = String(pressure || 'normal').trim().toLowerCase();
+    if (normalizedPressure === 'critical') {
+      return { ok: false, blocked: true, reason: 'host-critical-pressure', sha256: n.sha256, inputId: n.inputId };
     }
     if (this.active) throw new Error('vision single-flight violation');
 

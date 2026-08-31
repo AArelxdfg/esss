@@ -142,6 +142,7 @@ class VerifiedLearningCoordinator {
 
     return this.outcomeMemory.proposeSkill({
       missionId,
+      sourceOutcomeId: outcome.id,
       name: proposal.name,
       description: proposal.description,
       procedure: proposal.procedure,

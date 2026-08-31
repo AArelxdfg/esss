@@ -49,36 +49,45 @@ class RuntimeInferenceCoordinator {
 
   complete(id, expectedGeneration = null) {
     const local = this.active.get(id) || null;
-    if (expectedGeneration !== null && expectedGeneration !== undefined) {
-      if (!local || local.generation !== expectedGeneration) {
-        this.completed.push({
-          id,
-          reason: 'stale-completion-ignored',
-          expectedGeneration,
-          activeGeneration: local && local.generation !== undefined ? local.generation : null
-        });
-        return false;
-      }
 
-      const runtimeGate = canCompleteRuntimeInference(this.runtime, id, expectedGeneration);
-      if (!runtimeGate.allow) {
-        this.completed.push({
-          id,
-          reason: 'runtime-generation-completion-blocked',
-          expectedGeneration,
-          activeGeneration: local.generation,
-          runtimeGeneration: runtimeGate.activeGeneration,
-          runtimeReason: runtimeGate.reason
-        });
-        return false;
-      }
+    if (expectedGeneration === null || expectedGeneration === undefined) {
+      this.completed.push({
+        id,
+        reason: 'generation-required',
+        expectedGeneration: null,
+        activeGeneration: local && local.generation !== undefined ? local.generation : null
+      });
+      return false;
+    }
+
+    if (!local || local.generation !== expectedGeneration) {
+      this.completed.push({
+        id,
+        reason: 'stale-completion-ignored',
+        expectedGeneration,
+        activeGeneration: local && local.generation !== undefined ? local.generation : null
+      });
+      return false;
+    }
+
+    const runtimeGate = canCompleteRuntimeInference(this.runtime, id, expectedGeneration);
+    if (!runtimeGate.allow) {
+      this.completed.push({
+        id,
+        reason: 'runtime-generation-completion-blocked',
+        expectedGeneration,
+        activeGeneration: local.generation,
+        runtimeGeneration: runtimeGate.activeGeneration,
+        runtimeReason: runtimeGate.reason
+      });
+      return false;
     }
 
     const runtimeRemoved = this.runtime.completeInference(id, expectedGeneration);
     const governorRemoved = this.governor.complete(id);
     const localRemoved = this.active.delete(id);
     if (runtimeRemoved || governorRemoved || localRemoved) {
-      this.completed.push({ id, reason: 'completed', generation: local && local.generation !== undefined ? local.generation : null });
+      this.completed.push({ id, reason: 'completed', generation: local.generation });
     }
     return Boolean(runtimeRemoved || governorRemoved || localRemoved);
   }

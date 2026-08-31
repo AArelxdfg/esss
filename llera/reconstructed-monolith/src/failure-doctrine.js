@@ -74,10 +74,11 @@ function structurallyValidFailure(event) {
 }
 
 class FailureDoctrine {
-  constructor({ maxSameFailure = 2, maxTransientRetries = 3, clock = () => Date.now() } = {}) {
+  constructor({ maxSameFailure = 2, maxTransientRetries = 3, clock = () => Date.now(), trustLegacyRestored = false } = {}) {
     this.maxSameFailure = maxSameFailure;
     this.maxTransientRetries = maxTransientRetries;
     this.clock = clock;
+    this.trustLegacyRestored = Boolean(trustLegacyRestored);
     this.history = [];
     this.restoreDiagnostics = { restored: 0, legacyUnsealed: 0, rejected: 0 };
   }
@@ -106,15 +107,21 @@ class FailureDoctrine {
     return { ...event, decision: this.decide(event) };
   }
 
+  decisionHistory() {
+    if (this.trustLegacyRestored) return this.history;
+    return this.history.filter((event) => event.restoredLegacy !== true);
+  }
+
   decide(event) {
-    const same = this.history.filter((x) => x.missionId === event.missionId && x.stepId === event.stepId && x.fingerprint === event.fingerprint).length;
+    const trustedHistory = this.decisionHistory();
+    const same = trustedHistory.filter((x) => x.missionId === event.missionId && x.stepId === event.stepId && x.fingerprint === event.fingerprint).length;
     if (event.failureClass === FAILURE_CLASS.INTEGRITY) return { action: 'quarantine', retry: false, requiresVerification: true };
     if (event.failureClass === FAILURE_CLASS.POLICY) return { action: 'stop', retry: false, requiresHumanDecision: true };
     if (event.material) return { action: 'reobserve', retry: false, requiresVerification: true };
     if (same >= this.maxSameFailure) return { action: 'change-strategy', retry: false };
     if (event.failureClass === FAILURE_CLASS.RESOURCE) return { action: 'degrade', retry: true, profile: 'lower-pressure' };
     if (event.failureClass === FAILURE_CLASS.TRANSIENT) {
-      const transientCount = this.history.filter((x) => x.missionId === event.missionId && x.stepId === event.stepId && x.failureClass === FAILURE_CLASS.TRANSIENT).length;
+      const transientCount = trustedHistory.filter((x) => x.missionId === event.missionId && x.stepId === event.stepId && x.failureClass === FAILURE_CLASS.TRANSIENT).length;
       return transientCount <= this.maxTransientRetries
         ? { action: 'retry-backoff', retry: true, backoffAttempt: transientCount }
         : { action: 'change-strategy', retry: false };
@@ -156,6 +163,7 @@ class FailureDoctrine {
         message: String(failure.message || ''),
         at: Number(failure.at),
         eventSeal: failure.eventSeal ? String(failure.eventSeal).toLowerCase() : null,
+        restoredLegacy: !failure.eventSeal,
       };
 
       const identity = failureEventIdentity(restored);

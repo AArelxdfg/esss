@@ -12,7 +12,10 @@ const reconstructed = gate.evaluate({
   tests: { node: true, regression: true, crossBuild: false },
   artifact: {},
   signing: { materialPresent: false, manifestSigned: false },
-  validation: { physicalWindows: false, physicalGpu: false }
+  validation: {
+    physicalWindows: false, physicalGpu: false, physicalOcr: false,
+    installerExecution: false, watchdogSoak: false
+  }
 });
 assert.strictEqual(reconstructed.reconstructedParity, true);
 assert.strictEqual(reconstructed.publishableCandidate, false);
@@ -20,6 +23,17 @@ assert.strictEqual(reconstructed.exactV54ClaimAllowed, false);
 assert(reconstructed.blockers.includes('verified-windows-artifact-missing'));
 assert(reconstructed.blockers.includes('signing-material-or-signed-manifest-missing'));
 assert(reconstructed.blockers.includes('physical-windows-validation-missing'));
+assert(reconstructed.blockers.includes('physical-ocr-validation-missing'));
+assert(reconstructed.blockers.includes('physical-installer-execution-validation-missing'));
+assert(reconstructed.blockers.includes('physical-watchdog-soak-validation-missing'));
+
+const completeValidation = {
+  physicalWindows: true,
+  physicalGpu: true,
+  physicalOcr: true,
+  installerExecution: true,
+  watchdogSoak: true
+};
 
 const forgedExact = gate.evaluate({
   toolCount: 62,
@@ -32,11 +46,33 @@ const forgedExact = gate.evaluate({
     sha256: 'f'.repeat(64), pe32PlusX64: true
   },
   signing: { materialPresent: true, manifestSigned: true },
-  validation: { physicalWindows: true, physicalGpu: true }
+  validation: completeValidation
 });
 assert.strictEqual(forgedExact.publishableCandidate, true);
 assert.strictEqual(forgedExact.exactV54ClaimAllowed, false, 'source identity alone must not permit exact V5.4 artifact claim');
 assert.strictEqual(forgedExact.windowsGradeFinalClaimAllowed, true);
+
+for (const [field, blocker] of [
+  ['physicalOcr', 'physical-ocr-validation-missing'],
+  ['installerExecution', 'physical-installer-execution-validation-missing'],
+  ['watchdogSoak', 'physical-watchdog-soak-validation-missing']
+]) {
+  const validation = { ...completeValidation, [field]: false };
+  const result = gate.evaluate({
+    toolCount: 62,
+    behavior: allBehavior,
+    tests: { node: true, regression: true, crossBuild: true },
+    artifact: {
+      path: 'LLera-Reconstructed-x64.exe', kind: 'windows-x64', bytes: 1,
+      sha256: 'a'.repeat(64), pe32PlusX64: true
+    },
+    signing: { materialPresent: true, manifestSigned: true },
+    validation
+  });
+  assert.strictEqual(result.publishableCandidate, false, `${field} must block publishing`);
+  assert.strictEqual(result.windowsGradeFinalClaimAllowed, false, `${field} must block Windows-grade final claim`);
+  assert(result.blockers.includes(blocker));
+}
 
 const exactHistorical = gate.evaluate({
   toolCount: 62,
@@ -49,7 +85,7 @@ const exactHistorical = gate.evaluate({
     sha256: CONTRACT.v540InstallerSha256, pe32PlusX64: true
   },
   signing: { materialPresent: true, manifestSigned: true },
-  validation: { physicalWindows: true, physicalGpu: false }
+  validation: { ...completeValidation, physicalGpu: false }
 });
 assert.strictEqual(exactHistorical.exactHistoricalSource.v535, true);
 assert.strictEqual(exactHistorical.exactHistoricalSource.v540, true);
@@ -62,5 +98,8 @@ console.log('release candidate truth gate PASS', {
   reconstructedParity: true,
   exactClaimProtected: true,
   releaseBlockedWithoutEvidence: true,
+  physicalOcrRequired: true,
+  installerExecutionRequired: true,
+  watchdogSoakRequired: true,
   finalClaimRequiresPhysicalGpu: true
 });

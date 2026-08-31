@@ -48,7 +48,8 @@ ui.setPaletteQuery('work');
 const activated = controller.handleShortcut({ key: 'Enter' });
 assert.strictEqual(activated.action, 'activate');
 assert.strictEqual(activated.surface, 'work');
-assert.strictEqual(activated.focusTarget, 'composer');
+assert.strictEqual(activated.focusTarget, 'nav-work');
+assert.strictEqual(activated.focusTrap.focusTarget, 'nav-work');
 assert.strictEqual(ui.getPaletteState().open, false);
 assert.ok(activated.liveRegion);
 assert.strictEqual(activated.liveRegion.role, 'status');
@@ -61,21 +62,23 @@ assert.strictEqual(a11y.paletteUsesCyclicFocusTrap, true);
 assert.strictEqual(a11y.paletteContainsExternalFocus, true);
 assert.strictEqual(a11y.paletteSupportsReverseTab, true);
 assert.strictEqual(a11y.paletteActivationAnnounced, true);
+assert.strictEqual(a11y.paletteActivationFocusFollowsSurface, true);
 
 const self = controller.selfTest();
 assert.strictEqual(self.ok, true);
-assert.strictEqual(self.schema, 543);
+assert.strictEqual(self.schema, 544);
 assert.strictEqual(self.focusTrap.forwardWrap, true);
 assert.strictEqual(self.focusTrap.backwardWrap, true);
 assert.strictEqual(self.focusTrap.containment, true);
 assert.strictEqual(self.focusTrap.focusRestoration, true);
 assert.strictEqual(self.accessibility.paletteActivationAnnounced, true);
+assert.strictEqual(self.accessibility.paletteActivationFocusFollowsSurface, true);
 
 console.log('AURORA focus trap controller PASS', {
   cyclicTab: true,
   reverseTab: true,
   externalFocusContainment: true,
   focusRestoration: true,
-  commandActivationRestoration: true,
+  commandActivationSurfaceFocus: true,
   commandActivationAnnouncement: true,
 });

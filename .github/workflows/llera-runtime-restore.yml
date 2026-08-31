@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'llera/reconstructed-monolith/src/runtime-lifecycle.js'
+      - 'llera/reconstructed-monolith/src/runtime-completion-guard.js'
       - 'llera/reconstructed-monolith/src/runtime-inference-coordinator.js'
       - 'llera/reconstructed-monolith/test/runtime-*.test.js'
       - '.github/workflows/llera-runtime-restore.yml'
@@ -41,7 +42,9 @@ jobs:
             test/runtime-inference-admission-drain-race.test.js \
             test/runtime-transition-serialization.test.js \
             test/runtime-inference-coordinator.test.js \
-            test/runtime-generation-bound-completion.test.js
+            test/runtime-generation-bound-completion.test.js \
+            test/runtime-direct-generation-completion-guard.test.js \
+            test/runtime-generation-required-completion.test.js
           do
             echo "=== $test ==="
             node "$test"

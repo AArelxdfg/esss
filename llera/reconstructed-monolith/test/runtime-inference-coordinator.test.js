@@ -18,8 +18,8 @@ class Governor {
 class Runtime {
   constructor(){ this.state='ready'; this.generation=7; this.active=new Map(); }
   registerInference(id,{priority,abort}){ if(this.state!=='ready') throw new Error('runtime is not ready'); if(this.active.has(id)) throw new Error('unique inference id required'); const task={id,priority,abort,generation:this.generation}; this.active.set(id,task); return task; }
-  completeInference(id){ return this.active.delete(id); }
-  snapshot(){ return {state:this.state,generation:this.generation,activeInference:[...this.active.keys()]}; }
+  completeInference(id, expectedGeneration){ const task=this.active.get(id); if(!task || expectedGeneration===null || expectedGeneration===undefined || task.generation!==expectedGeneration) return false; return this.active.delete(id); }
+  snapshot(){ return {state:this.state,generation:this.generation,activeInference:[...this.active.values()].map(x=>({id:x.id,generation:x.generation}))}; }
 }
 (() => {
   const runtime=new Runtime(); const governor=new Governor(); const c=new RuntimeInferenceCoordinator({runtime,governor});
@@ -27,7 +27,7 @@ class Runtime {
   assert.strictEqual(interactive.allow,true); assert.strictEqual(interactive.priority,'high'); assert.strictEqual(interactive.maxTokens,8192);
   const council=c.begin({id:'c1',className:'council',requestedTokens:6000,abort:()=>{}});
   assert.strictEqual(council.allow,true); assert.strictEqual(council.priority,'low');
-  assert.strictEqual(c.complete('c1'),true); assert.strictEqual(governor.active.has('c1'),false); assert.strictEqual(runtime.active.has('c1'),false);
+  assert.strictEqual(c.complete('c1', council.generation),true); assert.strictEqual(governor.active.has('c1'),false); assert.strictEqual(runtime.active.has('c1'),false);
   governor.pressure='critical';
   const blocked=c.begin({id:'c2',className:'council',abort:()=>{}});
   assert.strictEqual(blocked.allow,false); assert.strictEqual(blocked.reason,'class_blocked_by_host_pressure'); assert.strictEqual(runtime.active.has('c2'),false);
@@ -36,5 +36,5 @@ class Runtime {
   runtime.state='failed'; let rollback=true;
   try { c.begin({id:'i2',className:'interactive',abort:()=>{}}); rollback=false; } catch(e){ assert.match(e.message,/runtime is not ready/); }
   assert.strictEqual(rollback,true); assert.strictEqual(governor.active.has('i2'),false);
-  console.log('runtime inference admission bridge PASS', {governorEnforced:true,lowPriorityMapping:true,criticalAdmissionBlock:true,tokenReasoningProfile:true,admissionRollbackOnRuntimeFailure:true});
+  console.log('runtime inference admission bridge PASS', {governorEnforced:true,lowPriorityMapping:true,criticalAdmissionBlock:true,tokenReasoningProfile:true,admissionRollbackOnRuntimeFailure:true,generationBoundCompletion:true});
 })();

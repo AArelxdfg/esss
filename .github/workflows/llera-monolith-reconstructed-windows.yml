@@ -1,0 +1,76 @@
+name: LLera MONOLITH reconstructed Windows build
+
+on:
+  push:
+    branches:
+      - llera-final-build-reconstruction-2026-09-01
+    paths:
+      - 'llera/reconstructed-monolith/**'
+      - '.github/workflows/llera-monolith-reconstructed-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: llera/reconstructed-monolith
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: llera/reconstructed-monolith/package-lock.json
+
+      - name: Install dependencies
+        shell: pwsh
+        run: npm install --no-audit --no-fund
+
+      - name: Run JavaScript regression suite
+        shell: pwsh
+        run: npm test
+
+      - name: Package reconstructed source ZIP
+        shell: pwsh
+        run: npm run source:zip
+
+      - name: Build Windows x64 unpacked app
+        shell: pwsh
+        run: npm run pack:win
+
+      - name: Build Windows x64 NSIS installer
+        shell: pwsh
+        run: npm run dist:win
+
+      - name: Record artifact hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'dist'
+          $hashFile = Join-Path $out 'SHA256SUMS.txt'
+          Get-ChildItem -Path $out -File -Recurse |
+            Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            Sort-Object FullName |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              $rel = [IO.Path]::GetRelativePath($out, $_.FullName).Replace('\\','/')
+              "$hash  $rel"
+            } | Set-Content -LiteralPath $hashFile -Encoding ascii
+          Get-Content $hashFile
+
+      - name: Upload Windows build evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: llera-monolith-reconstructed-windows-x64
+          path: |
+            llera/reconstructed-monolith/dist/**
+            llera/reconstructed-monolith/*.zip
+          if-no-files-found: error
+          retention-days: 14

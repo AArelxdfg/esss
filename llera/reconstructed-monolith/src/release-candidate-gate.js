@@ -80,11 +80,15 @@ class ReleaseCandidateGate {
     if (!watchdogSoakValidated) blockers.push('physical-watchdog-soak-validation-missing');
 
     const publishableCandidate = blockers.length === 0;
-    const exactV54ClaimAllowed = exactV540 && artifact.sha256 === CONTRACT.v540InstallerSha256;
+    const exactV54ClaimAllowed = Boolean(
+      exactV540 &&
+      artifactEvidenceValid &&
+      artifact.sha256 === CONTRACT.v540InstallerSha256
+    );
     const windowsGradeFinalClaimAllowed = publishableCandidate && physicalGpuValidated;
 
     const result = {
-      schema: 2,
+      schema: 3,
       reconstructedParity,
       exactHistoricalSource: { v535: exactV535, v540: exactV540 },
       exactV54ClaimAllowed,

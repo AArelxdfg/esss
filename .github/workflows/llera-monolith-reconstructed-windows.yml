@@ -26,8 +26,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: llera/reconstructed-monolith/package-lock.json
 
       - name: Install dependencies
         shell: pwsh
@@ -54,15 +52,15 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $PWD 'dist'
+          if (-not (Test-Path -LiteralPath $out)) { throw "dist directory was not created" }
           $hashFile = Join-Path $out 'SHA256SUMS.txt'
-          Get-ChildItem -Path $out -File -Recurse |
-            Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
-            Sort-Object FullName |
-            ForEach-Object {
-              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              $rel = [IO.Path]::GetRelativePath($out, $_.FullName).Replace('\\','/')
-              "$hash  $rel"
-            } | Set-Content -LiteralPath $hashFile -Encoding ascii
+          $files = @(Get-ChildItem -Path $out -File -Recurse | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | Sort-Object FullName)
+          if ($files.Count -eq 0) { throw "no Windows build artifacts were produced" }
+          $files | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $rel = [IO.Path]::GetRelativePath($out, $_.FullName).Replace('\\','/')
+            "$hash  $rel"
+          } | Set-Content -LiteralPath $hashFile -Encoding ascii
           Get-Content $hashFile
 
       - name: Upload Windows build evidence

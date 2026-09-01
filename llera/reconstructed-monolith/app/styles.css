@@ -147,6 +147,7 @@ kbd { font: 11px var(--font-ui); color: var(--text-tertiary); background: transp
 .account-copy small { color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .workspace { min-width: 0; min-height: 0; position: relative; display: grid; grid-template-rows: 54px minmax(0,1fr) auto; background: var(--bg-canvas); }
+.app-shell.drawer-open .workspace { margin-right: var(--drawer-w); transition: margin-right var(--motion-base) ease; }
 .conversation-bar { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; position: relative; z-index: 5; }
 .conversation-context { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .conversation-context h1 { max-width: min(48vw, 540px); margin: 0; font-size: 13px; line-height: 1; font-weight: 610; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -293,9 +294,13 @@ kbd { font: 11px var(--font-ui); color: var(--text-tertiary); background: transp
 .confirm-card { width: min(390px, calc(100vw - 32px)); border-radius: 16px; padding: 22px; background: var(--bg-elevated); box-shadow: var(--shadow-float); border: 1px solid var(--hairline-strong); }
 .confirm-card p { color: var(--text-secondary); line-height: 1.55; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 23px; }
-.secondary-button, .danger-button { min-height: 34px; border: 0; border-radius: 9px; padding: 0 13px; cursor: pointer; }
+.secondary-button, .danger-button, .primary-dialog-button { min-height: 34px; border: 0; border-radius: 9px; padding: 0 13px; cursor: pointer; }
 .secondary-button { background: var(--bg-raised); }
 .danger-button { background: var(--danger); color: #fff; }
+.primary-dialog-button { background: var(--accent); color: var(--text-on-accent); }
+.dialog-field { display: grid; gap: 7px; margin-top: 20px; color: var(--text-secondary); font-size: 11px; }
+.dialog-field input { width: 100%; height: 38px; border: 1px solid var(--hairline-strong); border-radius: 9px; background: var(--bg-soft); color: var(--text-primary); padding: 0 10px; outline: none; user-select: text; }
+.dialog-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .toast-region { position: fixed; z-index: 100; right: 18px; bottom: 18px; display: grid; gap: 8px; }
 .toast { min-width: 170px; max-width: 340px; padding: 10px 12px; border-radius: 10px; background: var(--bg-raised); color: var(--text-primary); box-shadow: var(--shadow-float); font-size: 12px; animation: toast-in var(--motion-fast) ease; }
 
@@ -306,6 +311,9 @@ kbd { font: 11px var(--font-ui); color: var(--text-tertiary); background: transp
   :root { --sidebar-w: 238px; --drawer-w: 360px; }
   .conversation-bar { padding-inline: 15px; }
   .composer-dock { padding-inline: 18px; }
+}
+@media (max-width: 1180px) {
+  .app-shell.drawer-open .workspace { margin-right: 0; }
 }
 @media (max-width: 780px) {
   .app-shell { grid-template-columns: 0 minmax(0,1fr); }

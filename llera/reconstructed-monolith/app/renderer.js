@@ -17,6 +17,7 @@ let paletteItems = [];
 let paletteIndex = 0;
 let focusBeforeModal = null;
 let confirmAction = null;
+let renameConversationTarget = null;
 let dragDepth = 0;
 
 function announce(message) { $('screen-reader-status').textContent = message; }
@@ -232,16 +233,14 @@ function openConversationMenu(anchor, conversation) {
   menu.classList.add('open'); menu.setAttribute('aria-hidden', 'false'); positionPopover(menu, anchor, 'right');
 }
 
-function openRename(conversation) {
-  const next = window.prompt('Rename conversation', conversation.title);
-  if (next?.trim()) window.llera.renameConversation({ id: conversation.id, title: next }).then(snapshot => { state = snapshot; renderAll(); });
-}
+function openRename(conversation) { focusBeforeModal = document.activeElement; renameConversationTarget = conversation; $('rename-input').value = conversation.title; $('rename-dialog').classList.add('open'); $('rename-dialog').setAttribute('aria-hidden', 'false'); setTimeout(() => { $('rename-input').focus(); $('rename-input').select(); }, 0); }
+function closeRename() { $('rename-dialog').classList.remove('open'); $('rename-dialog').setAttribute('aria-hidden', 'true'); renameConversationTarget = null; focusBeforeModal?.focus?.(); }
 
 function openConfirm(title, copy, action) { focusBeforeModal = document.activeElement; confirmAction = action; $('confirm-title').textContent = title; $('confirm-copy').textContent = copy; $('confirm-dialog').classList.add('open'); $('confirm-dialog').setAttribute('aria-hidden', 'false'); $('confirm-cancel').focus(); }
 function closeConfirm() { $('confirm-dialog').classList.remove('open'); $('confirm-dialog').setAttribute('aria-hidden', 'true'); confirmAction = null; focusBeforeModal?.focus?.(); }
 
-function openDrawer(kind, payload = null) { drawerKind = kind; $('context-drawer').classList.add('open'); $('context-drawer').setAttribute('aria-hidden', 'false'); $('drawer-scrim').classList.add('visible'); renderDrawer(kind, payload); setTimeout(() => $('drawer-close').focus(), 0); }
-function closeDrawer() { drawerKind = null; $('context-drawer').classList.remove('open'); $('context-drawer').setAttribute('aria-hidden', 'true'); $('drawer-scrim').classList.remove('visible'); }
+function openDrawer(kind, payload = null) { drawerKind = kind; $('app').classList.add('drawer-open'); $('context-drawer').classList.add('open'); $('context-drawer').setAttribute('aria-hidden', 'false'); if (innerWidth <= 1180) $('drawer-scrim').classList.add('visible'); renderDrawer(kind, payload); setTimeout(() => $('drawer-close').focus(), 0); }
+function closeDrawer() { drawerKind = null; $('app').classList.remove('drawer-open'); $('context-drawer').classList.remove('open'); $('context-drawer').setAttribute('aria-hidden', 'true'); $('drawer-scrim').classList.remove('visible'); }
 
 function renderDrawer(kind, payload = null) {
   const root = $('drawer-body'); root.replaceChildren(); $('drawer-eyebrow').textContent = kind === 'settings' ? 'Preferences' : kind === 'mission' ? 'Current task' : kind === 'models' ? 'Runtime' : 'Workspace';
@@ -329,12 +328,15 @@ function bindEvents() {
   $('palette-input').addEventListener('input', event => renderPalette(event.target.value)); $('palette-input').addEventListener('keydown', event => { if (event.key === 'ArrowDown') { event.preventDefault(); paletteIndex = (paletteIndex + 1) % Math.max(1, paletteItems.length); renderPalette(event.currentTarget.value); } else if (event.key === 'ArrowUp') { event.preventDefault(); paletteIndex = (paletteIndex - 1 + Math.max(1, paletteItems.length)) % Math.max(1, paletteItems.length); renderPalette(event.currentTarget.value); } else if (event.key === 'Enter') { event.preventDefault(); activatePalette(); } });
   $('palette').addEventListener('mousedown', event => { if (event.target === $('palette')) closePalette(); });
   $('confirm-cancel').onclick = closeConfirm; $('confirm-accept').onclick = async () => { const action = confirmAction; closeConfirm(); await action?.(); };
+  $('rename-cancel').onclick = closeRename; $('rename-accept').onclick = async () => { const title = $('rename-input').value.trim(); const target = renameConversationTarget; if (!title || !target) return; closeRename(); state = await window.llera.renameConversation({ id: target.id, title }); renderAll(); toast('Conversation renamed'); };
+  $('rename-input').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); $('rename-accept').click(); } });
   document.querySelectorAll('[data-window]').forEach(button => button.onclick = () => window.llera.windowAction(button.dataset.window));
   document.addEventListener('pointerdown', event => { if (!event.target.closest('.popover') && !event.target.closest('#model-picker-open') && !event.target.closest('#mode-switch') && !event.target.closest('.conversation-more')) closePopovers(); });
   document.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); openPalette(); }
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n' && !event.shiftKey) { event.preventDefault(); newChat(); }
-    else if (event.key === 'Escape') { if ($('palette').classList.contains('open')) closePalette(); else if ($('confirm-dialog').classList.contains('open')) closeConfirm(); else if (drawerKind) closeDrawer(); else closePopovers(); }
+    else if (event.key === 'Escape') { if ($('palette').classList.contains('open')) closePalette(); else if ($('confirm-dialog').classList.contains('open')) closeConfirm(); else if ($('rename-dialog').classList.contains('open')) closeRename(); else if (drawerKind) closeDrawer(); else closePopovers(); }
+    else if (event.key === 'Tab') trapModalFocus(event);
   });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (state.settings.theme === 'system') applySettings(); });
   window.llera.onEvent(async event => {
@@ -346,6 +348,12 @@ function bindEvents() {
     }
     if (['runtime.starting', 'runtime.ready', 'runtime.failed', 'message.started', 'message.completed', 'message.failed', 'message.blocked', 'mission.created'].includes(event.type)) { state = await window.llera.snapshot(); renderAll(); }
   });
+}
+
+function trapModalFocus(event) {
+  const layer = [...document.querySelectorAll('.modal-layer.open')].at(-1); if (!layer) return;
+  const focusable = [...layer.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]; if (!focusable.length) return;
+  const first = focusable[0], last = focusable.at(-1); if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 }
 
 async function boot() {

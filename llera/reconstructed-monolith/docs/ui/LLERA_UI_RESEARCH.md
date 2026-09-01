@@ -22,4 +22,4 @@ Sources reviewed on 2026-09-01:
 
 ## Non-goals for this candidate
 
-This UI does not invent inference, verification, or physical validation results. A missing model or unavailable generation adapter creates a visible blocked event and preserves the user's message instead of fabricating an assistant response.
+This UI does not invent inference, verification, or physical validation results. A missing model, startup failure, or rejected local inference request creates a visible blocked event and preserves the user's message instead of fabricating an assistant response. When configured, requests use the loopback-only llama.cpp chat-completion transport.

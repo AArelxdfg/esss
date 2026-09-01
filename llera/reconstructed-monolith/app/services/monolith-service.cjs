@@ -40,7 +40,20 @@ class MonolithService {
   async send({ content, attachmentIds = [], model = null }) { const text = String(content || '').trim(); if (!text && !attachmentIds.length) throw new Error('message is empty'); const attached = attachmentIds.map(id => this.state.attachments.find(x => x.id === id)).filter(Boolean); if (attached.length !== attachmentIds.length) throw new Error('attachment not found'); const conversation = this._ensureConversation(text.slice(0, 56) || 'Attachment'); const user = { id: messageId(), role: 'user', content: text, attachments: attached, createdAt: this.now() }; conversation.messages.push(user); conversation.updatedAt = user.createdAt; if (conversation.title === 'New conversation' && text) conversation.title = text.slice(0, 56);
     if (!Object.keys(this.catalog).length) { const blocked = { id: messageId(), role: 'system', status: 'blocked', content: 'Inference is blocked because no local model is configured. This message was saved, but no response was generated.', createdAt: this.now() }; conversation.messages.push(blocked); this._activity('blocked', 'Inference blocked: no local model configured'); this._save(); return { blocked: true, code: 'MODEL_NOT_CONFIGURED', snapshot: this.snapshot() }; }
     const selected = model || Object.keys(this.catalog)[0]; try { if (this.runtime.snapshot().state !== 'ready' || this.runtime.snapshot().model !== selected) await this.runtime.start(selected); } catch (error) { const blocked = { id: messageId(), role: 'system', status: 'blocked', content: `Inference could not start: ${String(error.message || error)}`, createdAt: this.now() }; conversation.messages.push(blocked); this._activity('blocked', 'Runtime start failed', { code: error.code || null }); this._save(); return { blocked: true, code: error.code || 'RUNTIME_START_FAILED', snapshot: this.snapshot() }; }
-    const blocked = { id: messageId(), role: 'system', status: 'blocked', content: 'The configured runtime is healthy, but a generation adapter is not present in this reconstructed candidate. No response was fabricated.', createdAt: this.now() }; conversation.messages.push(blocked); this._activity('blocked', 'Generation adapter unavailable'); this._save(); return { blocked: true, code: 'GENERATION_ADAPTER_UNAVAILABLE', snapshot: this.snapshot() };
+    try {
+      const completion = await this.backend.chatCompletion({
+        messages: conversation.messages
+          .filter(message => ['system', 'user', 'assistant'].includes(message.role))
+          .map(message => ({ role: message.role, content: message.content })),
+      });
+      const assistant = { id: messageId(), role: 'assistant', content: completion.content, model: completion.model || selected, usage: completion.usage, finishReason: completion.finishReason, createdAt: this.now() };
+      conversation.messages.push(assistant); this._activity('inference', 'Local model completed a response', { model: assistant.model, finishReason: assistant.finishReason }); this._save();
+      return { blocked: false, snapshot: this.snapshot() };
+    } catch (error) {
+      const blocked = { id: messageId(), role: 'system', status: 'blocked', content: `Inference failed safely: ${String(error.message || error)}`, createdAt: this.now() };
+      conversation.messages.push(blocked); this._activity('blocked', 'Inference request failed', { code: error.code || null }); this._save();
+      return { blocked: true, code: error.code || 'INFERENCE_FAILED', snapshot: this.snapshot() };
+    }
   }
   async createMission({ title, goal }) { const mission = await this.missions.createMission({ title: String(title || goal || '').slice(0, 120), goal: String(goal || '').slice(0, 2000), steps: ['Define evidence boundary'] }); this._activity('mission', `Created mission: ${mission.title}`, { missionId: mission.id }); this._save(); return this.snapshot(); }
   async recordEvidence({ missionId, stepId, summary }) { const ledger = new EvidenceLedger({ missionId, storagePath: path.join(this.userData, 'evidence', `${missionId}.json`) }); const entry = ledger.add({ stepId, tool: 'desktop-ui', kind: 'observation', target: 'user-action', bytes: summary, summary }); this._activity('evidence', `Recorded evidence for ${missionId}`, { evidenceId: entry.id }); this._save(); return entry; }

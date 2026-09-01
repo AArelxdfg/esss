@@ -284,8 +284,24 @@ class RuntimeLifecycle {
 
     const previousModel = this.state === 'ready' && this.model !== model ? this.model : null;
     if (previousModel) {
-      await this.drainActiveInference(`model-switch:${previousModel}->${model}`);
-      await this._stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true }, owner);
+      try {
+        await this.drainActiveInference(`model-switch:${previousModel}->${model}`);
+        await this._stop(`model-switch:${previousModel}->${model}`, { preserveDesiredModel: true }, owner);
+      } catch (err) {
+        const switchFailure = String(err?.message || err);
+        this.desiredModel = previousModel;
+        this.lastSwitchFailure = {
+          from: previousModel,
+          to: model,
+          error: switchFailure,
+          at: this.now(),
+          restored: this.state === 'ready' && this.model === previousModel,
+          restoredGeneration: this.state === 'ready' && this.model === previousModel ? this.generation : null,
+          phase: this.state === 'ready' ? 'drain' : 'stop'
+        };
+        this.lastError = switchFailure;
+        throw err;
+      }
     }
     if (this.state === 'starting') throw new Error('runtime start already in progress');
     if (this.state === 'stopping') throw new Error('runtime stop in progress');

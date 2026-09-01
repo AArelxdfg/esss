@@ -43,6 +43,8 @@
         <button id="new-chat" class="primary-action"><svg><use href="#i-plus"/></svg><span>New chat</span><kbd>Ctrl N</kbd></button>
         <button id="search-open" class="sidebar-action"><svg><use href="#i-search"/></svg><span>Search</span><kbd>Ctrl K</kbd></button>
       </div>
+      <nav class="product-nav" aria-label="Product sections"><button class="active" data-section="workspace">Workspace</button><button data-section="missions">Missions</button><button data-section="evidence">Evidence</button><button data-section="memory">Outcome Memory</button><button data-section="skills">Skills &amp; Evolution</button><button data-section="health">System Health</button></nav>
+      <div class="sidebar-section-label">CONVERSATIONS</div>
       <nav id="conversation-list" class="conversation-list" aria-label="Conversation history"></nav>
       <div id="active-work" class="active-work"></div>
       <footer class="sidebar-footer">
@@ -51,9 +53,17 @@
     </aside>
 
     <main class="workspace">
+      <header class="workspace-header">
+        <div><h1>WORKSPACE</h1><p>Your missions, evidence, tools and memory — unified.</p></div>
+        <div class="workspace-header-actions"><button id="command-open" class="command-button"><svg><use href="#i-spark"/></svg>Command Palette</button><button id="settings-header-open" class="icon-button" aria-label="Settings"><svg><use href="#i-settings"/></svg></button></div>
+      </header>
+      <section id="summary-strip" class="summary-strip" aria-label="Workspace summary"></section>
+      <div class="workspace-grid">
+      <section class="missions-panel panel" aria-labelledby="missions-heading"><header class="panel-header"><h2 id="missions-heading">ACTIVE MISSIONS</h2><button id="new-mission" class="panel-action"><svg><use href="#i-plus"/></svg>New Mission</button></header><div id="mission-list" class="mission-list"></div><button id="all-missions" class="text-action">View all missions <span>→</span></button></section>
+      <section class="conversation-panel panel" aria-labelledby="conversation-heading">
       <div class="conversation-bar">
         <div class="conversation-context">
-          <h1 id="conversation-title">New conversation</h1>
+          <h2 id="conversation-heading">CONVERSATION</h2><span id="conversation-title" class="conversation-title">New conversation</span>
           <button id="mode-switch" class="mode-switch" aria-haspopup="menu"><span id="mode-label">Chat</span><svg><use href="#i-chevron"/></svg></button>
         </div>
         <div class="conversation-actions">
@@ -84,6 +94,9 @@
           </div>
         </div>
         <p class="composer-note">Local processing · LLera can make mistakes. Review important changes.</p>
+      </div>
+      </section>
+      <aside class="workspace-context" aria-label="Mission context"><section class="context-card"><header><h2>MISSION CONTEXT</h2></header><div id="mission-context"></div></section><section class="context-card"><header><h2>KEY EVIDENCE</h2></header><div id="key-evidence"></div><button id="open-evidence" class="text-action">View ledger <span>→</span></button></section><section class="context-card"><header><h2>SYSTEM HEALTH</h2></header><div id="system-health"></div></section></aside>
       </div>
     </main>
 

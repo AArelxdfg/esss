@@ -19,6 +19,7 @@ let focusBeforeModal = null;
 let confirmAction = null;
 let renameConversationTarget = null;
 let dragDepth = 0;
+let selectedMissionId = null;
 
 function announce(message) { $('screen-reader-status').textContent = message; }
 function toast(message) { const item = node('div', 'toast', message); $('toast-region').append(item); setTimeout(() => item.remove(), 2600); }
@@ -173,7 +174,24 @@ function renderHeader() {
   $('mode-label').textContent = state.settings.mode === 'work' ? 'Work' : 'Chat';
 }
 
-function renderAll() { applySettings(); renderSidebar(); renderHeader(); renderMessages(); renderComposer(); if (drawerKind) renderDrawer(drawerKind); }
+function missionProgress(mission) { const steps = mission?.steps || []; return steps.length ? Math.round((steps.filter(step => step.status === 'completed').length / steps.length) * 100) : 0; }
+function renderWorkspace() {
+  const missions = state.missions || []; const evidence = (state.activity || []).filter(item => /evidence/i.test(item.type)).slice(0, 4);
+  const active = missions.filter(item => ['running', 'pending', 'interrupted'].includes(item.status));
+  const pending = missions.filter(item => ['pending', 'interrupted'].includes(item.status));
+  const summary = $('summary-strip'); summary.replaceChildren();
+  const values = [['ACTIVE MISSIONS', active.length || '—', active.length ? `${active.length} in progress` : 'Unavailable'], ['PENDING VERIFICATIONS', pending.length || '—', pending.length ? 'Requires review' : 'Unavailable'], ['EVIDENCE ITEMS', evidence.length || '—', evidence.length ? 'In current activity' : 'Unavailable'], ['OUTCOME MEMORY', '—', 'Unavailable'], ['SYSTEM HEALTH', state.runtime?.state === 'ready' ? 'Ready' : '—', state.runtime?.state === 'ready' ? 'Local runtime ready' : 'Unavailable']];
+  for (const [label, value, detail] of values) { const item = node('div', 'summary-item'); item.append(node('small', '', label), node('strong', '', value), node('span', '', detail)); summary.append(item); }
+  const list = $('mission-list'); list.replaceChildren();
+  if (!missions.length) list.append(node('p', 'context-empty', 'No active missions. Start Work Mode to create one.'));
+  missions.slice(0, 6).forEach((mission, index) => { const card = node('button', `mission-card${mission.id === selectedMissionId ? ' selected' : ''}`); card.type = 'button'; const head = node('div', 'mission-card-head'); head.append(node('span', 'mission-number', index + 1), node('strong', '', mission.title), node('span', 'mission-status', String(mission.status || 'pending').toUpperCase())); const progress = missionProgress(mission); const bar = node('div', 'mission-progress'); const fill = node('i'); fill.style.width = `${progress}%`; bar.append(fill); card.append(head, node('p', '', mission.goal || 'No goal recorded.'), bar); card.onclick = () => { selectedMissionId = mission.id; renderWorkspace(); openDrawer('mission', mission); }; list.append(card); });
+  const selected = missions.find(item => item.id === selectedMissionId) || active[0] || missions[0]; const context = $('mission-context'); context.replaceChildren();
+  if (selected) { const progress = missionProgress(selected); context.append(node('div', 'context-title', selected.title), node('div', 'context-meta', `${String(selected.status || 'pending').toUpperCase()} · ${progress}% complete`)); const bar = node('div', 'mission-progress'); const fill = node('i'); fill.style.width = `${progress}%`; bar.append(fill); context.append(bar); const details = node('button', 'text-action', 'View details →'); details.onclick = () => openDrawer('mission', selected); context.append(details); } else context.append(node('p', 'context-empty', 'No mission selected.'));
+  const evidenceRoot = $('key-evidence'); evidenceRoot.replaceChildren(); if (!evidence.length) evidenceRoot.append(node('p', 'context-empty', 'No evidence is available for this workspace.')); else evidence.forEach(item => { const row = node('div', 'evidence-row'); row.append(node('span', '', item.summary || item.type), node('small', '', item.at ? formatTime(item.at) : '')); evidenceRoot.append(row); });
+  const health = $('system-health'); health.replaceChildren(); const healthItems = [['Evidence Chain', evidence.length ? 'ACTIVE' : 'Unavailable'], ['Verifier (Strict)', 'Unavailable'], ['Verifier (Adversarial)', 'Unavailable'], ['Failure Doctrine', 'Unavailable'], ['Outcome Memory', 'Unavailable']]; healthItems.forEach(([label, status]) => { const row = node('div', 'health-row'); row.append(node('span', '', label), node('span', status === 'Unavailable' ? '' : 'health-state', status)); health.append(row); });
+}
+
+function renderAll() { applySettings(); renderSidebar(); renderHeader(); renderWorkspace(); renderMessages(); renderComposer(); if (drawerKind) renderDrawer(drawerKind); }
 
 function fillComposer(value) { $('composer').value = value; resizeComposer(); $('composer').focus(); renderComposer(); }
 function resizeComposer() { const input = $('composer'); input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 190)}px`; }
@@ -315,6 +333,12 @@ async function toggleSidebar() { if (innerWidth <= 780) { $('app').classList.tog
 function closeMobileSidebar() { $('app').classList.remove('sidebar-mobile-open'); if (!drawerKind) $('drawer-scrim').classList.remove('visible'); }
 
 function bindEvents() {
+  $('command-open').onclick = openPalette;
+  $('settings-header-open').onclick = () => openDrawer('settings');
+  $('open-evidence').onclick = () => openDrawer('evidence');
+  $('all-missions').onclick = () => openDrawer('mission');
+  $('new-mission').onclick = async () => { await setMode('work'); fillComposer(''); };
+  document.querySelectorAll('.product-nav button').forEach(button => button.onclick = () => { if (button.dataset.section === 'evidence') openDrawer('evidence'); else if (button.dataset.section === 'health') openDrawer('activity'); else if (button.dataset.section === 'missions') openDrawer('mission'); else if (button.dataset.section !== 'workspace') toast(`${button.textContent} is available when local data exists.`); });
   $('new-chat').onclick = newChat; $('search-open').onclick = openPalette; $('settings-open').onclick = () => openDrawer('settings'); $('context-open').onclick = () => openDrawer('activity'); $('drawer-close').onclick = closeDrawer; $('drawer-scrim').onclick = () => { closeDrawer(); closeMobileSidebar(); }; $('sidebar-toggle').onclick = toggleSidebar;
   $('mode-switch').onclick = openModeMenu; document.querySelectorAll('[data-mode]').forEach(button => button.onclick = () => setMode(button.dataset.mode));
   $('model-picker-open').onclick = openModelPicker; $('send-button').onclick = sendMessage; $('stop-button').onclick = stopGeneration;

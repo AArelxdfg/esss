@@ -30,6 +30,7 @@ The replacement was clearly distinct from the rejected shell and established a c
 - Real Ctrl+V image preview — 1440×900
 - Real Work mission and mission drawer — 1440×900
 - Activity drawer with real application events — 1440×900
+- Installed NSIS build — dark task state with real attachment — 1280×720
 
 The screenshots are stored in `llera/final-evidence/ui-screenshots/`. Pass-1 files are intentionally retained to prove the critique/iteration cycle.
 
@@ -39,4 +40,4 @@ The screenshots are stored in `llera/final-evidence/ui-screenshots/`. Pass-1 fil
 - The pasted image was physically persisted and previewed, but Vision/OCR inference could not run without the physical backend.
 - Work created a real persisted MissionEngine mission; execution, re-observation, evidence, and finalization remained blocked by the absent configured runtime/tool application assembly.
 - Only 100% Windows DPI was physically inspected. Other scale factors require a real scale change/session and remain human validation items.
-
+- The NSIS installer and uninstaller were physically exercised in an isolated directory. The default silent path did not expose a data-retention selection, so selection-specific retention behavior remains unverified.

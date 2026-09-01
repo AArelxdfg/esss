@@ -7,6 +7,7 @@ const { MissionEngine } = require('../../src/mission-engine');
 const { EvidenceLedger } = require('../../src/evidence-ledger');
 const { RuntimeLifecycle } = require('../../src/runtime-lifecycle');
 const { LlamaCppProcessBackend } = require('../../src/llama-cpp-process-backend');
+const { buildVerifiedAttachmentContext } = require('../../src/attachment-context');
 
 const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'text/plain', 'application/pdf']);
@@ -96,6 +97,8 @@ class MonolithService {
     try {
       inferenceTask = this.runtime.registerInference(inferenceId, { priority: 'normal', abort: async reason => this.activeAbort.abort(reason) });
       const inputMessages = conversation.messages.filter(message => ['system', 'user', 'assistant'].includes(message.role) && message.id !== assistant.id).map(message => ({ role: message.role, content: message.content }));
+      const attachmentContext = attached.map(attachment => buildVerifiedAttachmentContext({ attachment, bytes: fs.readFileSync(path.join(this.userData, 'attachments', attachment.id)) }));
+      if (attachmentContext.length) inputMessages.push({ role: 'user', content: attachmentContext.map(item => item.text).join('\n\n') });
       const completion = typeof this.backend.chatCompletionStream === 'function'
         ? await this.backend.chatCompletionStream({ messages: inputMessages, signal: this.activeAbort.signal, onDelta: delta => { assistant.content += delta; this._emit('message.delta', { conversationId: conversation.id, messageId: assistant.id, delta }); } })
         : await this.backend.chatCompletion({ messages: inputMessages, signal: this.activeAbort.signal });

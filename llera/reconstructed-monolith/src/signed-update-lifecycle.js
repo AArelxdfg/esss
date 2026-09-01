@@ -36,6 +36,14 @@ function parseContentRange(value) {
   if (!match) return null;
   return { start: Number(match[1]), end: Number(match[2]), total: match[3] === '*' ? null : Number(match[3]) };
 }
+function sameBoundPath(actual, expected) {
+  if (typeof actual !== 'string' || !actual) return false;
+  const resolvedActual = path.resolve(actual);
+  const resolvedExpected = path.resolve(expected);
+  return process.platform === 'win32'
+    ? resolvedActual.toLowerCase() === resolvedExpected.toLowerCase()
+    : resolvedActual === resolvedExpected;
+}
 
 class SignedUpdateLifecycle {
   constructor({ rootDir, publicKey, fetchImpl = globalThis.fetch, onProgress = () => {} } = {}) {
@@ -181,12 +189,18 @@ class SignedUpdateLifecycle {
     const journal=await this.readJournal();
     if(!journal||journal.state!=='activated'||!journal.backupFile) throw new Error('rollback unavailable');
     if(!/^[a-f0-9]{64}$/i.test(String(journal.backupSha256 || ''))) throw new Error('rollback backup digest unavailable');
-    const currentFile=journal.currentFile, backupDigest=await sha256File(journal.backupFile);
+    const expectedCurrentFile=path.join(this.paths.current,'LLera.bin');
+    const expectedBackupFile=path.join(this.paths.backup,'LLera.previous.bin');
+    if (!sameBoundPath(journal.currentFile, expectedCurrentFile) || !sameBoundPath(journal.backupFile, expectedBackupFile)) {
+      throw new Error('rollback journal path binding mismatch');
+    }
+    const currentFile=expectedCurrentFile, backupFile=expectedBackupFile;
+    const backupDigest=await sha256File(backupFile);
     if (backupDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
       throw new Error('rollback backup integrity mismatch');
     }
     const tmp=`${currentFile}.rollback`;
-    await fsp.copyFile(journal.backupFile,tmp);
+    await fsp.copyFile(backupFile,tmp);
     const tmpDigest=await sha256File(tmp);
     if (tmpDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
       await fsp.rm(tmp,{force:true});
@@ -205,4 +219,4 @@ class SignedUpdateLifecycle {
     await fsp.writeFile(tmp,JSON.stringify({...value,at:new Date().toISOString()},null,2)); await fsp.rename(tmp,this.paths.journal);
   }
 }
-module.exports={SignedUpdateLifecycle,stableStringify,sha256File,safeVersionSegment,parseContentRange};
+module.exports={SignedUpdateLifecycle,stableStringify,sha256File,safeVersionSegment,parseContentRange,sameBoundPath};

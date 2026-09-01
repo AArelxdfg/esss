@@ -71,6 +71,7 @@ class LlamaCppProcessBackend {
     fsImpl = fs,
     platform = process.platform,
     healthTimeoutMs = 15000,
+    healthPollIntervalMs = 250,
     inferenceTimeoutMs = 120000,
     extraArgs = [],
   } = {}) {
@@ -78,6 +79,7 @@ class LlamaCppProcessBackend {
     if (typeof spawn !== 'function') throw new Error('spawn must be a function');
     if (typeof fetch !== 'function') throw new Error('fetch must be a function');
     if (!Number.isFinite(healthTimeoutMs) || healthTimeoutMs <= 0) throw new Error('healthTimeoutMs must be positive');
+    if (!Number.isFinite(healthPollIntervalMs) || healthPollIntervalMs <= 0) throw new Error('healthPollIntervalMs must be positive');
     if (!Number.isFinite(inferenceTimeoutMs) || inferenceTimeoutMs <= 0) throw new Error('inferenceTimeoutMs must be positive');
 
     this.runtimeRoot = path.resolve(runtimeRoot);
@@ -90,6 +92,7 @@ class LlamaCppProcessBackend {
     this.fetch = fetch;
     this.fs = fsImpl;
     this.healthTimeoutMs = healthTimeoutMs;
+    this.healthPollIntervalMs = healthPollIntervalMs;
     this.inferenceTimeoutMs = inferenceTimeoutMs;
     this.extraArgs = Array.isArray(extraArgs) ? [...extraArgs] : [];
     this.children = new Map();
@@ -151,15 +154,26 @@ class LlamaCppProcessBackend {
   async health() {
     assertLoopbackEndpoint(this.endpoint);
     const controller = new AbortController();
+    const deadline = Date.now() + this.healthTimeoutMs;
     const timer = setTimeout(() => controller.abort(), this.healthTimeoutMs);
     try {
-      const response = await this.fetch(`${this.endpoint}/health`, { signal: controller.signal });
-      if (!response || !response.ok) return false;
-      let body = null;
-      try { body = await response.json(); } catch (_) { return true; }
-      const status = String(body?.status || body?.state || '').toLowerCase();
-      return !status || ['ok', 'ready', 'healthy'].includes(status);
-    } catch (_) {
+      while (!controller.signal.aborted) {
+        try {
+          const response = await this.fetch(`${this.endpoint}/health`, { signal: controller.signal });
+          if (response?.ok) {
+            let body = null;
+            try { body = await response.json(); } catch (_) { return true; }
+            const status = String(body?.status || body?.state || '').toLowerCase();
+            if (!status || ['ok', 'ready', 'healthy'].includes(status)) return true;
+          }
+        } catch (_) {
+          if (controller.signal.aborted) break;
+        }
+
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        await new Promise(resolve => setTimeout(resolve, Math.min(this.healthPollIntervalMs, remaining)));
+      }
       return false;
     } finally {
       clearTimeout(timer);

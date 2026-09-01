@@ -58,6 +58,7 @@ jobs:
             test/vision-input-provenance.test.js
             test/hostguard-hysteresis.test.js
             test/hostguard-invalid-telemetry-failclosed.test.js
+            test/signed-update-rollback-binding.test.js
           )
           for test_file in "${tests[@]}"; do
             echo "===== RUN $test_file ====="

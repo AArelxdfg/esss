@@ -107,3 +107,75 @@ test('orphan cleanup abort failures also release stale coordinator/governor stat
   assert.equal(completed.filter(id => id === 'broken-consumer').length, 1);
   assert.equal(coordinator.snapshot().completed.filter(item => item.id === 'broken-consumer').length, 1);
 });
+
+test('same-millisecond cleanup is reconciled again after a new runtime generation', () => {
+  let generation = 1;
+  let cleanup = null;
+  const governorActive = new Set();
+  const governorCompletions = [];
+
+  const runtime = {
+    registerInference(id) {
+      return { id, generation };
+    },
+    completeInference() {
+      return true;
+    },
+    snapshot() {
+      return { generation, lastOrphanedInferenceCleanup: cleanup };
+    }
+  };
+
+  const governor = {
+    admit({ id, className }) {
+      if (governorActive.has(id)) return { allow: false, reason: 'duplicate' };
+      governorActive.add(id);
+      return {
+        allow: true,
+        id,
+        className,
+        maxTokens: 64,
+        reasoning: false,
+        pressure: 'NORMAL',
+        startedAt: generation
+      };
+    },
+    complete(id) {
+      governorCompletions.push(id);
+      return governorActive.delete(id);
+    }
+  };
+
+  const coordinator = new RuntimeInferenceCoordinator({ runtime, governor });
+  assert.equal(coordinator.begin({ id: 'chat', abort: async () => {} }).allow, true);
+
+  cleanup = {
+    at: 1000,
+    reason: 'runtime-external-death:ensure-ready-probe',
+    aborted: ['chat'],
+    failures: []
+  };
+  coordinator._reconcileRuntimeCleanup();
+  assert.equal(governorActive.has('chat'), false);
+
+  // Runtime recovered so the same logical inference ID can be admitted again.
+  generation = 2;
+  coordinator._reconcileRuntimeCleanup(); // consume the retained generation-2 view before reuse
+  assert.equal(coordinator.begin({ id: 'chat', abort: async () => {} }).allow, true);
+  assert.equal(governorActive.has('chat'), true);
+
+  // A second death can land in the same millisecond with the same reason/ID. The
+  // generation is the differentiator that prevents dedupe from hiding the cleanup.
+  cleanup = {
+    at: 1000,
+    reason: 'runtime-external-death:ensure-ready-probe',
+    aborted: ['chat'],
+    failures: []
+  };
+  generation = 3;
+  coordinator._reconcileRuntimeCleanup();
+
+  assert.equal(governorActive.has('chat'), false);
+  assert.equal(coordinator.snapshot().active.length, 0);
+  assert.equal(governorCompletions.filter(id => id === 'chat').length, 2);
+});

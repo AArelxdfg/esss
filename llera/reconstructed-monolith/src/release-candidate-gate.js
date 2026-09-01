@@ -62,8 +62,12 @@ class ReleaseCandidateGate {
     );
 
     const signingReady = Boolean(input.signing && input.signing.materialPresent === true && input.signing.manifestSigned === true);
-    const physicalWindowsValidated = Boolean(input.validation && input.validation.physicalWindows === true);
-    const physicalGpuValidated = Boolean(input.validation && input.validation.physicalGpu === true);
+    const validation = input.validation || {};
+    const physicalWindowsValidated = validation.physicalWindows === true;
+    const windowsOcrValidated = validation.windowsOcr === true;
+    const installerExecutionValidated = validation.installerExecuted === true;
+    const watchdogSoakValidated = validation.watchdogSoak === true;
+    const physicalGpuValidated = validation.physicalGpu === true;
 
     const blockers = [];
     if (!reconstructedParity) blockers.push('behavior-parity-incomplete');
@@ -71,6 +75,9 @@ class ReleaseCandidateGate {
     if (!testEvidenceValid) blockers.push('required-tests-or-crossbuild-missing');
     if (!signingReady) blockers.push('signing-material-or-signed-manifest-missing');
     if (!physicalWindowsValidated) blockers.push('physical-windows-validation-missing');
+    if (!windowsOcrValidated) blockers.push('windows-ocr-validation-missing');
+    if (!installerExecutionValidated) blockers.push('installer-execution-validation-missing');
+    if (!watchdogSoakValidated) blockers.push('watchdog-soak-validation-missing');
 
     const publishableCandidate = blockers.length === 0;
     const exactV54ClaimAllowed = exactV540 && artifact.sha256 === CONTRACT.v540InstallerSha256;
@@ -89,6 +96,9 @@ class ReleaseCandidateGate {
       testEvidenceValid,
       signingReady,
       physicalWindowsValidated,
+      windowsOcrValidated,
+      installerExecutionValidated,
+      watchdogSoakValidated,
       physicalGpuValidated,
       blockers
     };

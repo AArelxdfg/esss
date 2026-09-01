@@ -1,46 +1,4 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
-  <title>LLera MONOLITH OMEGA</title>
-  <style>
-    :root { color-scheme: dark; font-family: Inter, Segoe UI, system-ui, sans-serif; background:#090b10; color:#f4f6fb; }
-    * { box-sizing:border-box; }
-    body { margin:0; min-height:100vh; background:linear-gradient(180deg,#0b0e14,#07090d); }
-    .shell { display:grid; grid-template-columns:220px minmax(0,1fr); min-height:100vh; }
-    nav { border-right:1px solid #232938; padding:24px 14px; background:#0c0f15; }
-    .brand { font-weight:700; letter-spacing:.08em; margin:0 10px 24px; }
-    .sub { font-size:12px; color:#8f98ab; font-weight:500; letter-spacing:0; display:block; margin-top:6px; }
-    button { font:inherit; }
-    .nav { width:100%; text-align:left; padding:10px 12px; margin:4px 0; border:1px solid transparent; border-radius:10px; color:#aeb7c8; background:transparent; cursor:pointer; }
-    .nav[aria-selected="true"] { color:#fff; background:#171c27; border-color:#2a3243; }
-    main { min-width:0; display:flex; flex-direction:column; }
-    header { min-height:64px; border-bottom:1px solid #202634; display:flex; align-items:center; justify-content:space-between; padding:0 24px; }
-    #status { color:#8f98ab; font-size:12px; }
-    #surface { flex:1; padding:28px; overflow:auto; }
-    .panel { max-width:920px; margin:auto; border:1px solid #232938; border-radius:16px; background:#0d1118; padding:22px; }
-    .muted { color:#8f98ab; }
-    .warning { margin-top:16px; padding:12px 14px; border:1px solid #4a3b24; border-radius:10px; color:#d7b67b; background:#17130d; }
-    .composer { border-top:1px solid #202634; padding:18px 24px 22px; }
-    .composer-inner { max-width:920px; margin:auto; display:flex; gap:10px; }
-    textarea { flex:1; resize:vertical; min-height:52px; max-height:180px; border:1px solid #323a4c; border-radius:14px; background:#111620; color:#fff; padding:14px; outline:none; }
-    textarea:focus { border-color:#747f9d; box-shadow:0 0 0 2px rgba(116,127,157,.35); }
-    .send { border:1px solid #343d50; border-radius:12px; background:#20283a; color:#fff; padding:0 18px; }
-    .send:disabled { opacity:.4; }
-    @media (max-width:759px) { .shell { grid-template-columns:1fr; } nav { display:none; } }
-  </style>
-</head>
-<body>
-  <div class="shell">
-    <nav aria-label="MONOLITH surfaces"><div class="brand">LLera<span class="sub">MONOLITH OMEGA reconstructed</span></div><div id="nav"></div></nav>
-    <main>
-      <header><strong id="title">Conversation</strong><span id="status">Loading contract…</span></header>
-      <section id="surface" tabindex="-1"></section>
-      <div class="composer"><div class="composer-inner"><textarea id="composer" aria-label="Message LLera" placeholder="Message LLera"></textarea><button id="send" class="send" disabled>Send</button></div></div>
-    </main>
-  </div>
-  <script src="renderer.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"><title>LLera MONOLITH OMEGA</title><style>
+:root{color-scheme:dark;--bg:#101114;--panel:#18191e;--panel2:#202126;--line:#303138;--text:#f5f2eb;--muted:#9c9ba2;--accent:#d4ff58;--danger:#ffb4ab;font:14px/1.45 Inter,Segoe UI,system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 65% -30%,#293126 0,var(--bg) 45%);color:var(--text)}button,textarea,select{font:inherit}button{color:inherit;cursor:pointer}.app{min-height:100vh;display:grid;grid-template-columns:276px minmax(0,1fr)}.rail{background:rgba(20,21,25,.92);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:18px}.brand{display:flex;align-items:center;gap:9px;padding:6px 10px;font-weight:800;letter-spacing:.06em}.orb{width:19px;height:19px;border-radius:50%;background:var(--accent);box-shadow:0 0 24px #d4ff5880}.new,.send{border:0;border-radius:11px;background:var(--accent);color:#182000;font-weight:750;padding:11px 13px}.chats{display:grid;gap:3px;overflow:auto}.chat{background:transparent;border:0;border-radius:9px;text-align:left;padding:10px;color:var(--muted)}.chat.active,.chat:hover{background:var(--panel2);color:var(--text)}.chat small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px}.rail-bottom{margin-top:auto;display:grid;gap:4px}.quiet{background:transparent;border:0;color:var(--muted);padding:9px;text-align:left}.main{min-width:0;display:grid;grid-template-rows:auto 1fr auto}.top{height:65px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px}.title{font-size:15px;font-weight:700}.top-actions{display:flex;gap:8px;align-items:center}.chip,.icon{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:7px 9px;color:var(--muted)}.content{overflow:auto;max-width:930px;width:100%;margin:auto;padding:42px 28px 22px}.welcome{max-width:650px;margin:13vh auto 0}.welcome h1{font-size:38px;letter-spacing:-.045em;margin:0 0 12px}.welcome p,.notice{color:var(--muted)}.suggestions{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}.suggestions button{border:1px solid var(--line);border-radius:99px;background:var(--panel);padding:9px 12px}.message{max-width:760px;margin:0 auto 24px}.message .role{font-size:12px;color:var(--muted);margin-bottom:6px}.bubble{white-space:pre-wrap;background:var(--panel);border:1px solid var(--line);padding:14px 16px;border-radius:4px 15px 15px 15px}.message.user .bubble{background:#25291d;border-color:#3f4927}.message.blocked .bubble{color:var(--danger);border-color:#693d38}.composer-wrap{padding:12px 28px 24px}.composer{max-width:930px;margin:auto;background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:11px}.composer:focus-within{border-color:#708640;box-shadow:0 0 0 3px #d4ff5818}.attachments{display:flex;gap:6px;flex-wrap:wrap}.attachment{font-size:12px;padding:4px 7px;background:#292a30;border-radius:6px}textarea{width:100%;resize:none;min-height:56px;max-height:180px;padding:10px 5px;background:transparent;border:0;color:var(--text);outline:0}.compose-bottom{display:flex;align-items:center;gap:8px}.file{position:relative;overflow:hidden}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}.spacer{flex:1}.send:disabled{opacity:.45;cursor:not-allowed}.drawer{position:fixed;right:0;top:0;bottom:0;width:min(380px,100vw);background:#17181d;border-left:1px solid var(--line);padding:22px;transform:translateX(100%);transition:transform .18s ease;overflow:auto;z-index:2}.drawer.open{transform:translateX(0)}.drawer h2{margin-top:0}.activity{border-bottom:1px solid var(--line);padding:10px 0}.activity small{color:var(--muted);display:block}.palette{position:fixed;inset:0;background:#0008;display:none;place-items:start center;padding-top:14vh;z-index:5}.palette.open{display:grid}.palette-box{width:min(600px,92vw);background:#202126;border:1px solid #45464e;border-radius:14px;padding:12px;box-shadow:0 22px 80px #000}.palette input{width:100%;background:#141519;border:1px solid var(--line);padding:12px;border-radius:8px;color:var(--text)}.command{width:100%;text-align:left;border:0;background:transparent;padding:11px;border-radius:8px}.command:hover{background:#31323a}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}@media(max-width:760px){.app{grid-template-columns:1fr}.rail{display:none}.content{padding:28px 16px}.composer-wrap{padding:10px 16px 18px}.top{padding:0 16px}.welcome{margin-top:7vh}}
+</style></head><body><div class="app"><aside class="rail"><div class="brand"><i class="orb"></i>LLERA</div><button id="new" class="new">+ New conversation</button><div id="chats" class="chats" aria-label="Recent conversations"></div><div class="rail-bottom"><button class="quiet" data-drawer="missions">⌘ Missions</button><button class="quiet" data-drawer="activity">◌ Activity</button><button class="quiet" data-drawer="system">⚙ System</button></div></aside><main class="main"><header class="top"><div class="title" id="title">New conversation</div><div class="top-actions"><button id="model" class="chip">Local model</button><button id="palette-open" class="icon" aria-label="Open command palette">⌘ K</button><button class="icon" data-drawer="activity" aria-label="Open activity">☰</button></div></header><section id="content" class="content" aria-live="polite"></section><div class="composer-wrap"><div id="attachments" class="attachments"></div><div class="composer"><textarea id="composer" aria-label="Message LLera" placeholder="Ask anything, plan work, or attach a file"></textarea><div class="compose-bottom"><label class="chip file">Attach<input id="file" type="file" accept="image/png,image/jpeg,image/webp,text/plain,application/pdf"></label><span id="runtime" class="notice"></span><span class="spacer"></span><button id="send" class="send">Send</button></div></div></div></main></div><aside id="drawer" class="drawer" aria-label="Details"></aside><div id="palette" class="palette" role="dialog" aria-modal="true" aria-label="Command palette"><div class="palette-box"><input id="palette-input" placeholder="Search commands"><div id="commands"></div></div></div><div id="live" class="sr" aria-live="assertive"></div><script src="renderer.js"></script></body></html>

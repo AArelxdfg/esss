@@ -28,7 +28,12 @@ class RuntimeInferenceCoordinator {
       ? cleanup.failures.map(item => item && item.id).filter(Boolean)
       : [];
     const ids = [...new Set([...aborted, ...failures])];
+    // Runtime cleanup timestamps are millisecond-granularity and may collide across
+    // two very fast llama.cpp death/recovery cycles. Include the runtime generation
+    // in the dedupe key so a later cleanup for the same inference IDs is never
+    // mistaken for the prior event and allowed to leave a stale governor slot.
     const signature = JSON.stringify({
+      generation: Number.isSafeInteger(snapshot && snapshot.generation) ? snapshot.generation : null,
       at: cleanup.at ?? null,
       reason: cleanup.reason || null,
       ids
@@ -60,7 +65,6 @@ class RuntimeInferenceCoordinator {
       const runtimeTask = this.runtime.registerInference(id, { priority, abort });
       const generation = runtimeTask && runtimeTask.generation;
       if (!Number.isSafeInteger(generation) || generation <= 0) {
-        this.governor.complete(id);
         const error = new Error('runtime inference registration returned no valid generation');
         error.code = 'RUNTIME_INFERENCE_GENERATION_REQUIRED';
         throw error;

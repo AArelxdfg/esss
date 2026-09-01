@@ -1,6 +1,6 @@
 # Reconstructed artifacts (exactHistoricalV54=false)
 
 Source commit: 4df09df384e9931a822a95b01de6973dc08992a4
-Windows x64 unpacked EXE: LLera MONOLITH OMEGA.exe | 225533440 bytes | 70962429c5c20c44a437b336ac28c95a9258bb73e1e3e88fdca43736a98ce0ab
-Windows x64 NSIS installer: LLera_MONOLITH_OMEGA_Reconstructed_0.0.0-reconstructed_x64.exe | 102250142 bytes | 7773a0d44c83c8832752cec2fef312f77f1625da22bb40d47f7f91eb9fa629e3
-Source ZIP: LLera_MONOLITH_OMEGA_Reconstructed_Source.zip | 307307 bytes | 06aeed560e691f5983bb0aadcc53eb00db5fb61187af9f0135ed914414145b22
+Windows x64 unpacked EXE: LLera MONOLITH OMEGA.exe | 225533440 bytes | 367fed353fcbd66a3ee201942c50ed8eaeb3525e3f5d9f129ca4a4696e2525b0
+Windows x64 NSIS installer: LLera_MONOLITH_OMEGA_Reconstructed_0.0.0-reconstructed_x64.exe | 102254124 bytes | ce137c1a9a878766a7184c126ffc9e52da3a840541ddddcb4c252ac95546e217
+Source ZIP: LLera_MONOLITH_OMEGA_Reconstructed_Source.zip | 314958 bytes | d1b2dc8281db033013aae1df24f9ad1ddc2e7e8ae15648f7c9d05366b59f5725

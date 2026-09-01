@@ -2,7 +2,7 @@
 
 ## VERIFIED
 
-- 103 JavaScript regression tests passed on 2026-09-01 with Node.js 24.19.0.
+- 105 JavaScript regression tests passed on 2026-09-01 with Node.js 24.19.0.
 - Reconstructed unpacked x64 EXE, NSIS installer, and source ZIP were built and hashed.
 - Windows process smoke passed: the unpacked EXE stayed alive for 1.5 seconds and was cleanly stopped.
 - The protected stable channel file is unchanged.

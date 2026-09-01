@@ -14,6 +14,7 @@ function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function safeRead(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return fallback; } }
 function atomicWrite(file, value) { const tmp = `${file}.${process.pid}.${Date.now()}.tmp`; fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' }); fs.renameSync(tmp, file); }
 function messageId() { return `msg_${crypto.randomBytes(10).toString('hex')}`; }
+function inferenceId() { return `inf_${crypto.randomBytes(10).toString('hex')}`; }
 
 class MonolithService {
   constructor({ userData, runtimeRoot = null, now = () => new Date().toISOString() } = {}) {
@@ -37,21 +38,69 @@ class MonolithService {
   async createConversation() { this.state.activeConversationId = null; const c = this._ensureConversation(); this._activity('conversation', 'Created a new conversation'); this._save(); return this.snapshot(); }
   async selectConversation(id) { if (!this.state.conversations.some(c => c.id === id)) throw new Error('conversation not found'); this.state.activeConversationId = id; this._save(); return this.snapshot(); }
   async attach({ name, type, bytes }) { const data = Buffer.from(bytes || []); if (!name || typeof name !== 'string' || name.length > 180) throw new Error('attachment name is invalid'); if (!ALLOWED_MIME.has(type)) throw new Error('attachment type is not supported'); if (!data.length || data.length > MAX_ATTACHMENT_BYTES) throw new Error('attachment size is invalid'); const id = `att_${crypto.randomBytes(9).toString('hex')}`; const dir = path.join(this.userData, 'attachments'); fs.mkdirSync(dir, { recursive: true }); const file = path.join(dir, id); fs.writeFileSync(file, data, { mode: 0o600, flag: 'wx' }); const item = { id, name: path.basename(name), type, bytes: data.length, sha256: crypto.createHash('sha256').update(data).digest('hex'), createdAt: this.now() }; this.state.attachments.push(item); this._activity('attachment', `Attached ${item.name}`, { attachmentId: id }); this._save(); return clone(item); }
-  async send({ content, attachmentIds = [], model = null }) { const text = String(content || '').trim(); if (!text && !attachmentIds.length) throw new Error('message is empty'); const attached = attachmentIds.map(id => this.state.attachments.find(x => x.id === id)).filter(Boolean); if (attached.length !== attachmentIds.length) throw new Error('attachment not found'); const conversation = this._ensureConversation(text.slice(0, 56) || 'Attachment'); const user = { id: messageId(), role: 'user', content: text, attachments: attached, createdAt: this.now() }; conversation.messages.push(user); conversation.updatedAt = user.createdAt; if (conversation.title === 'New conversation' && text) conversation.title = text.slice(0, 56);
-    if (!Object.keys(this.catalog).length) { const blocked = { id: messageId(), role: 'system', status: 'blocked', content: 'Inference is blocked because no local model is configured. This message was saved, but no response was generated.', createdAt: this.now() }; conversation.messages.push(blocked); this._activity('blocked', 'Inference blocked: no local model configured'); this._save(); return { blocked: true, code: 'MODEL_NOT_CONFIGURED', snapshot: this.snapshot() }; }
-    const selected = model || Object.keys(this.catalog)[0]; try { if (this.runtime.snapshot().state !== 'ready' || this.runtime.snapshot().model !== selected) await this.runtime.start(selected); } catch (error) { const blocked = { id: messageId(), role: 'system', status: 'blocked', content: `Inference could not start: ${String(error.message || error)}`, createdAt: this.now() }; conversation.messages.push(blocked); this._activity('blocked', 'Runtime start failed', { code: error.code || null }); this._save(); return { blocked: true, code: error.code || 'RUNTIME_START_FAILED', snapshot: this.snapshot() }; }
+  async send({ content, attachmentIds = [], model = null }) {
+    const text = String(content || '').trim();
+    if (!text && !attachmentIds.length) throw new Error('message is empty');
+    const attached = attachmentIds.map(id => this.state.attachments.find(x => x.id === id)).filter(Boolean);
+    if (attached.length !== attachmentIds.length) throw new Error('attachment not found');
+    const conversation = this._ensureConversation(text.slice(0, 56) || 'Attachment');
+    const user = { id: messageId(), role: 'user', content: text, attachments: attached, createdAt: this.now() };
+    conversation.messages.push(user);
+    conversation.updatedAt = user.createdAt;
+    if (conversation.title === 'New conversation' && text) conversation.title = text.slice(0, 56);
+
+    if (!Object.keys(this.catalog).length) {
+      const blocked = { id: messageId(), role: 'system', status: 'blocked', content: 'Inference is blocked because no local model is configured. This message was saved, but no response was generated.', createdAt: this.now() };
+      conversation.messages.push(blocked);
+      this._activity('blocked', 'Inference blocked: no local model configured');
+      this._save();
+      return { blocked: true, code: 'MODEL_NOT_CONFIGURED', snapshot: this.snapshot() };
+    }
+
+    const selected = model || Object.keys(this.catalog)[0];
     try {
+      if (this.runtime.snapshot().state !== 'ready' || this.runtime.snapshot().model !== selected) await this.runtime.start(selected);
+    } catch (error) {
+      const blocked = { id: messageId(), role: 'system', status: 'blocked', content: `Inference could not start: ${String(error.message || error)}`, createdAt: this.now() };
+      conversation.messages.push(blocked);
+      this._activity('blocked', 'Runtime start failed', { code: error.code || null });
+      this._save();
+      return { blocked: true, code: error.code || 'RUNTIME_START_FAILED', snapshot: this.snapshot() };
+    }
+
+    const id = inferenceId();
+    const controller = new AbortController();
+    let task = null;
+    try {
+      task = this.runtime.registerInference(id, {
+        priority: 'normal',
+        abort: async reason => controller.abort(reason),
+      });
       const completion = await this.backend.chatCompletion({
         messages: conversation.messages
           .filter(message => ['system', 'user', 'assistant'].includes(message.role))
           .map(message => ({ role: message.role, content: message.content })),
+        signal: controller.signal,
       });
+      if (!this.runtime.completeInference(id, task.generation)) {
+        const blocked = { id: messageId(), role: 'system', status: 'blocked', content: 'Inference result was discarded because the local runtime generation changed before completion.', createdAt: this.now() };
+        conversation.messages.push(blocked);
+        this._activity('blocked', 'Stale inference result discarded', { inferenceId: id, generation: task.generation });
+        this._save();
+        return { blocked: true, code: 'STALE_INFERENCE_GENERATION', snapshot: this.snapshot() };
+      }
       const assistant = { id: messageId(), role: 'assistant', content: completion.content, model: completion.model || selected, usage: completion.usage, finishReason: completion.finishReason, createdAt: this.now() };
-      conversation.messages.push(assistant); this._activity('inference', 'Local model completed a response', { model: assistant.model, finishReason: assistant.finishReason }); this._save();
+      conversation.messages.push(assistant);
+      conversation.updatedAt = assistant.createdAt;
+      this._activity('inference', 'Local model completed a response', { model: assistant.model, finishReason: assistant.finishReason, inferenceId: id, generation: task.generation });
+      this._save();
       return { blocked: false, snapshot: this.snapshot() };
     } catch (error) {
+      if (task) this.runtime.completeInference(id, task.generation);
       const blocked = { id: messageId(), role: 'system', status: 'blocked', content: `Inference failed safely: ${String(error.message || error)}`, createdAt: this.now() };
-      conversation.messages.push(blocked); this._activity('blocked', 'Inference request failed', { code: error.code || null }); this._save();
+      conversation.messages.push(blocked);
+      this._activity('blocked', 'Inference request failed', { code: error.code || null, inferenceId: id, generation: task?.generation ?? null });
+      this._save();
       return { blocked: true, code: error.code || 'INFERENCE_FAILED', snapshot: this.snapshot() };
     }
   }

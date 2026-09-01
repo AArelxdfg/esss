@@ -33,6 +33,33 @@ function assertLoopbackEndpoint(endpoint) {
   return endpointUrl;
 }
 
+function flattenAssistantContent(value) {
+  if (typeof value === 'string') return value;
+  if (!Array.isArray(value)) return null;
+  const parts = [];
+  for (const item of value) {
+    if (typeof item === 'string') {
+      parts.push(item);
+      continue;
+    }
+    if (!item || typeof item !== 'object') continue;
+    if (typeof item.text === 'string') parts.push(item.text);
+    else if (typeof item.content === 'string') parts.push(item.content);
+  }
+  return parts.length ? parts.join('') : null;
+}
+
+function extractAssistantText(message) {
+  if (!message || typeof message !== 'object') return null;
+  const content = flattenAssistantContent(message.content);
+  if (typeof content === 'string' && content.length > 0) return content;
+  const reasoning = flattenAssistantContent(message.reasoning_content);
+  if (typeof reasoning === 'string' && reasoning.length > 0) return reasoning;
+  if (typeof content === 'string') return content;
+  if (typeof reasoning === 'string') return reasoning;
+  return null;
+}
+
 class LlamaCppProcessBackend {
   constructor({
     runtimeRoot,
@@ -177,7 +204,7 @@ class LlamaCppProcessBackend {
       }
       const body = await response.json();
       const choice = body?.choices?.[0] || null;
-      const content = choice?.message?.content;
+      const content = extractAssistantText(choice?.message);
       if (typeof content !== 'string') {
         const error = new Error('llama.cpp inference response missing assistant content');
         error.code = 'LLAMA_INFERENCE_INVALID_RESPONSE';
@@ -230,7 +257,7 @@ class LlamaCppProcessBackend {
         const lines = buffer.split(/\r?\n/); buffer = lines.pop() || '';
         for (const line of lines) {
           if (!line.startsWith('data:')) continue; const payload = line.slice(5).trim(); if (!payload || payload === '[DONE]') continue;
-          const event = JSON.parse(payload); const choice = event?.choices?.[0]; const delta = choice?.delta?.content;
+          const event = JSON.parse(payload); const choice = event?.choices?.[0]; const delta = extractAssistantText(choice?.delta);
           if (typeof delta === 'string' && delta) { content += delta; await onDelta?.(delta); }
           if (choice?.finish_reason) finishReason = choice.finish_reason; if (event?.usage) usage = { ...event.usage }; if (event?.model) model = event.model;
         }
@@ -271,4 +298,4 @@ class LlamaCppProcessBackend {
   }
 }
 
-module.exports = { LlamaCppProcessBackend, assertContained, assertLoopbackEndpoint };
+module.exports = { LlamaCppProcessBackend, assertContained, assertLoopbackEndpoint, flattenAssistantContent, extractAssistantText };

@@ -1,0 +1,8 @@
+# Official archive base pinned for AArel MMonolith OS builds. KDE Plasma and
+# every AArel product component is assembled by this repository; no flavour
+# image or flavour-specific package seed is used.
+LOCK_BASE_DISTRIBUTION="Ubuntu 26.04 LTS archive base"
+LOCK_BASE_FILENAME="ubuntu-26.04-desktop-amd64.iso"
+LOCK_BASE_URL="https://releases.ubuntu.com/26.04/ubuntu-26.04-desktop-amd64.iso"
+LOCK_BASE_SHA256="487f87faaf547ea30e0aba4d5b53346292571256b25333a978db1692bcee9dd2"
+LOCK_VERIFICATION="SHA-256 verified before every extraction"

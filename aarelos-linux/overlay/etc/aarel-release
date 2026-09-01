@@ -1,0 +1,8 @@
+AArel OS Linux Preview 0.1
+PRODUCT=AArel OS
+SESSION=MMonolith
+WORKSPACE=Forge
+BASE=AArel archive assembly
+BASE_FAMILY=Debian
+KERNEL_FAMILY=Linux
+TRACK=linux-one-day

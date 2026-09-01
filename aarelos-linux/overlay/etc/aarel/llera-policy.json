@@ -1,0 +1,6 @@
+{
+  "allowed_actions": [
+    "launch-forge",
+    "open-settings"
+  ]
+}

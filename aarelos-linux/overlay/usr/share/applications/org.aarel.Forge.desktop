@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AArel Forge
+GenericName=Developer Workspace
+Comment=Open the AArel developer workspace
+Exec=/usr/bin/aarel-forge
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;IDE;
+Keywords=AArel;Forge;Terminal;Developer;
+StartupNotify=true

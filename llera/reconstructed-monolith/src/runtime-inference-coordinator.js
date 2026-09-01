@@ -14,9 +14,40 @@ class RuntimeInferenceCoordinator {
     this.governor = governor;
     this.active = new Map();
     this.completed = [];
+    this.lastRuntimeCleanupSignature = null;
+  }
+
+  _reconcileRuntimeCleanup() {
+    if (typeof this.runtime.snapshot !== 'function') return [];
+    const snapshot = this.runtime.snapshot();
+    const cleanup = snapshot && snapshot.lastOrphanedInferenceCleanup;
+    if (!cleanup) return [];
+
+    const aborted = Array.isArray(cleanup.aborted) ? cleanup.aborted.filter(Boolean) : [];
+    const failures = Array.isArray(cleanup.failures)
+      ? cleanup.failures.map(item => item && item.id).filter(Boolean)
+      : [];
+    const ids = [...new Set([...aborted, ...failures])];
+    const signature = JSON.stringify({
+      at: cleanup.at ?? null,
+      reason: cleanup.reason || null,
+      ids
+    });
+    if (signature === this.lastRuntimeCleanupSignature) return [];
+    this.lastRuntimeCleanupSignature = signature;
+    if (!ids.length) return [];
+
+    return this.reconcileRuntimeAborts(ids, {
+      reason: cleanup.reason || 'runtime-orphan-cleanup'
+    });
   }
 
   begin({ id, className = 'interactive', requestedTokens = null, abort } = {}) {
+    // RuntimeLifecycle can independently discover that llama.cpp died and clear its
+    // tracked inference set. Reconcile that cleanup before admitting new work so
+    // stale coordinator/governor entries cannot permanently consume admission slots.
+    this._reconcileRuntimeCleanup();
+
     if (!id || this.active.has(id)) return { allow: false, reason: 'unique_inference_id_required' };
     if (typeof abort !== 'function') throw new Error('abort callback required');
     const admission = this.governor.admit({ id, className, requestedTokens });

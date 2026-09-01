@@ -49,9 +49,6 @@ test('coordinator releases stale governor admission after RuntimeLifecycle orpha
   assert.equal(first.allow, true);
   assert.deepEqual([...governorActive], ['stale-chat']);
 
-  // RuntimeLifecycle has detected a dead llama.cpp process and has already removed
-  // its own inference record. The coordinator/governor must converge before the
-  // next admission or the stale slot would reject all future inference.
   runtimeActive.delete('stale-chat');
   cleanup = {
     at: 42,
@@ -112,7 +109,7 @@ test('same-millisecond cleanup is reconciled again after a new runtime generatio
   let generation = 1;
   let cleanup = null;
   const governorActive = new Set();
-  const governorCompletions = [];
+  const successfulGovernorCompletions = [];
 
   const runtime = {
     registerInference(id) {
@@ -141,8 +138,9 @@ test('same-millisecond cleanup is reconciled again after a new runtime generatio
       };
     },
     complete(id) {
-      governorCompletions.push(id);
-      return governorActive.delete(id);
+      const removed = governorActive.delete(id);
+      if (removed) successfulGovernorCompletions.push(id);
+      return removed;
     }
   };
 
@@ -158,14 +156,11 @@ test('same-millisecond cleanup is reconciled again after a new runtime generatio
   coordinator._reconcileRuntimeCleanup();
   assert.equal(governorActive.has('chat'), false);
 
-  // Runtime recovered so the same logical inference ID can be admitted again.
   generation = 2;
-  coordinator._reconcileRuntimeCleanup(); // consume the retained generation-2 view before reuse
+  coordinator._reconcileRuntimeCleanup();
   assert.equal(coordinator.begin({ id: 'chat', abort: async () => {} }).allow, true);
   assert.equal(governorActive.has('chat'), true);
 
-  // A second death can land in the same millisecond with the same reason/ID. The
-  // generation is the differentiator that prevents dedupe from hiding the cleanup.
   cleanup = {
     at: 1000,
     reason: 'runtime-external-death:ensure-ready-probe',
@@ -177,5 +172,5 @@ test('same-millisecond cleanup is reconciled again after a new runtime generatio
 
   assert.equal(governorActive.has('chat'), false);
   assert.equal(coordinator.snapshot().active.length, 0);
-  assert.equal(governorCompletions.filter(id => id === 'chat').length, 2);
+  assert.equal(successfulGovernorCompletions.filter(id => id === 'chat').length, 2);
 });

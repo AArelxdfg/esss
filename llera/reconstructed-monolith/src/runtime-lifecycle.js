@@ -185,7 +185,13 @@ class RuntimeLifecycle {
     if (this.state !== 'ready') throw new Error('runtime is not ready');
     if (!id || this.activeInference.has(id)) throw new Error('unique inference id required');
     if (typeof abort !== 'function') throw new Error('abort callback required');
-    const task = { id, priority, abort, startedAt: this.now(), generation: this.generation };
+    const normalizedPriority = String(priority || 'normal').trim().toLowerCase();
+    if (!['low', 'normal', 'high'].includes(normalizedPriority)) {
+      const error = new Error(`invalid inference priority: ${priority}`);
+      error.code = 'RUNTIME_INVALID_INFERENCE_PRIORITY';
+      throw error;
+    }
+    const task = { id, priority: normalizedPriority, abort, startedAt: this.now(), generation: this.generation };
     this.activeInference.set(id, task); return task;
   }
 

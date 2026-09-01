@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
+  <title>LLera MONOLITH OMEGA</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, Segoe UI, system-ui, sans-serif; background:#090b10; color:#f4f6fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:linear-gradient(180deg,#0b0e14,#07090d); }
+    .shell { display:grid; grid-template-columns:220px minmax(0,1fr); min-height:100vh; }
+    nav { border-right:1px solid #232938; padding:24px 14px; background:#0c0f15; }
+    .brand { font-weight:700; letter-spacing:.08em; margin:0 10px 24px; }
+    .sub { font-size:12px; color:#8f98ab; font-weight:500; letter-spacing:0; display:block; margin-top:6px; }
+    button { font:inherit; }
+    .nav { width:100%; text-align:left; padding:10px 12px; margin:4px 0; border:1px solid transparent; border-radius:10px; color:#aeb7c8; background:transparent; cursor:pointer; }
+    .nav[aria-selected="true"] { color:#fff; background:#171c27; border-color:#2a3243; }
+    main { min-width:0; display:flex; flex-direction:column; }
+    header { min-height:64px; border-bottom:1px solid #202634; display:flex; align-items:center; justify-content:space-between; padding:0 24px; }
+    #status { color:#8f98ab; font-size:12px; }
+    #surface { flex:1; padding:28px; overflow:auto; }
+    .panel { max-width:920px; margin:auto; border:1px solid #232938; border-radius:16px; background:#0d1118; padding:22px; }
+    .muted { color:#8f98ab; }
+    .warning { margin-top:16px; padding:12px 14px; border:1px solid #4a3b24; border-radius:10px; color:#d7b67b; background:#17130d; }
+    .composer { border-top:1px solid #202634; padding:18px 24px 22px; }
+    .composer-inner { max-width:920px; margin:auto; display:flex; gap:10px; }
+    textarea { flex:1; resize:vertical; min-height:52px; max-height:180px; border:1px solid #323a4c; border-radius:14px; background:#111620; color:#fff; padding:14px; outline:none; }
+    textarea:focus { border-color:#747f9d; box-shadow:0 0 0 2px rgba(116,127,157,.35); }
+    .send { border:1px solid #343d50; border-radius:12px; background:#20283a; color:#fff; padding:0 18px; }
+    .send:disabled { opacity:.4; }
+    @media (max-width:759px) { .shell { grid-template-columns:1fr; } nav { display:none; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav aria-label="MONOLITH surfaces"><div class="brand">LLera<span class="sub">MONOLITH OMEGA reconstructed</span></div><div id="nav"></div></nav>
+    <main>
+      <header><strong id="title">Conversation</strong><span id="status">Loading contract…</span></header>
+      <section id="surface" tabindex="-1"></section>
+      <div class="composer"><div class="composer-inner"><textarea id="composer" aria-label="Message LLera" placeholder="Message LLera"></textarea><button id="send" class="send" disabled>Send</button></div></div>
+    </main>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

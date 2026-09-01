@@ -2,6 +2,15 @@
 
 const { AuroraFocusTrap } = require('./aurora-focus-trap');
 
+function sanitizeFocusOrigin(value, fallback = 'composer') {
+  const normalized = String(value || '').trim();
+  if (!normalized) return fallback;
+  if (normalized.length > 128) return fallback;
+  if(/[\u0000-\u001f\u007f]/.test(normalized)) return fallback;
+  if (!/^[A-Za-z][A-Za-z0-9_.:-]*$/.test(normalized)) return fallback;
+  return normalized;
+}
+
 class AuroraAccessibilityController {
   constructor({ ui, focusTrap = new AuroraFocusTrap() } = {}) {
     if (!ui || typeof ui.handleShortcut !== 'function') throw new Error('AURORA UI contract is required');
@@ -22,6 +31,7 @@ class AuroraAccessibilityController {
       paletteSupportsReverseTab: true,
       paletteActivationAnnounced: true,
       paletteActivationFocusFollowsSurface: true,
+      paletteReturnFocusOriginSanitized: true,
     };
   }
   getComposerState() { return this.ui.getComposerState ? this.ui.getComposerState() : null; }
@@ -45,15 +55,16 @@ class AuroraAccessibilityController {
     const modifier = Boolean(event.ctrlKey || event.metaKey);
 
     if (modifier && key === 'k') {
+      const safeEvent = { ...event, focusOrigin: sanitizeFocusOrigin(event.focusOrigin) };
       if (this.ui.getPaletteState().open) {
-        const uiResult = this.ui.handleShortcut(event);
+        const uiResult = this.ui.handleShortcut(safeEvent);
         const trapResult = this.focusTrap.deactivate({ restoreFocus: true });
         return { ...uiResult, focusTarget: trapResult.focusTarget, focusTrap: trapResult };
       }
-      const uiResult = this.ui.handleShortcut(event);
+      const uiResult = this.ui.handleShortcut(safeEvent);
       const trapResult = this.focusTrap.activate({
         initialFocus: 'aurora-command-search',
-        returnFocusTo: event.focusOrigin || 'composer',
+        returnFocusTo: safeEvent.focusOrigin,
       });
       return { ...uiResult, focusTarget: trapResult.focusTarget, focusTrap: trapResult };
     }
@@ -106,7 +117,7 @@ class AuroraAccessibilityController {
     const base = typeof this.ui.selfTest === 'function' ? this.ui.selfTest() : { ok: true };
     return {
       ok: Boolean(base.ok && focus.ok),
-      schema: 544,
+      schema: 545,
       ui: base,
       focusTrap: focus,
       accessibility: this.getAccessibilityContract(),
@@ -114,4 +125,4 @@ class AuroraAccessibilityController {
   }
 }
 
-module.exports = { AuroraAccessibilityController };
+module.exports = { AuroraAccessibilityController, sanitizeFocusOrigin };

@@ -60,6 +60,87 @@ test('backend starts loopback-only llama-server with a catalog-bound model', asy
   assert.equal(child.exitCode, 0);
 });
 
+test('backend sends bounded OpenAI-compatible chat completions to loopback llama.cpp', async () => {
+  const root = path.resolve('tmp-llera-runtime');
+  let request = null;
+  const backend = new LlamaCppProcessBackend({
+    runtimeRoot: root,
+    fetch: async (url, options) => {
+      request = { url, options };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          model: 'instant',
+          choices: [{ message: { role: 'assistant', content: 'MONOLITH ONLINE' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        }),
+      };
+    },
+  });
+
+  const result = await backend.chatCompletion({
+    messages: [{ role: 'user', content: 'Reply with MONOLITH ONLINE' }],
+    maxTokens: 999999,
+    temperature: 9,
+  });
+
+  assert.equal(request.url, 'http://127.0.0.1:18191/v1/chat/completions');
+  assert.equal(request.options.method, 'POST');
+  assert.equal(request.options.headers['content-type'], 'application/json');
+  const payload = JSON.parse(request.options.body);
+  assert.deepEqual(payload.messages, [{ role: 'user', content: 'Reply with MONOLITH ONLINE' }]);
+  assert.equal(payload.max_tokens, 32768);
+  assert.equal(payload.temperature, 2);
+  assert.equal(payload.stream, false);
+  assert.equal(result.content, 'MONOLITH ONLINE');
+  assert.equal(result.finishReason, 'stop');
+  assert.equal(result.usage.total_tokens, 6);
+});
+
+test('chat completion rejects invalid roles and non-loopback endpoints before network I/O', async () => {
+  const root = path.resolve('tmp-llera-runtime');
+  let calls = 0;
+  const fetch = async () => { calls += 1; return { ok: true, json: async () => ({}) }; };
+  const backend = new LlamaCppProcessBackend({ runtimeRoot: root, fetch });
+  await assert.rejects(
+    () => backend.chatCompletion({ messages: [{ role: 'root', content: 'nope' }] }),
+    err => err.code === 'LLAMA_MESSAGE_ROLE_INVALID'
+  );
+  const exposed = new LlamaCppProcessBackend({ runtimeRoot: root, endpoint: 'http://0.0.0.0:18191', fetch });
+  await assert.rejects(
+    () => exposed.chatCompletion({ messages: [{ role: 'user', content: 'hello' }] }),
+    err => err.code === 'LLAMA_NON_LOOPBACK_BIND'
+  );
+  assert.equal(calls, 0);
+});
+
+test('chat completion exposes HTTP failures and aborts fail closed', async () => {
+  const root = path.resolve('tmp-llera-runtime');
+  const failed = new LlamaCppProcessBackend({
+    runtimeRoot: root,
+    fetch: async () => ({ ok: false, status: 503, json: async () => ({}) }),
+  });
+  await assert.rejects(
+    () => failed.chatCompletion({ messages: [{ role: 'user', content: 'hello' }] }),
+    err => err.code === 'LLAMA_INFERENCE_HTTP_ERROR' && err.status === 503
+  );
+
+  const controller = new AbortController();
+  controller.abort();
+  const aborted = new LlamaCppProcessBackend({
+    runtimeRoot: root,
+    fetch: async (_url, options) => {
+      if (options.signal.aborted) throw new Error('aborted');
+      return { ok: true, json: async () => ({}) };
+    },
+  });
+  await assert.rejects(
+    () => aborted.chatCompletion({ messages: [{ role: 'user', content: 'hello' }], signal: controller.signal }),
+    err => err.code === 'LLAMA_INFERENCE_ABORTED'
+  );
+});
+
 test('unknown models and non-loopback endpoints fail closed before spawn', async () => {
   const root = path.resolve('tmp-llera-runtime');
   const engine = path.join(root, 'engine', process.platform === 'win32' ? 'llama-server.exe' : 'llama-server');

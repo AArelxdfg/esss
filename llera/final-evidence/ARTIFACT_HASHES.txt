@@ -1,3 +1,6 @@
-# No build artifacts available
+# Reconstructed artifacts (exactHistoricalV54=false)
 
-No Windows x64 EXE, installer, or source ZIP was generated because this tree contains no buildable application or installer project definition.
+Source commit: 4df09df384e9931a822a95b01de6973dc08992a4
+Windows x64 unpacked EXE: LLera MONOLITH OMEGA.exe | 225533440 bytes | 70962429c5c20c44a437b336ac28c95a9258bb73e1e3e88fdca43736a98ce0ab
+Windows x64 NSIS installer: LLera_MONOLITH_OMEGA_Reconstructed_0.0.0-reconstructed_x64.exe | 102250142 bytes | 7773a0d44c83c8832752cec2fef312f77f1625da22bb40d47f7f91eb9fa629e3
+Source ZIP: LLera_MONOLITH_OMEGA_Reconstructed_Source.zip | 307307 bytes | 06aeed560e691f5983bb0aadcc53eb00db5fb61187af9f0135ed914414145b22

@@ -49,15 +49,13 @@ assert(reconstructed.blockers.includes('physical-watchdog-soak-validation-missin
 const fullyValidated = candidate();
 assert.strictEqual(fullyValidated.publishableCandidate, true);
 assert.strictEqual(fullyValidated.windowsGradeFinalClaimAllowed, true);
-assert.strictEqual(fullyValidated.schema, 2);
+assert.strictEqual(fullyValidated.schema, 3);
 
 for (const [field, blocker] of [
   ['physicalOcr', 'physical-ocr-validation-missing'],
   ['installerExecution', 'physical-installer-execution-missing'],
   ['watchdogSoak', 'physical-watchdog-soak-validation-missing']
 ]) {
-  const validation = { ...fullyValidated };
-  void validation;
   const failed = candidate({
     validation: {
       physicalWindows: true,
@@ -91,6 +89,20 @@ const forgedExact = candidate({
 assert.strictEqual(forgedExact.publishableCandidate, true);
 assert.strictEqual(forgedExact.exactV54ClaimAllowed, false, 'source identity alone must not permit exact V5.4 artifact claim');
 
+for (const artifact of [
+  { path: '', kind: 'windows-x64', bytes: 7855104, sha256: CONTRACT.v540InstallerSha256, pe32PlusX64: true },
+  { path: 'LLera_V5_4_0_MONOLITH_AURORA_UX_Setup.exe', kind: 'not-windows', bytes: 7855104, sha256: CONTRACT.v540InstallerSha256, pe32PlusX64: true },
+  { path: 'LLera_V5_4_0_MONOLITH_AURORA_UX_Setup.exe', kind: 'windows-x64', bytes: 0, sha256: CONTRACT.v540InstallerSha256, pe32PlusX64: true },
+  { path: 'LLera_V5_4_0_MONOLITH_AURORA_UX_Setup.exe', kind: 'windows-x64', bytes: 7855104, sha256: CONTRACT.v540InstallerSha256, pe32PlusX64: false }
+]) {
+  const forgedArtifactEvidence = candidate({
+    exactSource: { v540: CONTRACT.v540SourceSha256 },
+    artifact
+  });
+  assert.strictEqual(forgedArtifactEvidence.artifactEvidenceValid, false);
+  assert.strictEqual(forgedArtifactEvidence.exactV54ClaimAllowed, false, 'historical installer hash without valid artifact evidence must not permit exact V5.4 claim');
+}
+
 const exactHistorical = candidate({
   exactSource: { v535: CONTRACT.v535SourceSha256, v540: CONTRACT.v540SourceSha256 },
   artifact: {
@@ -116,6 +128,7 @@ assert.strictEqual(exactHistorical.gateDigest.length, 64);
 console.log('release candidate truth gate PASS', {
   reconstructedParity: true,
   exactClaimProtected: true,
+  exactClaimRequiresArtifactEvidence: true,
   physicalOcrRequired: true,
   installerExecutionRequired: true,
   watchdogSoakRequired: true,

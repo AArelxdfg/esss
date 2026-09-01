@@ -22,6 +22,7 @@ class RuntimeLifecycle {
     this.lastError = null;
     this.lastSwitchFailure = null;
     this.lastBackendExit = null;
+    this.lastOrphanedInferenceCleanup = null;
     this.recoveryCount = 0;
     this.switchRollbackCount = 0;
     this.transitionLog = [];
@@ -42,6 +43,11 @@ class RuntimeLifecycle {
       lastError: this.lastError,
       lastSwitchFailure: this.lastSwitchFailure,
       lastBackendExit: this.lastBackendExit ? { ...this.lastBackendExit } : null,
+      lastOrphanedInferenceCleanup: this.lastOrphanedInferenceCleanup ? {
+        ...this.lastOrphanedInferenceCleanup,
+        aborted: [...this.lastOrphanedInferenceCleanup.aborted],
+        failures: this.lastOrphanedInferenceCleanup.failures.map(item => ({ ...item }))
+      } : null,
       recoveryCount: this.recoveryCount,
       switchRollbackCount: this.switchRollbackCount
     };
@@ -223,6 +229,32 @@ class RuntimeLifecycle {
     return { reason, drained };
   }
 
+  async _cleanupOrphanedInference(reason) {
+    const tasks = [...this.activeInference.values()]
+      .sort((a, b) => a.startedAt - b.startedAt || String(a.id).localeCompare(String(b.id)));
+    const aborted = [];
+    const failures = [];
+
+    for (const task of tasks) {
+      try {
+        await task.abort(reason);
+        aborted.push(task.id);
+      } catch (err) {
+        failures.push({ id: task.id, error: String(err?.message || err) });
+      } finally {
+        this.activeInference.delete(task.id);
+      }
+    }
+
+    this.lastOrphanedInferenceCleanup = {
+      reason,
+      aborted,
+      failures,
+      at: this.now()
+    };
+    return this.lastOrphanedInferenceCleanup;
+  }
+
   async _reconcileTrackedPid(reason) {
     if (!this.pid || !this.isAliveBackend) return { reconciled:false, alive:null };
     const pid = this.pid;
@@ -230,10 +262,10 @@ class RuntimeLifecycle {
     const alive = await this._probeAlive({ pid, model, reason });
     if (alive !== false) return { reconciled:false, alive };
     this._recordBackendExit({ pid, model, kind:'external-dead', reason });
+    const inferenceCleanup = await this._cleanupOrphanedInference(`runtime-external-death:${reason}`);
     this.pid = null;
     this.model = null;
-    this.activeInference.clear();
-    return { reconciled:true, alive:false, pid, model };
+    return { reconciled:true, alive:false, pid, model, inferenceCleanup };
   }
 
   async ensureRunning(model, reason = 'ensure') {

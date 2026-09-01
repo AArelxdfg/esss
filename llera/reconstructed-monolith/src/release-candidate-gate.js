@@ -62,8 +62,12 @@ class ReleaseCandidateGate {
     );
 
     const signingReady = Boolean(input.signing && input.signing.materialPresent === true && input.signing.manifestSigned === true);
-    const physicalWindowsValidated = Boolean(input.validation && input.validation.physicalWindows === true);
-    const physicalGpuValidated = Boolean(input.validation && input.validation.physicalGpu === true);
+    const validation = input.validation || {};
+    const physicalWindowsValidated = validation.physicalWindows === true;
+    const physicalGpuValidated = validation.physicalGpu === true;
+    const physicalOcrValidated = validation.physicalOcr === true;
+    const installerExecutionValidated = validation.installerExecution === true;
+    const watchdogSoakValidated = validation.watchdogSoak === true;
 
     const blockers = [];
     if (!reconstructedParity) blockers.push('behavior-parity-incomplete');
@@ -71,13 +75,16 @@ class ReleaseCandidateGate {
     if (!testEvidenceValid) blockers.push('required-tests-or-crossbuild-missing');
     if (!signingReady) blockers.push('signing-material-or-signed-manifest-missing');
     if (!physicalWindowsValidated) blockers.push('physical-windows-validation-missing');
+    if (!physicalOcrValidated) blockers.push('physical-ocr-validation-missing');
+    if (!installerExecutionValidated) blockers.push('physical-installer-execution-missing');
+    if (!watchdogSoakValidated) blockers.push('physical-watchdog-soak-validation-missing');
 
     const publishableCandidate = blockers.length === 0;
     const exactV54ClaimAllowed = exactV540 && artifact.sha256 === CONTRACT.v540InstallerSha256;
     const windowsGradeFinalClaimAllowed = publishableCandidate && physicalGpuValidated;
 
     const result = {
-      schema: 1,
+      schema: 2,
       reconstructedParity,
       exactHistoricalSource: { v535: exactV535, v540: exactV540 },
       exactV54ClaimAllowed,
@@ -90,6 +97,9 @@ class ReleaseCandidateGate {
       signingReady,
       physicalWindowsValidated,
       physicalGpuValidated,
+      physicalOcrValidated,
+      installerExecutionValidated,
+      watchdogSoakValidated,
       blockers
     };
     return { ...result, gateDigest: digestObject(result) };

@@ -11,6 +11,7 @@ on:
       - 'llera/reconstructed-monolith/src/evidence-ledger.js'
       - 'llera/reconstructed-monolith/src/dual-verifier.js'
       - 'llera/reconstructed-monolith/src/source-provenance-manifest.js'
+      - 'llera/reconstructed-monolith/src/runtime-lifecycle.js'
       - 'llera/reconstructed-monolith/test/monolith-capability-broker-coverage.test.js'
       - 'llera/reconstructed-monolith/test/monolith-capability-broker-62-executable.test.js'
       - 'llera/reconstructed-monolith/test/agent-tool-router-62.test.js'
@@ -26,6 +27,7 @@ on:
       - 'llera/reconstructed-monolith/test/dual-verifier-mission-binding.test.js'
       - 'llera/reconstructed-monolith/test/structured-evidence-provenance.test.js'
       - 'llera/reconstructed-monolith/test/source-provenance-manifest.test.js'
+      - 'llera/reconstructed-monolith/test/runtime-host-pressure-normalization.test.js'
       - '.github/workflows/llera-capability-restore.yml'
   workflow_dispatch:
 
@@ -50,6 +52,7 @@ jobs:
           node --check llera/reconstructed-monolith/src/evidence-ledger.js
           node --check llera/reconstructed-monolith/src/dual-verifier.js
           node --check llera/reconstructed-monolith/src/source-provenance-manifest.js
+          node --check llera/reconstructed-monolith/src/runtime-lifecycle.js
       - name: Historical 62-tool declaration
         run: node llera/reconstructed-monolith/test/tool-surface-62.test.js
       - name: 62-tool router
@@ -76,3 +79,5 @@ jobs:
         run: node llera/reconstructed-monolith/test/structured-evidence-provenance.test.js
       - name: Reconstructed source provenance
         run: node llera/reconstructed-monolith/test/source-provenance-manifest.test.js
+      - name: HOSTGUARD runtime pressure normalization
+        run: node llera/reconstructed-monolith/test/runtime-host-pressure-normalization.test.js

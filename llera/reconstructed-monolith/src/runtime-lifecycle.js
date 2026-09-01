@@ -198,7 +198,7 @@ class RuntimeLifecycle {
   }
 
   async applyHostPressure(level) {
-    const normalized = String(level || '').toUpperCase();
+    const normalized = String(level || '').trim().toUpperCase();
     if (normalized !== 'CRITICAL') return { level: normalized, aborted: [], failures: [] };
     if (this.inferenceAdmissionClosed || ['starting','stopping','recovering'].includes(this.state)) {
       return { level: normalized, aborted: [], failures: [], deferred: true, reason: this.inferenceAdmissionReason || `runtime-${this.state}` };

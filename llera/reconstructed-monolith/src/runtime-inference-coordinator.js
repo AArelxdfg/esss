@@ -88,6 +88,12 @@ class RuntimeInferenceCoordinator {
   }
 
   complete(id, generation) {
+    // RuntimeLifecycle may have removed this inference independently after an
+    // external llama.cpp death. Reconcile that orphan-cleanup event before deciding
+    // whether the caller's completion is stale, otherwise coordinator/governor state
+    // can retain a consumed admission slot until another begin() happens.
+    this._reconcileRuntimeCleanup();
+
     const local = this.active.get(id);
     if (!local || !Number.isSafeInteger(generation) || generation !== local.generation) return false;
     const runtimeRemoved = this.runtime.completeInference(id, generation);

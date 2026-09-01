@@ -15,6 +15,11 @@ function canonicalManifestPayload(manifest) {
   return JSON.stringify({ schema: manifest.schema || 1, product: manifest.product || 'LLera', version: manifest.version || '', files });
 }
 
+function isPathWithin(root, target) {
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  return target === root || target.startsWith(prefix);
+}
+
 class IntegritySentinel {
   constructor({ rootDir, publicKeyPem = null, quarantineDir = null } = {}) {
     if (!rootDir) throw new Error('rootDir is required');
@@ -23,31 +28,26 @@ class IntegritySentinel {
     this.quarantineDir = path.resolve(quarantineDir || path.join(this.rootDir, '.quarantine'));
   }
 
-  resolveSafe(relativePath, { mustExist = false, rejectSymlinks = true } = {}) {
+  resolveSafe(relativePath) {
     const target = path.resolve(this.rootDir, relativePath);
-    const prefix = this.rootDir.endsWith(path.sep) ? this.rootDir : this.rootDir + path.sep;
-    if (target !== this.rootDir && !target.startsWith(prefix)) throw new Error(`integrity path escape blocked: ${relativePath}`);
-
-    if (!fs.existsSync(this.rootDir)) throw new Error(`integrity root missing: ${this.rootDir}`);
-    const rootReal = fs.realpathSync.native ? fs.realpathSync.native(this.rootDir) : fs.realpathSync(this.rootDir);
-    const rel = path.relative(this.rootDir, target);
-    const parts = rel && rel !== '.' ? rel.split(path.sep).filter(Boolean) : [];
-    let cursor = this.rootDir;
-
-    for (const part of parts) {
-      cursor = path.join(cursor, part);
-      if (!fs.existsSync(cursor)) {
-        if (mustExist) throw new Error(`integrity path missing: ${relativePath}`);
-        break;
-      }
-      const stat = fs.lstatSync(cursor);
-      if (rejectSymlinks && stat.isSymbolicLink()) throw new Error(`integrity symlink blocked: ${relativePath}`);
-      const real = fs.realpathSync.native ? fs.realpathSync.native(cursor) : fs.realpathSync(cursor);
-      const realPrefix = rootReal.endsWith(path.sep) ? rootReal : rootReal + path.sep;
-      if (real !== rootReal && !real.startsWith(realPrefix)) throw new Error(`integrity realpath escape blocked: ${relativePath}`);
-    }
-
+    if (!isPathWithin(this.rootDir, target)) throw new Error(`integrity path escape blocked: ${relativePath}`);
     return target;
+  }
+
+  resolveExistingSafe(relativePath) {
+    const target = this.resolveSafe(relativePath);
+    if (!fs.existsSync(target)) return { target, exists: false, realTarget: null };
+
+    const realRoot = fs.realpathSync.native ? fs.realpathSync.native(this.rootDir) : fs.realpathSync(this.rootDir);
+    const realTarget = fs.realpathSync.native ? fs.realpathSync.native(target) : fs.realpathSync(target);
+    if (!isPathWithin(realRoot, realTarget)) {
+      const error = new Error(`integrity symlink escape blocked: ${relativePath}`);
+      error.code = 'INTEGRITY_SYMLINK_ESCAPE';
+      error.relativePath = relativePath;
+      error.realTarget = realTarget;
+      throw error;
+    }
+    return { target, exists: true, realTarget };
   }
 
   verifyManifestSignature(manifest, signatureBase64) {
@@ -59,16 +59,18 @@ class IntegritySentinel {
   }
 
   verifyFile(entry) {
-    let fullPath;
+    let resolved;
     try {
-      fullPath = this.resolveSafe(entry.path, { mustExist: true, rejectSymlinks: true });
+      resolved = this.resolveExistingSafe(entry.path);
     } catch (error) {
-      return { ok: false, path: entry.path, reason: 'unsafe-path', detail: String(error && error.message || error) };
+      if (error && error.code === 'INTEGRITY_SYMLINK_ESCAPE') {
+        return { ok: false, path: entry.path, reason: 'symlink-escape', realTarget: error.realTarget };
+      }
+      throw error;
     }
-    if (!fs.existsSync(fullPath)) return { ok: false, path: entry.path, reason: 'missing' };
-    const stat = fs.lstatSync(fullPath);
-    if (!stat.isFile()) return { ok: false, path: entry.path, reason: 'not-regular-file' };
-    const bytes = fs.readFileSync(fullPath);
+    if (!resolved.exists) return { ok: false, path: entry.path, reason: 'missing' };
+
+    const bytes = fs.readFileSync(resolved.realTarget);
     const actual = sha256Bytes(bytes);
     if (Number.isFinite(Number(entry.size)) && Number(entry.size) !== bytes.length) {
       return { ok: false, path: entry.path, reason: 'size-mismatch', expectedSize: Number(entry.size), actualSize: bytes.length, actualSha256: actual };
@@ -87,19 +89,22 @@ class IntegritySentinel {
   }
 
   quarantine(relativePath, reason = 'integrity-failure') {
-    let source;
+    let resolved;
     try {
-      source = this.resolveSafe(relativePath, { mustExist: true, rejectSymlinks: true });
+      resolved = this.resolveExistingSafe(relativePath);
     } catch (error) {
-      return { moved: false, reason: 'unsafe-path', path: relativePath, detail: String(error && error.message || error) };
+      if (error && error.code === 'INTEGRITY_SYMLINK_ESCAPE') {
+        return { moved: false, reason: 'symlink-escape', path: relativePath, realTarget: error.realTarget };
+      }
+      throw error;
     }
-    if (!fs.existsSync(source)) return { moved: false, reason: 'missing', path: relativePath };
-    if (!fs.lstatSync(source).isFile()) return { moved: false, reason: 'not-regular-file', path: relativePath };
+    if (!resolved.exists) return { moved: false, reason: 'missing', path: relativePath };
+
     fs.mkdirSync(this.quarantineDir, { recursive: true });
     const suffix = sha256Bytes(Buffer.from(`${relativePath}:${reason}:${Date.now()}`)).slice(0, 12);
     const target = path.join(this.quarantineDir, `${path.basename(relativePath)}.${suffix}.quarantine`);
-    fs.renameSync(source, target);
-    return { moved: true, reason, source, target };
+    fs.renameSync(resolved.target, target);
+    return { moved: true, reason, source: resolved.target, target };
   }
 
   assertTrusted(manifest, signatureBase64 = null, { requireSignature = false } = {}) {
@@ -113,4 +118,4 @@ class IntegritySentinel {
   }
 }
 
-module.exports = { IntegritySentinel, sha256Bytes, canonicalManifestPayload };
+module.exports = { IntegritySentinel, sha256Bytes, canonicalManifestPayload, isPathWithin };

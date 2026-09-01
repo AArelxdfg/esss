@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateFinalizationReceipt } = require('./outcome-memory');
+
 class VerifiedLearningCoordinator {
   constructor({ finalizer, outcomeMemory, loadState, saveState, deriveSkill = null } = {}) {
     if (!finalizer || typeof finalizer.finalize !== 'function') throw new Error('finalizer.finalize is required');
@@ -44,51 +46,121 @@ class VerifiedLearningCoordinator {
     const receipt = finalization.receipt || {};
     if (!isSha256(receipt.sha256)) throw new Error('verified finalization receipt SHA-256 required');
     const verification = finalization.verification || {};
-    const strictScore = Number(verification.strict && verification.strict.score || receipt.strictScore || 0);
-    const adversarialScore = Number(verification.adversarial && verification.adversarial.score || receipt.adversarialScore || 0);
-    const confidence = Math.min(strictScore, adversarialScore);
-    if (strictScore < 0.62 || adversarialScore < 0.62) throw new Error('verifier score below learning threshold');
-
     const evidenceIds = Array.isArray(verification.evidenceIds) ? verification.evidenceIds : (Array.isArray(receipt.evidenceIds) ? receipt.evidenceIds : []);
     if (!evidenceIds.length) throw new Error('bound evidence IDs required for learning');
+
+    const receiptValidation = validateFinalizationReceipt(receipt, { missionId, evidenceIds });
+    if (!receiptValidation.ok) {
+      const error = new Error(`verified finalization receipt rejected: ${receiptValidation.reason}`);
+      error.code = 'VERIFIED_LEARNING_RECEIPT_INVALID';
+      error.reason = receiptValidation.reason;
+      throw error;
+    }
+    const strictScore = receiptValidation.strictScore;
+    const adversarialScore = receiptValidation.adversarialScore;
+    const confidence = receiptValidation.confidence;
+    const verifiedContext = {
+      strict: true,
+      adversarial: true,
+      confidence,
+      evidenceIds,
+      receipt: { ...receipt },
+      receiptSha256: receipt.sha256
+    };
 
     const tag = `final-receipt:${receipt.sha256}`;
     const existing = findOutcomeByReceipt(this.outcomeMemory.snapshot(), tag);
     if (existing) {
-      this.state.receipts[receipt.sha256] = { status: 'committed', missionId, outcomeId: existing.id || null };
+      const persistedEvidenceIds = existing.verification && existing.verification.evidenceIds;
+      if (
+        existing.missionId !== missionId ||
+        !existing.verification ||
+        existing.verification.receiptSha256 !== receipt.sha256 ||
+        !sameStringSet(persistedEvidenceIds, evidenceIds)
+      ) {
+        const error = new Error('receipt idempotency collision with mismatched persisted outcome');
+        error.code = 'VERIFIED_LEARNING_RECEIPT_COLLISION';
+        throw error;
+      }
+
+      const skillCandidate = await this._ensureSkillCandidate({
+        missionId, goal, claim, summary, evidenceIds, receipt, verifiedContext, outcome: existing, skill
+      });
+      this.state.receipts[receipt.sha256] = {
+        status: 'committed',
+        missionId,
+        outcomeId: existing.id || null,
+        skillCandidateId: skillCandidate && skillCandidate.id || null
+      };
       await this.saveState(this.snapshot());
-      return { ok: true, learned: false, idempotent: true, receiptSha256: receipt.sha256, outcome: existing };
+      return {
+        ok: true,
+        learned: Boolean(skillCandidate),
+        idempotent: true,
+        resumedSkillEvolution: Boolean(skillCandidate),
+        receiptSha256: receipt.sha256,
+        outcome: existing,
+        skillCandidate
+      };
     }
 
     this.state.receipts[receipt.sha256] = { status: 'applying', missionId };
     await this.saveState(this.snapshot());
 
-    const verifiedContext = { strict: true, adversarial: true, confidence, evidenceIds };
     const outcome = await this.outcomeMemory.recordOutcome({
       missionId, goal, status: 'completed', summary,
       tags: [...new Set([...tags, tag])], verification: verifiedContext
     });
 
-    let skillCandidate = null;
-    let proposal = skill;
-    if (!proposal && this.deriveSkill) proposal = await this.deriveSkill({ missionId, goal, claim, summary, evidenceIds, receipt: { ...receipt } });
-    if (proposal && typeof this.outcomeMemory.proposeSkill === 'function') {
-      const current = this.outcomeMemory.snapshot();
-      const duplicate = (current.skillCandidates || []).find(c => c && c.missionId === missionId && c.name === proposal.name && c.sourceOutcomeId === outcome.id);
-      skillCandidate = duplicate || await this.outcomeMemory.proposeSkill({
-        missionId, name: proposal.name, description: proposal.description, procedure: proposal.procedure,
-        evidenceIds, verification: verifiedContext
-      });
-    }
+    const skillCandidate = await this._ensureSkillCandidate({
+      missionId, goal, claim, summary, evidenceIds, receipt, verifiedContext, outcome, skill
+    });
 
-    this.state.receipts[receipt.sha256] = { status: 'committed', missionId, outcomeId: outcome.id || null, skillCandidateId: skillCandidate && skillCandidate.id || null };
+    this.state.receipts[receipt.sha256] = {
+      status: 'committed',
+      missionId,
+      outcomeId: outcome.id || null,
+      skillCandidateId: skillCandidate && skillCandidate.id || null
+    };
     await this.saveState(this.snapshot());
     return { ok: true, learned: true, idempotent: false, receiptSha256: receipt.sha256, outcome, skillCandidate };
+  }
+
+  async _ensureSkillCandidate({ missionId, goal, claim, summary, evidenceIds, receipt, verifiedContext, outcome, skill }) {
+    if (typeof this.outcomeMemory.proposeSkill !== 'function') return null;
+    let proposal = skill;
+    if (!proposal && this.deriveSkill) {
+      proposal = await this.deriveSkill({ missionId, goal, claim, summary, evidenceIds, receipt: { ...receipt } });
+    }
+    if (!proposal) return null;
+
+    const current = this.outcomeMemory.snapshot();
+    const duplicate = (current.skillCandidates || []).find(c =>
+      c && c.missionId === missionId && c.name === proposal.name && c.sourceOutcomeId === outcome.id
+    );
+    if (duplicate) return duplicate;
+
+    return this.outcomeMemory.proposeSkill({
+      missionId,
+      name: proposal.name,
+      description: proposal.description,
+      procedure: proposal.procedure,
+      evidenceIds,
+      verification: verifiedContext
+    });
   }
 }
 
 function findOutcomeByReceipt(snapshot, tag) {
   return ((snapshot && snapshot.outcomes) || []).find(o => o && Array.isArray(o.tags) && o.tags.includes(tag)) || null;
+}
+function normalizeStringSet(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map(value => String(value)))].sort();
+}
+function sameStringSet(a, b) {
+  const aa = normalizeStringSet(a);
+  const bb = normalizeStringSet(b);
+  return aa.length === bb.length && aa.every((value, index) => value === bb[index]);
 }
 function isSha256(value) { return /^[a-f0-9]{64}$/i.test(String(value || '')); }
 module.exports = { VerifiedLearningCoordinator, findOutcomeByReceipt };

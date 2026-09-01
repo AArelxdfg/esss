@@ -1,93 +1,286 @@
 'use strict';
 
 const crypto = require('crypto');
-const MAX_SUMMARY_BYTES = 512;
+const fs = require('fs');
+const path = require('path');
+
+const LEDGER_SCHEMA = 3;
+const SUMMARY_MAX_CHARS = 512;
 
 function sha256(value) {
   const data = Buffer.isBuffer(value) ? value : Buffer.from(String(value), 'utf8');
   return crypto.createHash('sha256').update(data).digest('hex');
 }
+
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === 'object' && !Buffer.isBuffer(value)) return Object.keys(value).sort().reduce((out,key)=>{out[key]=canonical(value[key]);return out;},{});
+  if (value && typeof value === 'object' && !Buffer.isBuffer(value)) {
+    return Object.keys(value).sort().reduce((out, key) => {
+      out[key] = canonical(value[key]);
+      return out;
+    }, {});
+  }
   return value;
 }
-function boundedSummary(value, maxBytes = MAX_SUMMARY_BYTES) {
-  if (value === undefined || value === null) return '';
-  const input=String(value), bytes=Buffer.from(input,'utf8');
-  if (bytes.length<=maxBytes) return input;
-  let end=maxBytes;
-  while(end>0){const candidate=bytes.subarray(0,end).toString('utf8');if(!candidate.endsWith('\ufffd'))return candidate;end-=1;}
-  return '';
+
+function evidenceId({missionId, stepId, tool, kind, target, sha256: digest, byteCount, observedAt, summary}) {
+  return `ev_${sha256(JSON.stringify(canonical({
+    missionId, stepId, tool, kind, target, sha256:String(digest || '').toLowerCase(), byteCount, observedAt, summary
+  }))).slice(0, 24)}`;
 }
-function evidenceId({missionId,stepId,tool=null,target,sha256:digest,kind}) {
-  const binding={missionId,stepId,target,sha256:digest,kind};
-  if(tool) binding.tool=tool;
-  return `ev_${sha256(JSON.stringify(canonical(binding))).slice(0,24)}`;
+
+function evidenceBindingSeal({missionId, stepId, tool, kind, target, sha256: digest, byteCount, observedAt, summary}) {
+  return sha256(JSON.stringify(canonical({
+    missionId,
+    stepId,
+    tool,
+    kind,
+    target,
+    sha256: String(digest || '').toLowerCase(),
+    byteCount,
+    observedAt,
+    summary
+  })));
 }
+
+function ledgerSeal({schema = LEDGER_SCHEMA, missionId, entries = []}) {
+  return sha256(JSON.stringify(canonical({schema, missionId, entries})));
+}
+
+function byteLength(value) {
+  if (Buffer.isBuffer(value)) return value.length;
+  if (value instanceof Uint8Array) return value.byteLength;
+  return Buffer.byteLength(String(value), 'utf8');
+}
+
+function boundedSummary(value) {
+  const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  return text.length <= SUMMARY_MAX_CHARS ? text : `${text.slice(0, SUMMARY_MAX_CHARS - 1)}…`;
+}
+
+function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
 class EvidenceLedger {
-  constructor({missionId}) { if(!missionId) throw new Error('missionId required'); this.missionId=missionId; this.entries=[]; }
+  constructor({missionId, storagePath = null}) {
+    if (!missionId) throw new Error('missionId required');
+    this.missionId = missionId;
+    this.storagePath = storagePath ? path.resolve(storagePath) : null;
+    this.entries = [];
+    if (this.storagePath) this.#loadPersistent();
+  }
 
-  add({stepId,tool=null,kind,target,bytes,digest,byteCount=null,summary='',metadata={},observedAt=new Date().toISOString()}) {
-    if(!stepId||!kind||!target) throw new Error('stepId, kind and target required');
-    if(tool!==null&&(typeof tool!=='string'||!tool.trim())) throw new Error('tool must be a non-empty string when provided');
-    const computed=bytes===undefined?null:sha256(bytes), boundDigest=digest||computed;
-    if(!boundDigest||!/^[a-f0-9]{64}$/i.test(boundDigest)) throw new Error('valid sha256 required');
-    if(computed&&digest&&computed.toLowerCase()!==digest.toLowerCase()) throw new Error('evidence digest mismatch');
-    const computedByteCount=bytes===undefined?null:(Buffer.isBuffer(bytes)?bytes.length:Buffer.byteLength(String(bytes),'utf8'));
-    const normalizedByteCount=computedByteCount!==null?computedByteCount:byteCount;
-    if(normalizedByteCount!==null&&(!Number.isSafeInteger(normalizedByteCount)||normalizedByteCount<0)) throw new Error('byteCount must be a non-negative safe integer');
-    if(computedByteCount!==null&&byteCount!==null&&byteCount!==computedByteCount) throw new Error('evidence byteCount mismatch');
-    const normalizedTool=tool?tool.trim():null;
-    const entry={
-      id:evidenceId({missionId:this.missionId,stepId,tool:normalizedTool,target,sha256:boundDigest.toLowerCase(),kind}),
-      missionId:this.missionId,stepId,tool:normalizedTool,kind,target,sha256:boundDigest.toLowerCase(),byteCount:normalizedByteCount,
-      summary:boundedSummary(summary||(metadata&&metadata.summary)||''),metadata:canonical(metadata),observedAt
+  add({stepId, tool, kind, target, bytes, digest, metadata = {}, summary = null, observedAt = new Date().toISOString()}) {
+    if (!stepId || !tool || !kind || !target) throw new Error('stepId, tool, kind and target required');
+    const normalizedTool = String(tool).trim();
+    if (!normalizedTool) throw new Error('tool required');
+    if (typeof observedAt !== 'string' || !Number.isFinite(Date.parse(observedAt))) throw new Error('valid evidence timestamp required');
+    const computed = bytes === undefined ? null : sha256(bytes);
+    const boundDigest = digest || computed;
+    if (!boundDigest || !/^[a-f0-9]{64}$/i.test(boundDigest)) throw new Error('valid sha256 required');
+    if (computed && digest && computed.toLowerCase() !== digest.toLowerCase()) throw new Error('evidence digest mismatch');
+
+    const normalizedMetadata = canonical(metadata || {});
+    const byteCount = bytes === undefined
+      ? (Number.isInteger(normalizedMetadata.byteCount) && normalizedMetadata.byteCount >= 0 ? normalizedMetadata.byteCount : 0)
+      : byteLength(bytes);
+    const bounded = boundedSummary(summary ?? normalizedMetadata.summary ?? normalizedMetadata.message ?? '');
+    if (!bounded) throw new Error('evidence summary required');
+    const normalizedDigest = boundDigest.toLowerCase();
+    const id = evidenceId({missionId:this.missionId, stepId, tool:normalizedTool, kind, target, sha256:normalizedDigest, byteCount, observedAt, summary:bounded});
+    const bindingSha256 = evidenceBindingSeal({
+      missionId:this.missionId,
+      stepId,
+      tool:normalizedTool,
+      kind,
+      target,
+      sha256:normalizedDigest,
+      byteCount,
+      observedAt,
+      summary:bounded
+    });
+
+    const entry = {
+      id,
+      missionId: this.missionId,
+      stepId,
+      tool: normalizedTool,
+      kind,
+      target,
+      sha256: normalizedDigest,
+      byteCount,
+      summary: bounded,
+      bindingSha256,
+      metadata: normalizedMetadata,
+      observedAt
     };
-    if(this.entries.some(x=>x.id===entry.id)) return this.entries.find(x=>x.id===entry.id);
-    this.entries.push(entry); return entry;
-  }
-
-  verifyBinding(id,{tool=null,target,bytes,digest,byteCount=null}={}) {
-    const entry=this.entries.find(x=>x.id===id); if(!entry)return{ok:false,reason:'evidence_not_found'};
-    if(typeof target!=='string'||!target.trim())return{ok:false,reason:'target_required'};
-    if(target!==entry.target)return{ok:false,reason:'target_mismatch'};
-    if(entry.tool){if(typeof tool!=='string'||!tool.trim())return{ok:false,reason:'tool_required'};if(tool.trim()!==entry.tool)return{ok:false,reason:'tool_mismatch'};}
-    else if(tool!==null&&tool!==undefined&&String(tool).trim())return{ok:false,reason:'tool_mismatch'};
-    const actual=digest||(bytes===undefined?null:sha256(bytes));
-    if(!actual)return{ok:false,reason:'digest_missing'};
-    if(!/^[a-f0-9]{64}$/i.test(String(actual)))return{ok:false,reason:'digest_invalid'};
-    if(String(actual).toLowerCase()!==entry.sha256)return{ok:false,reason:'sha256_mismatch'};
-    const actualByteCount=bytes===undefined?byteCount:(Buffer.isBuffer(bytes)?bytes.length:Buffer.byteLength(String(bytes),'utf8'));
-    if(entry.byteCount!==null&&actualByteCount!==null&&actualByteCount!==entry.byteCount)return{ok:false,reason:'byte_count_mismatch'};
-    return{ok:true,entry};
-  }
-
-  export(){ return this.snapshot(); }
-
-  import(rawEntries){
-    if(!Array.isArray(rawEntries)) throw new Error('evidence import must be an array');
-    const scratch=new EvidenceLedger({missionId:this.missionId});
-    const seen=new Set();
-    for(const raw of rawEntries){
-      if(!raw||typeof raw!=='object'||Array.isArray(raw)) throw new Error('invalid evidence entry');
-      if(raw.missionId!==this.missionId) throw new Error('evidence mission mismatch');
-      if(!raw.id||typeof raw.id!=='string') throw new Error('evidence id required');
-      if(seen.has(raw.id)) throw new Error('duplicate evidence id');
-      const normalizedDigest=String(raw.sha256||'').toLowerCase();
-      const expectedId=evidenceId({missionId:this.missionId,stepId:raw.stepId,tool:raw.tool||null,target:raw.target,sha256:normalizedDigest,kind:raw.kind});
-      if(expectedId!==raw.id) throw new Error('evidence id binding mismatch');
-      const entry=scratch.add({stepId:raw.stepId,tool:raw.tool||null,kind:raw.kind,target:raw.target,digest:normalizedDigest,byteCount:raw.byteCount===undefined?null:raw.byteCount,summary:raw.summary||'',metadata:raw.metadata||{},observedAt:raw.observedAt});
-      if(entry.id!==raw.id) throw new Error('evidence import identity mismatch');
-      seen.add(raw.id);
+    const existing = this.entries.find(x => x.id === entry.id);
+    if (existing) {
+      const error = new Error(`duplicate evidence id: ${entry.id}`);
+      error.code = 'EVIDENCE_LEDGER_DUPLICATE';
+      throw error;
     }
-    this.entries=scratch.snapshot();
-    return{restored:this.entries.length};
+
+    const next = [...this.entries, entry];
+    if (this.storagePath) this.#persist(next);
+    this.entries = next;
+    return clone(entry);
   }
 
-  forStep(stepId){return this.entries.filter(x=>x.stepId===stepId);}
-  snapshot(){return this.entries.map(x=>({...x,metadata:canonical(x.metadata)}));}
+  verifyBinding(id, {target, tool, bytes, digest} = {}) {
+    const entry = this.entries.find(x => x.id === id);
+    if (!entry) return {ok:false, reason:'evidence_not_found'};
+    if (!target) return {ok:false, reason:'target_required'};
+    if (target !== entry.target) return {ok:false, reason:'target_mismatch'};
+    if (entry.bindingSha256 && !tool) return {ok:false, reason:'tool_required'};
+    if (entry.bindingSha256 && tool !== entry.tool) return {ok:false, reason:'tool_mismatch'};
+    if (bytes === undefined) return {ok:false, reason:digest ? 'digest_only_rejected' : 'bytes_required'};
+    const actual = sha256(bytes);
+    if (digest && (!/^[a-f0-9]{64}$/i.test(String(digest)) || String(digest).toLowerCase() !== actual)) {
+      return {ok:false, reason:'digest_mismatch'};
+    }
+    if (actual !== entry.sha256) return {ok:false, reason:'sha256_mismatch'};
+    if (Number.isInteger(entry.byteCount) && entry.byteCount !== byteLength(bytes)) return {ok:false, reason:'byte_count_mismatch'};
+    if (entry.bindingSha256) {
+      const expectedBinding = evidenceBindingSeal(entry);
+      if (expectedBinding !== entry.bindingSha256) return {ok:false, reason:'binding_mismatch'};
+    }
+    return {ok:true, entry:clone(entry)};
+  }
+
+  forStep(stepId) { return this.entries.filter(x => x.stepId === stepId).map(clone); }
+  snapshot() { return this.entries.map(x => clone({...x, metadata:canonical(x.metadata)})); }
+
+  // Default export stays compatible with the AURORA view-model, which consumes
+  // a plain evidence array. sealed=true produces a portable, integrity-bound
+  // state object suitable for backup/restore and cross-process handoff.
+  export({sealed = false} = {}) {
+    const entries = this.snapshot();
+    if (!sealed) return entries;
+    const state = {schema:LEDGER_SCHEMA, missionId:this.missionId, entries};
+    state.stateSha256 = ledgerSeal(state);
+    return clone(state);
+  }
+
+  // Import is fail-closed and atomic with respect to both memory and disk:
+  // every binding is validated before the current ledger is touched; when a
+  // storagePath exists, persistence succeeds before this.entries is replaced.
+  import(state) {
+    const parsed = clone(state);
+    this.#assertState(parsed);
+    const next = parsed.entries.map(entry => clone({...entry, metadata:canonical(entry.metadata || {})}));
+    if (this.storagePath) this.#persist(next);
+    this.entries = next;
+    return this.snapshot();
+  }
+
+  #loadPersistent() {
+    if (!fs.existsSync(this.storagePath)) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(this.storagePath, 'utf8'));
+    } catch (error) {
+      const wrapped = new Error(`evidence ledger store unreadable: ${String(error && error.message || error)}`);
+      wrapped.code = 'EVIDENCE_LEDGER_STORE_CORRUPT';
+      throw wrapped;
+    }
+    this.#assertState(parsed);
+    this.entries = parsed.entries.map(clone);
+  }
+
+  #assertState(parsed) {
+    if (!parsed || parsed.schema !== LEDGER_SCHEMA || parsed.missionId !== this.missionId || !Array.isArray(parsed.entries) || !/^[a-f0-9]{64}$/i.test(parsed.stateSha256 || '')) {
+      const error = new Error('evidence ledger store schema/mission invalid');
+      error.code = 'EVIDENCE_LEDGER_STORE_INVALID';
+      throw error;
+    }
+    const expectedSeal = ledgerSeal(parsed);
+    if (expectedSeal !== String(parsed.stateSha256).toLowerCase()) {
+      const error = new Error('evidence ledger store integrity mismatch');
+      error.code = 'EVIDENCE_LEDGER_STORE_TAMPERED';
+      throw error;
+    }
+    const seen = new Set();
+    for (const entry of parsed.entries) {
+      this.#assertEntry(entry);
+      if (seen.has(entry.id)) {
+        const error = new Error(`duplicate persisted evidence id: ${entry.id}`);
+        error.code = 'EVIDENCE_LEDGER_STORE_DUPLICATE';
+        throw error;
+      }
+      seen.add(entry.id);
+    }
+  }
+
+  #assertEntry(entry) {
+    if (!entry || entry.missionId !== this.missionId || !entry.stepId || !entry.tool || !entry.kind || !entry.target ||
+        !Number.isSafeInteger(entry.byteCount) || entry.byteCount < 0 ||
+        typeof entry.observedAt !== 'string' || !Number.isFinite(Date.parse(entry.observedAt)) ||
+        typeof entry.summary !== 'string' || !entry.summary.trim() ||
+        !/^[a-f0-9]{64}$/i.test(entry.sha256 || '')) {
+      const error = new Error('persisted evidence binding invalid');
+      error.code = 'EVIDENCE_LEDGER_ENTRY_INVALID';
+      throw error;
+    }
+    const expectedId = evidenceId({
+      missionId:entry.missionId,
+      stepId:entry.stepId,
+      tool:entry.tool,
+      target:entry.target,
+      sha256:String(entry.sha256).toLowerCase(),
+      kind:entry.kind,
+      byteCount:entry.byteCount,
+      observedAt:entry.observedAt,
+      summary:entry.summary
+    });
+    if (expectedId !== entry.id) {
+      const error = new Error('persisted evidence id binding mismatch');
+      error.code = 'EVIDENCE_LEDGER_ENTRY_TAMPERED';
+      throw error;
+    }
+
+    if (!/^[a-f0-9]{64}$/i.test(entry.bindingSha256 || '')) {
+      const error = new Error('persisted enriched evidence binding invalid');
+      error.code = 'EVIDENCE_LEDGER_ENTRY_INVALID';
+      throw error;
+    }
+    if (String(entry.summary).length > SUMMARY_MAX_CHARS) {
+      const error = new Error('persisted evidence summary exceeds bound');
+      error.code = 'EVIDENCE_LEDGER_ENTRY_INVALID';
+      throw error;
+    }
+    const expectedBinding = evidenceBindingSeal(entry);
+    if (expectedBinding !== String(entry.bindingSha256).toLowerCase()) {
+      const error = new Error('persisted evidence field binding mismatch');
+      error.code = 'EVIDENCE_LEDGER_ENTRY_TAMPERED';
+      throw error;
+    }
+  }
+
+  #persist(entries) {
+    for (const entry of entries) this.#assertEntry(entry);
+    const state = { schema:LEDGER_SCHEMA, missionId:this.missionId, entries:entries.map(clone) };
+    state.stateSha256 = ledgerSeal(state);
+    fs.mkdirSync(path.dirname(this.storagePath), {recursive:true});
+    const tmp = `${this.storagePath}.tmp-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    try {
+      fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, {encoding:'utf8', mode:0o600, flag:'wx'});
+      fs.renameSync(tmp, this.storagePath);
+    } catch (error) {
+      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (_) {}
+      const wrapped = new Error(`evidence ledger persistence failed: ${String(error && error.message || error)}`);
+      wrapped.code = 'EVIDENCE_LEDGER_PERSIST_FAILED';
+      throw wrapped;
+    }
+  }
 }
 
-module.exports={MAX_SUMMARY_BYTES,sha256,boundedSummary,evidenceId,EvidenceLedger};
+module.exports = {
+  LEDGER_SCHEMA,
+  SUMMARY_MAX_CHARS,
+  sha256,
+  evidenceId,
+  evidenceBindingSeal,
+  ledgerSeal,
+  boundedSummary,
+  EvidenceLedger
+};

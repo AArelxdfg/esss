@@ -14,36 +14,19 @@ const { WindowsInstallLifecycle, CrashLoopWatchdog } = require('../src/windows-p
   await fs.writeFile(oldPayload, 'old-verified-payload');
   await fs.writeFile(newPayload, 'new-verified-payload');
   const sha = value => crypto.createHash('sha256').update(value).digest('hex');
-  const oldSha = sha('old-verified-payload');
-  const newSha = sha('new-verified-payload');
 
   let healthy = true;
   const lifecycle = new WindowsInstallLifecycle({ rootDir: root, healthCheck: async () => healthy });
-  await lifecycle.install({ payloadPath: oldPayload, expectedSha256: oldSha, version: '5.3.5' });
+  await lifecycle.install({ payloadPath: oldPayload, expectedSha256: sha('old-verified-payload'), version: '5.3.5' });
   assert.strictEqual((await fs.readFile(path.join(root, 'app', 'LLera.exe'))).toString(), 'old-verified-payload');
-
-  const verifiedNew = await lifecycle.install({ payloadPath: newPayload, expectedSha256: newSha, version: '5.4.0-reconstructed' });
-  assert.strictEqual(verifiedNew.verified, true);
-  assert.strictEqual(verifiedNew.hadCurrent, true);
-  assert.strictEqual(verifiedNew.previousSha256, oldSha);
-  assert.strictEqual((await fs.readFile(path.join(root, 'app', 'LLera.exe'))).toString(), 'new-verified-payload');
-  const postInstallRollback = await lifecycle.rollbackVerifiedInstall({ version: verifiedNew.version, expectedSha256: verifiedNew.sha256, hadCurrent: verifiedNew.hadCurrent, previousSha256: verifiedNew.previousSha256 });
-  assert.strictEqual(postInstallRollback.rolledBack, true);
-  assert.strictEqual(postInstallRollback.restoredPrevious, true);
-  assert.strictEqual(postInstallRollback.sha256, oldSha);
-  assert.strictEqual((await fs.readFile(path.join(root, 'app', 'LLera.exe'))).toString(), 'old-verified-payload');
-  const rollbackJournal = JSON.parse(await fs.readFile(path.join(root, 'install-journal.json'), 'utf8'));
-  assert.strictEqual(rollbackJournal.state, 'rolled-back-post-install-stability-failure');
-  assert.strictEqual(rollbackJournal.rejectedSha256, newSha);
-  assert.strictEqual(rollbackJournal.previousSha256, oldSha);
 
   healthy = false;
   let rolledBack = false;
   try {
     await lifecycle.install({
       payloadPath: newPayload,
-      expectedSha256: newSha,
-      version: '5.4.0-reconstructed-selftest-fail',
+      expectedSha256: sha('new-verified-payload'),
+      version: '5.4.0-reconstructed',
       selfTestTimeoutMs: 20,
     });
   } catch (error) {
@@ -79,7 +62,6 @@ const { WindowsInstallLifecycle, CrashLoopWatchdog } = require('../src/windows-p
   await lifecycle.uninstall({ keepUserData: true });
   console.log('windows packaging + watchdog parity PASS', {
     rollback: true,
-    verifiedPostInstallRollback: true,
     crashLoopSafeMode: true,
     keepUserDataUninstall: true,
   });

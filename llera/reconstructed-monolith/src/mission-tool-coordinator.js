@@ -74,9 +74,13 @@ class MissionToolCoordinator {
       stepId: activeStepId,
       tool,
       argumentsHash: trace.fingerprint || fingerprint(tool, args),
+      semanticFingerprint: trace.semanticFingerprint || null,
       outcome,
       material: Boolean(trace.material),
       verification: Boolean(trace.observation),
+      observation: Boolean(trace.observation),
+      scope: trace.scope || null,
+      verifiesFingerprint: trace.verifies || trace.verifiesFingerprint || null,
       evidenceIds
     });
 

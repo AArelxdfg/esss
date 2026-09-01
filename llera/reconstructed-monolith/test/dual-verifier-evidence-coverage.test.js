@@ -7,15 +7,19 @@ const { DualVerifier } = require('../src/dual-verifier');
 const ledger = new EvidenceLedger({missionId:'mission-bind'});
 const before = ledger.add({
   stepId:'observe-before',
+  tool:'read_file',
   kind:'state',
   target:'C:/LLera/config.json',
-  bytes:Buffer.from('{"mode":"old"}')
+  bytes:Buffer.from('{"mode":"old"}'),
+  summary:'Observed the configuration before mutation'
 });
 const after = ledger.add({
   stepId:'observe-after',
+  tool:'read_file',
   kind:'state',
   target:'C:/LLera/config.json',
-  bytes:Buffer.from('{"mode":"new"}')
+  bytes:Buffer.from('{"mode":"new"}'),
+  summary:'Observed the configuration after mutation'
 });
 
 const verifier = new DualVerifier();

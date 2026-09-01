@@ -1,108 +1,76 @@
 'use strict';
-
 const assert = require('assert');
 const { RuntimeLifecycle } = require('../src/runtime-lifecycle');
 
 function deferred() {
-  let resolve, reject;
-  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
-  return { promise, resolve, reject };
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  return { promise, resolve };
 }
 
 (async () => {
-  const starts = [];
-  const stops = [];
-  const firstStart = deferred();
-  let first = true;
-  let failHealthFor = null;
-  let nextPid = 100;
-
+  const launchGate = deferred();
+  const launchObserved = deferred();
+  const events = [];
+  let live = 0;
+  let maxLive = 0;
+  let nextPid = 900;
   const runtime = new RuntimeLifecycle({
-    start: async ({ model, generation }) => {
-      starts.push({ model, generation });
-      if (first) {
-        first = false;
-        return firstStart.promise;
-      }
-      nextPid += 1;
-      return { pid: nextPid };
+    start: async ({ model }) => {
+      events.push(`start:${model}`);
+      live += 1;
+      maxLive = Math.max(maxLive, live);
+      launchObserved.resolve();
+      await launchGate.promise;
+      return { pid:++nextPid };
     },
-    stop: async request => { stops.push({ ...request }); },
-    health: async ({ model }) => model !== failHealthFor,
-    now: (() => { let t = 0; return () => ++t; })()
+    health: async ({ model }) => { events.push(`health:${model}`); return true; },
+    stop: async ({ model }) => { events.push(`stop:${model}`); live -= 1; }
   });
 
-  // Rejected concurrent start must not mutate the preferred/desired model.
-  const startingA = runtime.ensureRunning('model-a', 'boot-a');
-  assert.strictEqual(runtime.state, 'starting');
-  assert.strictEqual(runtime.desiredModel, 'model-a');
-  await assert.rejects(
-    runtime.ensureRunning('model-b', 'concurrent-boot-b'),
-    error => error && error.code === 'RUNTIME_START_IN_PROGRESS'
-  );
-  assert.strictEqual(runtime.desiredModel, 'model-a', 'rejected concurrent start changed desiredModel');
-  assert.strictEqual(starts.length, 1, 'rejected concurrent start launched a second backend');
+  const starting = runtime.ensureRunning('model-a', 'serialized-start');
+  await launchObserved.promise;
+  const stopping = runtime.stop('stop-during-start');
+  const pressure = await runtime.applyHostPressure('CRITICAL');
+  assert.strictEqual(pressure.deferred, true, 'pressure preemption must defer during a lifecycle transition');
+  assert.throws(() => runtime.registerInference('during-start', { abort:async () => {} }), /transition in progress/);
+  assert.strictEqual(events.includes('stop:model-a'), false, 'stop must wait for the active start owner');
+  launchGate.resolve();
+  await starting;
+  const stopped = await stopping;
+  assert.strictEqual(stopped.state, 'stopped');
+  assert.deepStrictEqual(events, ['start:model-a','health:model-a','stop:model-a']);
+  assert.strictEqual(maxLive, 1);
+  assert.ok(runtime.transitionLog.every(entry => typeof entry.owner === 'string' && entry.owner.length > 0));
+  assert.throws(() => runtime._transition('starting', 'unauthorized'), error => error.code === 'RUNTIME_TRANSITION_OWNER_REQUIRED');
 
-  firstStart.resolve({ pid: 100 });
-  await startingA;
-  assert.strictEqual(runtime.state, 'ready');
-  assert.strictEqual(runtime.model, 'model-a');
-  assert.strictEqual(runtime.desiredModel, 'model-a');
-
-  // A model switch owns the transition from admission-close through replacement
-  // launch. A second switch request during drain must be observational only.
-  const drain = deferred();
-  runtime.registerInference('slow-inference', {
-    abort: async () => drain.promise
+  let concurrentLive = 0;
+  let concurrentMax = 0;
+  let concurrentPid = 1000;
+  const switches = [];
+  const serializedSwitch = new RuntimeLifecycle({
+    start: async ({ model }) => { switches.push(`start:${model}`); concurrentLive += 1; concurrentMax = Math.max(concurrentMax, concurrentLive); return { pid:++concurrentPid }; },
+    health: async () => true,
+    stop: async ({ model }) => { switches.push(`stop:${model}`); concurrentLive -= 1; }
   });
-  const switchingB = runtime.ensureRunning('model-b', 'switch-b');
-  await Promise.resolve();
-  assert.strictEqual(runtime.inferenceAdmissionClosed, true);
-  assert.strictEqual(runtime.desiredModel, 'model-b');
-  await assert.rejects(
-    runtime.ensureRunning('model-c', 'concurrent-switch-c'),
-    error => error && error.code === 'RUNTIME_TRANSITION_IN_PROGRESS'
-  );
-  assert.strictEqual(runtime.desiredModel, 'model-b', 'rejected concurrent switch changed desiredModel');
-  assert.strictEqual(starts.length, 1, 'concurrent switch launched before drain completed');
+  await Promise.all([
+    serializedSwitch.ensureRunning('model-a', 'first-owner'),
+    serializedSwitch.ensureRunning('model-b', 'second-owner')
+  ]);
+  const final = serializedSwitch.snapshot();
+  assert.strictEqual(final.state, 'ready');
+  assert.strictEqual(final.model, 'model-b');
+  assert.strictEqual(final.desiredModel, 'model-b');
+  assert.strictEqual(concurrentMax, 1);
+  assert.deepStrictEqual(switches, ['start:model-a','stop:model-a','start:model-b']);
 
-  drain.resolve();
-  await switchingB;
-  assert.strictEqual(runtime.state, 'ready');
-  assert.strictEqual(runtime.model, 'model-b');
-  assert.strictEqual(runtime.desiredModel, 'model-b');
-  assert.strictEqual(starts.length, 2);
-  assert.strictEqual(stops.filter(x => x.pid === 100).length, 1);
-
-  // Recovery is an internal owner of the already-closed admission gate and must
-  // still be able to relaunch the desired model without opening a bypass to
-  // external ensureRunning calls.
-  const beforeRecoveryStarts = starts.length;
-  await runtime.recover('probe-failure');
-  assert.strictEqual(runtime.state, 'ready');
-  assert.strictEqual(runtime.model, 'model-b');
-  assert.strictEqual(runtime.desiredModel, 'model-b');
-  assert.strictEqual(starts.length, beforeRecoveryStarts + 1);
-
-  // Failed target health must still permit the internal rollback path while the
-  // external transition gate remains closed.
-  failHealthFor = 'model-c';
-  await assert.rejects(runtime.ensureRunning('model-c', 'switch-c-fails'), /runtime health check failed/);
-  assert.strictEqual(runtime.state, 'ready');
-  assert.strictEqual(runtime.model, 'model-b', 'failed switch did not restore previous runtime');
-  assert.strictEqual(runtime.desiredModel, 'model-c', 'preferred failed target should remain desired for later recovery policy');
-  assert.strictEqual(runtime.lastSwitchFailure && runtime.lastSwitchFailure.restored, true);
-  assert.strictEqual(runtime.inferenceAdmissionClosed, false);
-
-  console.log('MONOLITH runtime transition serialization PASS', {
-    rejectedStartDoesNotMutateDesiredModel: true,
-    rejectedSwitchDoesNotMutateDesiredModel: true,
-    concurrentLaunchPrevented: true,
-    recoveryInternalOwnershipPreserved: true,
-    rollbackInternalOwnershipPreserved: true,
-    singleRuntimeSwitchOrderPreserved: true
+  console.log('runtime transition serialization PASS', {
+    stopDuringStartSerialized:true,
+    transitionOwnerRequired:true,
+    inferenceClosedDuringTransition:true,
+    pressureDeferredDuringTransition:true,
+    concurrentSwitchSerialized:true,
+    desiredEqualsActual:true,
+    maxLiveRuntimes:concurrentMax
   });
-})().catch(error => {
-  console.error(error.stack || error);
-  process.exit(1);
-});
+})().catch(error => { console.error(error); process.exit(1); });

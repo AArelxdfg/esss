@@ -6,7 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const DEFAULT_IGNORES = Object.freeze(['.git','node_modules','dist','out','build','.DS_Store']);
-const SHA256_RE = /^[0-9a-f]{64}$/;
+const SHA256_RE = /^[a-f0-9]{64}$/;
 
 function sha256Buffer(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -27,20 +27,6 @@ async function sha256File(file) {
   for await (const chunk of stream) hash.update(chunk);
   return hash.digest('hex');
 }
-function validateRelativePath(value) {
-  if (typeof value !== 'string' || !value || value.includes('\\') || value.includes('\0')) return false;
-  if (value.startsWith('/') || /^[A-Za-z]:/.test(value)) return false;
-  const parts = value.split('/');
-  if (parts.some(part => !part || part === '.' || part === '..')) return false;
-  return parts.every(part => !/[\x00-\x1f\x7f]/.test(part));
-}
-function validateRecord(record) {
-  if (!record || typeof record !== 'object' || Array.isArray(record)) return { ok:false, reason:'invalid-file-record' };
-  if (!validateRelativePath(record.path)) return { ok:false, reason:'invalid-file-path' };
-  if (!Number.isSafeInteger(record.bytes) || record.bytes < 0) return { ok:false, reason:'invalid-file-bytes' };
-  if (typeof record.sha256 !== 'string' || !SHA256_RE.test(record.sha256)) return { ok:false, reason:'invalid-file-sha256' };
-  return { ok:true };
-}
 async function walk(rootDir, ignores = DEFAULT_IGNORES) {
   const out = [];
   const ignore = new Set(ignores);
@@ -56,6 +42,32 @@ async function walk(rootDir, ignores = DEFAULT_IGNORES) {
   }
   await visit(rootDir);
   return out;
+}
+function validateManifestFiles(files) {
+  if (!Array.isArray(files)) return { ok:false, reason:'files-not-array' };
+  const seen = new Set();
+  let prior = null;
+  let totalBytes = 0;
+  for (const record of files) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return { ok:false, reason:'invalid-file-record' };
+    const rel = record.path;
+    if (typeof rel !== 'string' || !rel || rel.includes('\\') || rel.startsWith('/') || /^[A-Za-z]:\//.test(rel)) {
+      return { ok:false, reason:'invalid-file-path' };
+    }
+    const normalized = path.posix.normalize(rel);
+    if (normalized !== rel || normalized === '..' || normalized.startsWith('../') || normalized.startsWith('./')) {
+      return { ok:false, reason:'unsafe-file-path' };
+    }
+    if (seen.has(rel)) return { ok:false, reason:'duplicate-file-path' };
+    if (prior !== null && prior.localeCompare(rel) >= 0) return { ok:false, reason:'noncanonical-file-order' };
+    seen.add(rel);
+    prior = rel;
+    if (!Number.isSafeInteger(record.bytes) || record.bytes < 0) return { ok:false, reason:'invalid-file-bytes' };
+    if (typeof record.sha256 !== 'string' || !SHA256_RE.test(record.sha256)) return { ok:false, reason:'invalid-file-sha256' };
+    totalBytes += record.bytes;
+    if (!Number.isSafeInteger(totalBytes)) return { ok:false, reason:'total-bytes-overflow' };
+  }
+  return { ok:true, fileCount:files.length, totalBytes };
 }
 async function buildSourceProvenance({ rootDir, product='LLera reconstructed MONOLITH OMEGA', schema=1, ignores=DEFAULT_IGNORES, createdAt=null } = {}) {
   if (!rootDir) throw new Error('rootDir is required');
@@ -76,31 +88,22 @@ async function buildSourceProvenance({ rootDir, product='LLera reconstructed MON
   return { ...manifest, manifestSha256:digestObject(manifest) };
 }
 function verifySourceProvenance(manifest) {
-  if (!manifest || manifest.kind !== 'reconstructed-source-provenance') return { ok:false, reason:'wrong-manifest-kind' };
-  if (manifest.exactHistoricalSource !== false) return { ok:false, reason:'historical-claim-forbidden' };
-  if (!Number.isSafeInteger(manifest.schema) || manifest.schema < 1) return { ok:false, reason:'invalid-schema' };
-  if (typeof manifest.product !== 'string' || !manifest.product.trim()) return { ok:false, reason:'invalid-product' };
-  if (typeof manifest.contentRoot !== 'string' || !SHA256_RE.test(manifest.contentRoot)) return { ok:false, reason:'invalid-content-root' };
-  if (typeof manifest.manifestSha256 !== 'string' || !SHA256_RE.test(manifest.manifestSha256)) return { ok:false, reason:'invalid-manifest-digest' };
-  if (!Array.isArray(manifest.files)) return { ok:false, reason:'invalid-files' };
-  const files = manifest.files;
-  const seen = new Set();
-  let totalBytes = 0;
-  for (const record of files) {
-    const valid = validateRecord(record);
-    if (!valid.ok) return valid;
-    if (seen.has(record.path)) return { ok:false, reason:'duplicate-file-path' };
-    seen.add(record.path);
-    totalBytes += record.bytes;
-    if (!Number.isSafeInteger(totalBytes)) return { ok:false, reason:'total-bytes-overflow' };
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest) || manifest.kind !== 'reconstructed-source-provenance') {
+    return { ok:false, reason:'wrong-manifest-kind' };
   }
-  if (!Number.isSafeInteger(manifest.fileCount) || manifest.fileCount !== files.length) return { ok:false, reason:'file-count-mismatch' };
-  if (!Number.isSafeInteger(manifest.totalBytes) || manifest.totalBytes !== totalBytes) return { ok:false, reason:'total-bytes-mismatch' };
+  if (manifest.exactHistoricalSource !== false) return { ok:false, reason:'historical-claim-forbidden' };
+  const validation = validateManifestFiles(manifest.files);
+  if (!validation.ok) return validation;
+  const files = manifest.files;
+  if (manifest.fileCount !== validation.fileCount) return { ok:false, reason:'file-count-mismatch' };
+  if (manifest.totalBytes !== validation.totalBytes) return { ok:false, reason:'total-bytes-mismatch' };
+  if (typeof manifest.contentRoot !== 'string' || !SHA256_RE.test(manifest.contentRoot)) return { ok:false, reason:'invalid-content-root' };
+  if (typeof manifest.manifestSha256 !== 'string' || !SHA256_RE.test(manifest.manifestSha256)) return { ok:false, reason:'invalid-manifest-sha256' };
   const expectedRoot = digestObject(files.map(x => [x.path, x.bytes, x.sha256]));
   if (expectedRoot !== manifest.contentRoot) return { ok:false, reason:'content-root-mismatch' };
   const { manifestSha256, ...unsigned } = manifest;
   const expectedManifest = digestObject(unsigned);
   if (expectedManifest !== manifestSha256) return { ok:false, reason:'manifest-digest-mismatch' };
-  return { ok:true, fileCount:files.length, totalBytes, contentRoot:manifest.contentRoot, manifestSha256 };
+  return { ok:true, fileCount:validation.fileCount, totalBytes:validation.totalBytes, contentRoot:manifest.contentRoot, manifestSha256 };
 }
-module.exports = { DEFAULT_IGNORES, buildSourceProvenance, verifySourceProvenance, digestObject, sha256File, validateRelativePath };
+module.exports = { DEFAULT_IGNORES, buildSourceProvenance, verifySourceProvenance, digestObject, sha256File, validateManifestFiles };

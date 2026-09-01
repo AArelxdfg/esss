@@ -2,6 +2,15 @@
 
 const assert = require('assert');
 const { OutcomeMemory } = require('../src/outcome-memory');
+const { digest, receiptStateKey } = require('../src/verified-mission-finalizer');
+
+function receiptFor({missionId, claim, evidenceIds}) {
+  const strictScore = 0.91;
+  const adversarialScore = 0.88;
+  const toolTraceDigest = digest([]);
+  const stateKey = receiptStateKey({missionId,claim,evidenceIds,materialBindings:[],strictScore,adversarialScore,toolTraceDigest});
+  return {schema:2,missionId,claim,evidenceIds,materialBindings:[],strictScore,adversarialScore,toolTraceDigest,stateKey,sha256:stateKey,issuedAt:1};
+}
 
 (async () => {
   let persisted = null;
@@ -15,7 +24,7 @@ const { OutcomeMemory } = require('../src/outcome-memory');
     missionId:'m-no-evidence',
     goal:'do something',
     status:'completed',
-    verification:{strict:true, adversarial:true, confidence:0.99}
+    verification:{}
   });
   assert.strictEqual(noEvidence.verified, false, 'an outcome without persisted evidence must not become verified');
 
@@ -28,7 +37,8 @@ const { OutcomeMemory } = require('../src/outcome-memory');
       strict:true,
       adversarial:true,
       confidence:0.91,
-      evidenceIds:['ev_source_a','ev_source_b','ev_source_a']
+      evidenceIds:['ev_source_a','ev_source_b','ev_source_a'],
+      receipt:receiptFor({missionId:'m-good',claim:'download verified',evidenceIds:['ev_source_a','ev_source_b']})
     }
   });
   assert.strictEqual(source.verified, true);
@@ -44,7 +54,8 @@ const { OutcomeMemory } = require('../src/outcome-memory');
       strict:true,
       adversarial:true,
       confidence:0.90,
-      evidenceIds:['ev_source_b']
+      evidenceIds:['ev_source_b'],
+      receiptSha256:source.verification.receiptSha256
     }
   });
   assert.deepStrictEqual(candidate.evidenceIds, ['ev_source_b']);
@@ -59,7 +70,7 @@ const { OutcomeMemory } = require('../src/outcome-memory');
       description:'must reject evidence from another mission',
       procedure:['x'],
       evidenceIds:['ev_foreign'],
-      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:['ev_foreign']}
+      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:['ev_foreign'], receiptSha256:source.verification.receiptSha256}
     }),
     /not derived from source outcome/
   );
@@ -71,7 +82,7 @@ const { OutcomeMemory } = require('../src/outcome-memory');
       description:'candidate evidence must be covered by verification',
       procedure:['x'],
       evidenceIds:['ev_source_a','ev_source_b'],
-      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:['ev_source_a']}
+      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:['ev_source_a'], receiptSha256:source.verification.receiptSha256}
     }),
     /not covered by skill verification/
   );

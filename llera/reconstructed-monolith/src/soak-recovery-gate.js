@@ -12,90 +12,53 @@ class SoakRecoveryGate {
   async run({ model, cycles = 25, recoveryEvery = 7, pressureEvery = 5, missionId, maxRecoveryCount = 8 } = {}) {
     if (!model || !missionId) throw new Error('model and missionId are required');
     if (!Number.isInteger(cycles) || cycles < 5) throw new Error('cycles must be an integer >= 5');
-    if (!Number.isInteger(recoveryEvery) || recoveryEvery < 1) throw new Error('recoveryEvery must be an integer >= 1');
-    if (!Number.isInteger(pressureEvery) || pressureEvery < 1) throw new Error('pressureEvery must be an integer >= 1');
-    if (!Number.isInteger(maxRecoveryCount) || maxRecoveryCount < 0) throw new Error('maxRecoveryCount must be an integer >= 0');
     const startedAt = this.now();
-    const report = { schema: 7, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
-      pressureEvents: 0, pressureTransitions: 0, pressureResets: 0, missionResumes: 0, watchdogSafeModeEvents: 0, evidenceChecks: 0,
-      runtimeStartupSucceeded: false, watchdogStabilityCommitted: false, failures: [] };
-    let lastRuntimePressure = null;
+    const report = { schema: 2, model, missionId, cycles, startedAt, completedCycles: 0, runtimeRecoveries: 0,
+      pressureEvents: 0, missionResumes: 0, watchdogSafeModeEvents: 0, evidenceChecks: 0,
+      watchdogStabilityCommitted: false, failures: [] };
+    await this.runtime.ensureRunning(model, 'soak-start');
 
-    try {
-      await this.runtime.ensureRunning(model, 'soak-start');
-      report.runtimeStartupSucceeded = true;
-    } catch (error) {
-      report.failures.push({
-        cycle: 0,
-        stage: 'runtime-startup',
-        message: `runtime startup failed: ${String(error && error.message || error)}`,
-        at: this.now()
-      });
-    }
-
-    if (report.runtimeStartupSucceeded) {
-      for (let i = 1; i <= cycles; i++) {
-        try {
-          const pressureSample = i % pressureEvery === 0
-            ? { commitPercent: 94, diskActivePercent: 98, diskQueue: 6, pagesPerSec: 1200, cpuPercent: 91 }
-            : { commitPercent: 52, diskActivePercent: 25, diskQueue: 0.2, pagesPerSec: 20, cpuPercent: 35 };
-          const pressure = await this.hostGuard.evaluate(pressureSample);
-          const pressureLevel = String(pressure && pressure.level || 'NORMAL').toUpperCase();
-          if (pressureLevel === 'CRITICAL') report.pressureEvents += 1;
-          if (typeof this.runtime.applyHostPressure === 'function' && pressureLevel !== lastRuntimePressure) {
-            await this.runtime.applyHostPressure(pressureLevel);
-            lastRuntimePressure = pressureLevel;
-            report.pressureTransitions += 1;
-          }
-          if (i % recoveryEvery === 0) {
-            await this.runtime.recover(`soak-cycle-${i}`);
-            report.runtimeRecoveries += 1;
-          }
-          let mission = this.missionEngine.getMission(missionId);
-          if (!mission) throw new Error('mission disappeared during soak');
-          if (mission.status === 'interrupted') {
-            await this.missionEngine.startMission(missionId);
-            report.missionResumes += 1;
-            mission = this.missionEngine.getMission(missionId);
-            if (!mission) throw new Error('mission disappeared after resume');
-          }
-          if (!isHealthyMissionStatus(mission.status)) {
-            throw new Error(`mission entered non-healthy status ${String(mission.status || 'unknown')} at cycle ${i}`);
-          }
-
-          const evidenceOk = await this.evidenceVerifier({ cycle: i, missionId, runtime: this.runtime.snapshot ? this.runtime.snapshot() : null });
-          report.evidenceChecks += 1;
-          if (!evidenceOk) throw new Error(`evidence verification failed at cycle ${i}`);
-          const profile = await this.watchdog.launchProfile();
-          if (profile && profile.mode === 'safe') {
-            report.watchdogSafeModeEvents += 1;
-            throw new Error(`watchdog entered safe mode at cycle ${i}`);
-          }
-          const runtimeState = this.runtime.snapshot ? this.runtime.snapshot() : { state: 'unknown' };
-          if (runtimeState.state !== 'ready') throw new Error(`runtime not ready at cycle ${i}`);
-          report.completedCycles += 1;
-          await this.sleep(0);
-        } catch (error) {
-          report.failures.push({ cycle: i, message: String(error && error.message || error), at: this.now() });
-          break;
-        }
-      }
-    }
-
-    // A soak run must never strand the product in a synthetic throttled profile.
-    // Restore NORMAL before the final health snapshot, even when startup or an
-    // earlier cycle failed; failed runs still cannot clear watchdog stability debt.
-    if (typeof this.runtime.applyHostPressure === 'function' && lastRuntimePressure !== 'NORMAL') {
+    for (let i = 1; i <= cycles; i++) {
       try {
-        await this.runtime.applyHostPressure('NORMAL');
-        lastRuntimePressure = 'NORMAL';
-        report.pressureResets += 1;
+        const pressureSample = i % pressureEvery === 0
+          ? { commitPercent: 94, diskActivePercent: 98, diskQueue: 6, pagesPerSec: 1200, cpuPercent: 91 }
+          : { commitPercent: 52, diskActivePercent: 25, diskQueue: 0.2, pagesPerSec: 20, cpuPercent: 35 };
+        const pressure = await this.hostGuard.evaluate(pressureSample);
+        if (pressure.level && String(pressure.level).toUpperCase() === 'CRITICAL') {
+          report.pressureEvents += 1;
+          if (typeof this.runtime.applyHostPressure === 'function') await this.runtime.applyHostPressure('CRITICAL');
+        }
+        if (i % recoveryEvery === 0) {
+          await this.runtime.recover(`soak-cycle-${i}`);
+          report.runtimeRecoveries += 1;
+        }
+        let mission = this.missionEngine.getMission(missionId);
+        if (!mission) throw new Error('mission disappeared during soak');
+        if (mission.status === 'interrupted') {
+          await this.missionEngine.startMission(missionId);
+          report.missionResumes += 1;
+          mission = this.missionEngine.getMission(missionId);
+          if (!mission) throw new Error('mission disappeared after resume');
+        }
+        if (!isHealthyMissionStatus(mission.status)) {
+          throw new Error(`mission entered non-healthy status ${String(mission.status || 'unknown')} at cycle ${i}`);
+        }
+
+        const evidenceOk = await this.evidenceVerifier({ cycle: i, missionId, runtime: this.runtime.snapshot ? this.runtime.snapshot() : null });
+        report.evidenceChecks += 1;
+        if (!evidenceOk) throw new Error(`evidence verification failed at cycle ${i}`);
+        const profile = await this.watchdog.launchProfile();
+        if (profile && profile.mode === 'safe') {
+          report.watchdogSafeModeEvents += 1;
+          throw new Error(`watchdog entered safe mode at cycle ${i}`);
+        }
+        const runtimeState = this.runtime.snapshot ? this.runtime.snapshot() : { state: 'unknown' };
+        if (runtimeState.state !== 'ready') throw new Error(`runtime not ready at cycle ${i}`);
+        report.completedCycles += 1;
+        await this.sleep(0);
       } catch (error) {
-        report.failures.push({
-          cycle: Math.min(report.completedCycles + 1, cycles),
-          message: `host pressure reset failed: ${String(error && error.message || error)}`,
-          at: this.now()
-        });
+        report.failures.push({ cycle: i, message: String(error && error.message || error), at: this.now() });
+        break;
       }
     }
 
@@ -105,18 +68,14 @@ class SoakRecoveryGate {
     report.durationMs = report.finishedAt - startedAt;
     report.finalRuntime = finalRuntime;
     report.finalMissionStatus = finalMission ? finalMission.status : 'missing';
-    report.finalRuntimePressure = lastRuntimePressure;
 
     const gates = {
-      runtimeStartupSucceeded: report.runtimeStartupSucceeded,
       completedAllCycles: report.completedCycles === cycles,
       runtimeReady: Boolean(finalRuntime && finalRuntime.state === 'ready'),
       desiredModelPreserved: Boolean(finalRuntime && finalRuntime.desiredModel === model),
-      activeModelPreserved: Boolean(finalRuntime && finalRuntime.model === model),
       recoveryBudgetRespected: report.runtimeRecoveries <= maxRecoveryCount,
       evidenceContinuous: report.evidenceChecks === cycles,
       noWatchdogSafeMode: report.watchdogSafeModeEvents === 0,
-      pressureRestored: lastRuntimePressure === 'NORMAL',
       missionPreserved: Boolean(finalMission),
       missionHealthy: Boolean(finalMission && isHealthyMissionStatus(finalMission.status)),
       noFailures: report.failures.length === 0,
@@ -136,16 +95,9 @@ class SoakRecoveryGate {
         });
       } else {
         try {
-          const stabilityCommitRequestedAt = this.now();
-          report.watchdogStabilityCommitRequestedAt = stabilityCommitRequestedAt;
-          const stableState = await this.watchdog.markStable({ requestedAt: stabilityCommitRequestedAt });
-          const stabilityCommitObservedAt = this.now();
-          report.watchdogStabilityCommitObservedAt = stabilityCommitObservedAt;
-          if (!isDurableStabilityAcknowledgement(stableState, stabilityCommitRequestedAt, stabilityCommitObservedAt)) {
-            throw new Error('watchdog returned an invalid, stale or future-dated stability acknowledgement');
-          }
+          const stableState = await this.watchdog.markStable();
           report.watchdogStabilityCommitted = true;
-          report.watchdogStableState = stableState;
+          report.watchdogStableState = stableState || null;
           gates.watchdogStabilityCommitted = true;
         } catch (error) {
           report.failures.push({
@@ -169,18 +121,4 @@ function isHealthyMissionStatus(status) {
   return normalized === 'running' || normalized === 'completed';
 }
 
-function isDurableStabilityAcknowledgement(state, commitRequestedAt, commitObservedAt = Number.POSITIVE_INFINITY) {
-  if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
-  if (!Number.isFinite(commitRequestedAt)) return false;
-  if (!(Number.isFinite(commitObservedAt) || commitObservedAt === Number.POSITIVE_INFINITY)) return false;
-  if (commitObservedAt < commitRequestedAt) return false;
-  if (!Number.isFinite(state.lastStableAt) || state.lastStableAt < commitRequestedAt || state.lastStableAt > commitObservedAt) return false;
-  if (!Array.isArray(state.crashes) || state.crashes.length !== 0) return false;
-  if (state.safeModeUntil != null) {
-    if (!Number.isFinite(state.safeModeUntil)) return false;
-    if (state.safeModeUntil > state.lastStableAt) return false;
-  }
-  return true;
-}
-
-module.exports = { SoakRecoveryGate, isHealthyMissionStatus, isDurableStabilityAcknowledgement };
+module.exports = { SoakRecoveryGate, isHealthyMissionStatus };

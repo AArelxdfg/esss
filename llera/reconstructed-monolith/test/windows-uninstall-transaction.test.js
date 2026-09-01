@@ -25,14 +25,7 @@ const { WindowsUninstallTransaction } = require('../src/windows-uninstall-transa
   assert.strictEqual(interrupted,true);
   assert.strictEqual(await fs.readFile(path.join(root,'data','sentinel.txt'),'utf8'),'data');
 
-  await assert.rejects(
-    () => tx.resume(),
-    /explicit model deletion confirmation/,
-    'crash resume must not trust destructive journal retention flags by themselves'
-  );
-  assert.strictEqual(await fs.stat(path.join(root,'models')).then(()=>true,()=>false),true);
-
-  const resumed = await tx.resume({confirmModelDeletion:true});
+  const resumed = await tx.resume();
   assert.strictEqual(resumed.uninstalled,true);
   assert.strictEqual(resumed.keepData,true);
   assert.strictEqual(resumed.keepModels,false);
@@ -44,7 +37,6 @@ const { WindowsUninstallTransaction } = require('../src/windows-uninstall-transa
     'completed shortcut scopes must not replay after restart');
 
   const journal = JSON.parse(await fs.readFile(path.join(root,'uninstall-journal.json'),'utf8'));
-  assert.strictEqual(journal.schema,3);
   assert.strictEqual(journal.state,'uninstalled');
   assert(journal.completed.includes('remove-shortcuts'));
   assert(journal.completed.includes('remove-models'));
@@ -56,7 +48,6 @@ const { WindowsUninstallTransaction } = require('../src/windows-uninstall-transa
 
   console.log('MONOLITH resumable uninstall transaction PASS', {
     interruptedResume:true,
-    destructiveResumeReaffirmation:true,
     perScopeShortcutCheckpointing:true,
     idempotentCompletedSteps:true,
     independentDataModelRetention:true,

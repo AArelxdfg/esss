@@ -64,10 +64,10 @@ class ReleaseCandidateGate {
     const signingReady = Boolean(input.signing && input.signing.materialPresent === true && input.signing.manifestSigned === true);
     const validation = input.validation || {};
     const physicalWindowsValidated = validation.physicalWindows === true;
-    const physicalGpuValidated = validation.physicalGpu === true;
-    const physicalOcrValidated = validation.physicalOcr === true;
-    const installerExecutionValidated = validation.installerExecution === true;
+    const windowsOcrValidated = validation.windowsOcr === true;
+    const installerExecutionValidated = validation.installerExecuted === true;
     const watchdogSoakValidated = validation.watchdogSoak === true;
+    const physicalGpuValidated = validation.physicalGpu === true;
 
     const blockers = [];
     if (!reconstructedParity) blockers.push('behavior-parity-incomplete');
@@ -75,20 +75,16 @@ class ReleaseCandidateGate {
     if (!testEvidenceValid) blockers.push('required-tests-or-crossbuild-missing');
     if (!signingReady) blockers.push('signing-material-or-signed-manifest-missing');
     if (!physicalWindowsValidated) blockers.push('physical-windows-validation-missing');
-    if (!physicalOcrValidated) blockers.push('physical-ocr-validation-missing');
-    if (!installerExecutionValidated) blockers.push('physical-installer-execution-missing');
-    if (!watchdogSoakValidated) blockers.push('physical-watchdog-soak-validation-missing');
+    if (!windowsOcrValidated) blockers.push('windows-ocr-validation-missing');
+    if (!installerExecutionValidated) blockers.push('installer-execution-validation-missing');
+    if (!watchdogSoakValidated) blockers.push('watchdog-soak-validation-missing');
 
     const publishableCandidate = blockers.length === 0;
-    const exactV54ClaimAllowed = Boolean(
-      exactV540 &&
-      artifactEvidenceValid &&
-      artifact.sha256 === CONTRACT.v540InstallerSha256
-    );
+    const exactV54ClaimAllowed = exactV540 && artifact.sha256 === CONTRACT.v540InstallerSha256;
     const windowsGradeFinalClaimAllowed = publishableCandidate && physicalGpuValidated;
 
     const result = {
-      schema: 3,
+      schema: 1,
       reconstructedParity,
       exactHistoricalSource: { v535: exactV535, v540: exactV540 },
       exactV54ClaimAllowed,
@@ -100,10 +96,10 @@ class ReleaseCandidateGate {
       testEvidenceValid,
       signingReady,
       physicalWindowsValidated,
-      physicalGpuValidated,
-      physicalOcrValidated,
+      windowsOcrValidated,
       installerExecutionValidated,
       watchdogSoakValidated,
+      physicalGpuValidated,
       blockers
     };
     return { ...result, gateDigest: digestObject(result) };

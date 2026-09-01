@@ -1,92 +1,93 @@
 'use strict';
-
 const assert = require('assert');
 const { EvidenceLedger } = require('../src/evidence-ledger');
-const { DualVerifier } = require('../src/dual-verifier');
+const { StrictEvidenceVerifier, AdversarialEvidenceVerifier, DualVerifier } = require('../src/dual-verifier');
 
-const ledger = new EvidenceLedger({missionId:'mission-dual-independent'});
-const evidence = ledger.add({
-  stepId:'verify-output',
-  tool:'hash_file',
-  kind:'artifact',
-  target:'C:/LLera/output.bin',
-  bytes:Buffer.from('verified-output')
+const ledger = new EvidenceLedger({missionId:'m-independent'});
+const ev = ledger.add({stepId:'s1',tool:'read_file',kind:'state',target:'x',bytes:Buffer.from('x'),summary:'Observed x state'});
+
+const dual = new DualVerifier();
+assert.notStrictEqual(dual.strictVerifier, dual.adversarialVerifier);
+assert.notStrictEqual(dual.strictVerifier.engineId, dual.adversarialVerifier.engineId);
+
+const pass = dual.verify({
+  claim:'state is x', evidence:[ev],
+  strictChecks:[{name:'strict-observation',ok:true,evidenceIds:[ev.id]}],
+  adversarialChecks:[{name:'counterexample-search',ok:true,severity:'critical',evidenceIds:[ev.id]}]
 });
-const verifier = new DualVerifier();
+assert.strictEqual(pass.ok,true);
+assert.strictEqual(pass.independence.distinctInstances,true);
+assert.strictEqual(pass.independence.distinctEngineIds,true);
 
-const sharedArray = [{
-  name:'artifact_matches',
-  detail:'hash matches expected artifact',
-  ok:true,
-  evidenceIds:[evidence.id]
-}];
-const sharedArrayResult = verifier.verify({
-  claim:'artifact is valid',
-  evidence:[evidence],
-  strictChecks:sharedArray,
-  adversarialChecks:sharedArray
+const criticalReject = dual.verify({
+  claim:'state is x', evidence:[ev],
+  strictChecks:[{name:'strict-observation',ok:true,evidenceIds:[ev.id]}],
+  adversarialChecks:[
+    {name:'weak-check-1',ok:true,evidenceIds:[ev.id]},
+    {name:'weak-check-2',ok:true,evidenceIds:[ev.id]},
+    {name:'critical-counterexample',ok:false,severity:'critical',evidenceIds:[ev.id]}
+  ]
 });
-assert.equal(sharedArrayResult.ok, false);
-assert.equal(sharedArrayResult.reason, 'verifier_independence_reject');
-assert.equal(sharedArrayResult.independence.reason, 'shared_check_array');
+assert.strictEqual(criticalReject.ok,false);
+assert.strictEqual(criticalReject.adversarial.criticalFailure,true);
+assert.strictEqual(criticalReject.adversarial.score,0);
 
-const sharedObject = {
-  name:'artifact_matches',
-  detail:'hash matches expected artifact',
-  ok:true,
-  evidenceIds:[evidence.id]
-};
-const sharedObjectResult = verifier.verify({
-  claim:'artifact is valid',
-  evidence:[evidence],
-  strictChecks:[sharedObject],
-  adversarialChecks:[sharedObject]
+const same = new StrictEvidenceVerifier({engineId:'same-engine'});
+assert.throws(() => new DualVerifier({strictVerifier:same, adversarialVerifier:same}), /separate instances/);
+assert.throws(() => new DualVerifier({
+  strictVerifier:new StrictEvidenceVerifier({engineId:'same-engine'}),
+  adversarialVerifier:new AdversarialEvidenceVerifier({engineId:'same-engine'})
+}), /engineId must differ/);
+
+const strict = new StrictEvidenceVerifier({threshold:1,engineId:'strict-custom'});
+const adversarial = new AdversarialEvidenceVerifier({threshold:0.5,engineId:'adv-custom'});
+const independent = new DualVerifier({strictVerifier:strict, adversarialVerifier:adversarial});
+const result = independent.verify({
+  claim:'independent policy', evidence:[ev],
+  strictChecks:[
+    {name:'s1',ok:true,evidenceIds:[ev.id]},
+    {name:'s2',ok:false,evidenceIds:[ev.id]}
+  ],
+  adversarialChecks:[
+    {name:'a1',ok:true,evidenceIds:[ev.id]},
+    {name:'a2',ok:false,evidenceIds:[ev.id]}
+  ]
 });
-assert.equal(sharedObjectResult.ok, false);
-assert.equal(sharedObjectResult.independence.reason, 'shared_check_object');
+assert.strictEqual(result.strict.score,0.5);
+assert.strictEqual(result.strict.ok,false);
+assert.strictEqual(result.adversarial.score,0.5);
+assert.strictEqual(result.adversarial.ok,true);
+assert.strictEqual(result.ok,false);
 
-const copiedResult = verifier.verify({
-  claim:'artifact is valid',
-  evidence:[evidence],
-  strictChecks:[{
-    name:'artifact_matches',
-    detail:'hash matches expected artifact',
-    ok:true,
-    evidenceIds:[evidence.id]
-  }],
-  adversarialChecks:[{
-    name:'artifact_matches',
-    detail:'hash matches expected artifact',
-    ok:true,
-    evidenceIds:[evidence.id]
-  }]
+const sharedChecks = [{name:'shared',ok:true,evidenceIds:[ev.id]}];
+const sameReference = dual.verify({claim:'same reference',evidence:[ev],strictChecks:sharedChecks,adversarialChecks:sharedChecks});
+assert.strictEqual(sameReference.reason,'verifier_check_independence_reject');
+assert.strictEqual(sameReference.independence.sameCheckReference,true);
+
+const clonedChecks = [{name:'same semantic check',detail:'identical',ok:true,evidenceIds:[ev.id]}];
+const cloned = dual.verify({claim:'cloned checks',evidence:[ev],strictChecks:clonedChecks,adversarialChecks:JSON.parse(JSON.stringify(clonedChecks))});
+assert.strictEqual(cloned.reason,'verifier_check_independence_reject');
+assert.strictEqual(cloned.independence.sameCheckSet,true);
+
+const overlap = dual.verify({
+  claim:'overlapping semantics', evidence:[ev],
+  strictChecks:[{name:'different names',semanticKey:'same-contract',ok:true,evidenceIds:[ev.id]}],
+  adversarialChecks:[{name:'different name too',semanticKey:'same-contract',ok:true,evidenceIds:[ev.id]}]
 });
-assert.equal(copiedResult.ok, false);
-assert.equal(copiedResult.independence.reason, 'identical_verifier_checks');
+assert.strictEqual(overlap.reason,'verifier_check_independence_reject');
+assert.deepStrictEqual(overlap.independence.semanticOverlap,['explicit:same-contract']);
 
-const independentResult = verifier.verify({
-  claim:'artifact is valid',
-  evidence:[evidence],
-  strictChecks:[{
-    name:'artifact_matches',
-    detail:'hash matches expected artifact',
-    ok:true,
-    evidenceIds:[evidence.id]
-  }],
-  adversarialChecks:[{
-    name:'tamper_counterexample_rejected',
-    detail:'independent adversarial path found no alternate bytes for the bound target',
-    ok:true,
-    evidenceIds:[evidence.id]
-  }]
+const permitted = new DualVerifier({requireIndependentChecks:false}).verify({
+  claim:'contract does not require independence', evidence:[ev], strictChecks:sharedChecks, adversarialChecks:sharedChecks
 });
-assert.equal(independentResult.ok, true);
-assert.equal(independentResult.reason, 'dual_verifier_pass');
-assert.equal(independentResult.independence.reason, 'independent_verifier_channels');
+assert.strictEqual(permitted.ok,true);
 
-console.log('MONOLITH dual verifier independence PASS', {
-  sharedArrayRejected:true,
-  sharedObjectRejected:true,
-  copiedChecksRejected:true,
-  independentChannelsPass:true
+console.log('MONOLITH dual verifier structural independence PASS', {
+  distinctClasses:true,
+  distinctInstances:true,
+  distinctEngineIds:true,
+  independentPolicies:true,
+  repeatedOrOverlappingChecksRejected:true,
+  contractCanExplicitlyAllowOverlap:true,
+  adversarialCriticalFailureFailClosed:true
 });

@@ -1,7 +1,5 @@
 'use strict';
 
-const { canCompleteRuntimeInference } = require('./runtime-completion-guard');
-
 const LOW_PRIORITY_CLASSES = new Set(['council', 'adversarial']);
 
 class RuntimeInferenceCoordinator {
@@ -29,6 +27,13 @@ class RuntimeInferenceCoordinator {
 
     try {
       const runtimeTask = this.runtime.registerInference(id, { priority, abort });
+      const generation = runtimeTask && runtimeTask.generation;
+      if (!Number.isSafeInteger(generation) || generation <= 0) {
+        this.governor.complete(id);
+        const error = new Error('runtime inference registration returned no valid generation');
+        error.code = 'RUNTIME_INFERENCE_GENERATION_REQUIRED';
+        throw error;
+      }
       const record = {
         id,
         className: admission.className,
@@ -37,7 +42,7 @@ class RuntimeInferenceCoordinator {
         reasoning: admission.reasoning,
         pressure: admission.pressure,
         startedAt: admission.startedAt,
-        generation: runtimeTask && runtimeTask.generation
+        generation
       };
       this.active.set(id, record);
       return { allow: true, ...record };
@@ -47,48 +52,14 @@ class RuntimeInferenceCoordinator {
     }
   }
 
-  complete(id, expectedGeneration = null) {
-    const local = this.active.get(id) || null;
-
-    if (expectedGeneration === null || expectedGeneration === undefined) {
-      this.completed.push({
-        id,
-        reason: 'generation-required',
-        expectedGeneration: null,
-        activeGeneration: local && local.generation !== undefined ? local.generation : null
-      });
-      return false;
-    }
-
-    if (!local || local.generation !== expectedGeneration) {
-      this.completed.push({
-        id,
-        reason: 'stale-completion-ignored',
-        expectedGeneration,
-        activeGeneration: local && local.generation !== undefined ? local.generation : null
-      });
-      return false;
-    }
-
-    const runtimeGate = canCompleteRuntimeInference(this.runtime, id, expectedGeneration);
-    if (!runtimeGate.allow) {
-      this.completed.push({
-        id,
-        reason: 'runtime-generation-completion-blocked',
-        expectedGeneration,
-        activeGeneration: local.generation,
-        runtimeGeneration: runtimeGate.activeGeneration,
-        runtimeReason: runtimeGate.reason
-      });
-      return false;
-    }
-
-    const runtimeRemoved = this.runtime.completeInference(id, expectedGeneration);
+  complete(id, generation) {
+    const local = this.active.get(id);
+    if (!local || !Number.isSafeInteger(generation) || generation !== local.generation) return false;
+    const runtimeRemoved = this.runtime.completeInference(id, generation);
+    if (!runtimeRemoved) return false;
     const governorRemoved = this.governor.complete(id);
     const localRemoved = this.active.delete(id);
-    if (runtimeRemoved || governorRemoved || localRemoved) {
-      this.completed.push({ id, reason: 'completed', generation: local.generation });
-    }
+    if (runtimeRemoved || governorRemoved || localRemoved) this.completed.push({ id, reason: 'completed' });
     return Boolean(runtimeRemoved || governorRemoved || localRemoved);
   }
 

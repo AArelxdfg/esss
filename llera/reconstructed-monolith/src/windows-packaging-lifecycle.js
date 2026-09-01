@@ -253,41 +253,9 @@ class WindowsInstallLifecycle {
       state: 'installed-verified',
       version,
       sha256: stagedDigest,
-      hadCurrent,
       previousSha256
     });
-    return { current, version, sha256: stagedDigest, verified: true, hadCurrent, previousSha256 };
-  }
-
-  async rollbackVerifiedInstall({ version, expectedSha256, hadCurrent, previousSha256 = null } = {}) {
-    await this.init();
-    if (!version) throw new Error('rollback version required');
-    if (!/^[a-f0-9]{64}$/i.test(expectedSha256 || '')) throw new Error('rollback expectedSha256 invalid');
-    const current = path.join(this.paths.app, 'LLera.exe');
-    const backup = path.join(this.paths.backup, 'LLera.previous.exe');
-    if (!await exists(current)) throw new Error('verified install rollback current executable missing');
-    const currentDigest = await sha256File(current);
-    if (currentDigest.toLowerCase() !== String(expectedSha256).toLowerCase()) {
-      throw new Error('verified install rollback refused: current executable digest diverged');
-    }
-    await this.stopApp();
-    if (hadCurrent) {
-      const restored = await this._restorePreviousExecutable({
-        current,
-        backup,
-        expectedSha256: previousSha256,
-        journal: { version, sha256: expectedSha256, previousSha256, hadCurrent: true },
-        repairReason: 'post-install-stability-failure'
-      });
-      if (!restored.ok) return { rolledBack: false, blocked: true, repairRequired: true, reason: restored.result.reason, quarantinedCurrent: restored.result.quarantinedCurrent || null };
-      await this._cleanupTemps({ preserveActivationOld: false });
-      await this._journal({ state: 'rolled-back-post-install-stability-failure', version, restoredPrevious: true, previousSha256, rejectedSha256: expectedSha256 });
-      return { rolledBack: true, restoredPrevious: true, sha256: restored.sha256 };
-    }
-    await fsp.rm(current, { force: true });
-    await this._cleanupTemps({ preserveActivationOld: false });
-    await this._journal({ state: 'rolled-back-post-install-stability-failure', version, restoredPrevious: false, previousSha256: null, rejectedSha256: expectedSha256 });
-    return { rolledBack: true, restoredPrevious: false, sha256: null };
+    return { current, version, sha256: stagedDigest, verified: true };
   }
 
   async _activateExecutable({ staged, current, version, stagedSha256, hadCurrent, previousSha256 }) {
@@ -550,12 +518,10 @@ class CrashLoopWatchdog {
       const safeModeValid = Number.isFinite(Number(parsed.safeModeUntil || 0));
       if (!parsed || typeof parsed !== 'object' || !crashesValid || !safeModeValid) return this._corruptState();
       return {
-        crashes: parsed.crashes,
+        ...parsed,
+        crashes: parsed.crashes.map(Number),
         safeModeUntil: Number(parsed.safeModeUntil || 0),
-        lastCleanExitAt: parsed.lastCleanExitAt || null,
-        lastStableAt: parsed.lastStableAt || null,
-        lastExitPlanned: Boolean(parsed.lastExitPlanned),
-        stateCorrupt: Boolean(parsed.stateCorrupt)
+        stateCorrupt: Boolean(parsed.stateCorrupt),
       };
     } catch {
       return this._corruptState();
@@ -565,25 +531,30 @@ class CrashLoopWatchdog {
   _corruptState() {
     const now = this.now();
     return {
-      crashes: [now],
+      crashes: [],
       safeModeUntil: now + this.cooldownMs,
-      lastCleanExitAt: null,
-      lastStableAt: null,
-      lastExitPlanned: false,
-      stateCorrupt: true
+      stateCorrupt: true,
+      corruptionDetectedAt: now,
     };
   }
 
   async _write(state) {
     await fsp.mkdir(path.dirname(this.stateFile), { recursive: true });
-    const temp = `${this.stateFile}.tmp`;
-    await fsp.writeFile(temp, JSON.stringify(state, null, 2), 'utf8');
-    await fsp.rename(temp, this.stateFile);
+    const tmp = `${this.stateFile}.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(state, null, 2));
+    await fsp.rename(tmp, this.stateFile);
   }
 }
 
 function sanitizeVersion(value) {
-  return String(value || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
+  const safe = String(value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+  if (!safe || safe === '.' || safe === '..') throw new Error('version invalid');
+  return safe;
 }
 
-module.exports = { WindowsInstallLifecycle, CrashLoopWatchdog, sha256File };
+module.exports = {
+  WindowsInstallLifecycle,
+  CrashLoopWatchdog,
+  sha256File,
+  sanitizeVersion
+};

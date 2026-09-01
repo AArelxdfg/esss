@@ -42,6 +42,8 @@ async function run() {
   assert.strictEqual(checkpoint.currentStepId, null);
   assert(checkpoint.completedStepIds.includes('mutate'));
   assert.strictEqual(checkpoint.payload.type, 'step-complete');
+  assert.strictEqual(checkpoint.stepAttempt, step.attempts);
+  assert.strictEqual(checkpoint.stepStartedAt, step.startedAt);
 
   const legacy = clone(persisted);
   const legacyMission = legacy.missions[mission.id];

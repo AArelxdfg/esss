@@ -3,12 +3,13 @@ const assert = require('assert');
 const { RESTORED_MONOLITH_TOOLS, ToolExecutionGuard } = require('../src/tool-surface');
 const { MonolithCapabilityBroker } = require('../src/monolith-capability-broker');
 const restoredSix = ['vision_analyze_image','vision_ocr_screen','evidence_record','evidence_verify','update_status','host_pressure_status'];
+const expectedObservation = new Map(restoredSix.map(tool => [tool, tool !== 'evidence_record']));
 assert.strictEqual(new Set(RESTORED_MONOLITH_TOOLS).size, 62);
 for (const t of restoredSix) {
   assert(RESTORED_MONOLITH_TOOLS.includes(t));
   const d = new ToolExecutionGuard().decide(t, {});
   assert.strictEqual(d.allow, true);
-  assert.strictEqual(d.observation, true);
+  assert.strictEqual(d.observation, expectedObservation.get(t));
 }
 const calls=[];
 const broker=new MonolithCapabilityBroker({

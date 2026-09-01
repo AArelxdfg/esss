@@ -14,12 +14,6 @@ function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-function checkpointHead(mission) {
-  const checkpoints = mission && Array.isArray(mission.checkpoints) ? mission.checkpoints : [];
-  const checkpoint = checkpoints.at(-1);
-  return checkpoint && checkpoint.id ? String(checkpoint.id) : null;
-}
-
 class RecoverySnapshotCoordinator {
   constructor({ missionEngine, toolGuard, evidenceLedger, saveSnapshot, loadSnapshot, now = () => Date.now() } = {}) {
     if (!missionEngine || typeof missionEngine.snapshot !== 'function') {
@@ -49,6 +43,13 @@ class RecoverySnapshotCoordinator {
     if (!mission) throw new Error(`unknown mission ${missionId}`);
 
     const evidence = this.evidenceLedger.export();
+    const checkpoints = Array.isArray(mission.checkpoints) ? mission.checkpoints : [];
+    const checkpointHeadRecord = checkpoints.length ? checkpoints[checkpoints.length - 1] : null;
+    const checkpointHead = checkpointHeadRecord ? {
+      id: checkpointHeadRecord.id,
+      index: checkpoints.length - 1,
+      digest: sha256(stableStringify(checkpointHeadRecord))
+    } : null;
     const payload = {
       schema: 1,
       createdAt: this.now(),
@@ -56,7 +57,8 @@ class RecoverySnapshotCoordinator {
       missionId,
       missionState,
       toolTrace: Array.isArray(mission.toolTrace) ? mission.toolTrace : [],
-      evidence
+      evidence,
+      checkpointHead
     };
 
     const canonical = stableStringify(payload);
@@ -92,31 +94,47 @@ class RecoverySnapshotCoordinator {
       payload.missionState.missions[missionId];
     if (!mission) throw new Error('snapshot mission state missing');
 
-    // Recovery context must match the durable mission's latest checkpoint. Without
-    // this binding an older, internally valid snapshot can replace newer evidence
-    // and tool verification debt after missionEngine.init() repairs the mission.
-    const currentState = this.missionEngine.snapshot();
-    const currentMission = currentState.missions && currentState.missions[missionId];
-    if (!currentMission) throw new Error('current mission state missing');
-    const snapshotHead = checkpointHead(mission);
-    const currentHead = checkpointHead(currentMission);
-    if (snapshotHead !== currentHead) {
-      throw new Error(`recovery snapshot checkpoint head mismatch: snapshot=${snapshotHead || 'none'} current=${currentHead || 'none'}`);
-    }
-
     const trace = Array.isArray(payload.toolTrace) ? payload.toolTrace : [];
     const missionTrace = Array.isArray(mission.toolTrace) ? mission.toolTrace : [];
     if (stableStringify(trace) !== stableStringify(missionTrace)) {
       throw new Error('snapshot toolTrace diverges from mission state');
     }
 
-    this.evidenceLedger.import(payload.evidence);
-    this.toolGuard.restore(trace);
+    const checkpoints = Array.isArray(mission.checkpoints) ? mission.checkpoints : [];
+    const expectedHeadRecord = checkpoints.length ? checkpoints[checkpoints.length - 1] : null;
+    if (!expectedHeadRecord) {
+      if (payload.checkpointHead !== null) throw new Error('snapshot checkpoint head mismatch');
+    } else {
+      const expectedHead = {
+        id: expectedHeadRecord.id,
+        index: checkpoints.length - 1,
+        digest: sha256(stableStringify(expectedHeadRecord))
+      };
+      if (stableStringify(payload.checkpointHead) !== stableStringify(expectedHead)) {
+        throw new Error('snapshot checkpoint head mismatch');
+      }
+    }
+
+    const priorEvidence = this.evidenceLedger.export();
+    const priorGuardHistory = Array.isArray(this.toolGuard.history) ? JSON.parse(JSON.stringify(this.toolGuard.history)) : null;
+    const priorVerificationDebt = this.toolGuard.verificationDebt == null
+      ? null
+      : JSON.parse(JSON.stringify(this.toolGuard.verificationDebt));
+    try {
+      this.toolGuard.restore(trace);
+      this.evidenceLedger.import(payload.evidence);
+    } catch (error) {
+      try { this.evidenceLedger.import(priorEvidence); } catch (_) {}
+      try {
+        if (priorGuardHistory) this.toolGuard.restore(priorGuardHistory);
+        else this.toolGuard.verificationDebt = priorVerificationDebt;
+      } catch (_) {}
+      throw error;
+    }
 
     return {
       missionId,
       restored: true,
-      checkpointHeadId: currentHead,
       verificationDebt: this.toolGuard.verificationDebt ? { ...this.toolGuard.verificationDebt } : null,
       evidenceCount: Array.isArray(payload.evidence) ? payload.evidence.length : 0,
       digest: integrity.digest
@@ -124,4 +142,4 @@ class RecoverySnapshotCoordinator {
   }
 }
 
-module.exports = { RecoverySnapshotCoordinator, stableStringify, checkpointHead };
+module.exports = { RecoverySnapshotCoordinator, stableStringify };

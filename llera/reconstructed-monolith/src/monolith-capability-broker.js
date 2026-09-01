@@ -1,64 +1,6 @@
 'use strict';
 
 const CAPABILITY_TOOL_BINDINGS = Object.freeze({
-  // Historical V2 filesystem/process surface.
-  list_dir: ['filesystem', 'listDir'],
-  read_file: ['filesystem', 'readFile'],
-  write_file: ['filesystem', 'writeFile'],
-  apply_patch: ['filesystem', 'applyPatch'],
-  search_files: ['filesystem', 'searchFiles'],
-  make_dir: ['filesystem', 'makeDir'],
-  copy_path: ['filesystem', 'copyPath'],
-  move_path: ['filesystem', 'movePath'],
-  delete_path: ['filesystem', 'deletePath'],
-  read_text_range: ['filesystem', 'readTextRange'],
-  file_stat: ['filesystem', 'stat'],
-  path_exists: ['filesystem', 'exists'],
-  hash_file: ['filesystem', 'hashFile'],
-
-  run_command: ['processes', 'runCommand'],
-  start_process: ['processes', 'start'],
-  process_status: ['processes', 'status'],
-  process_stop: ['processes', 'stop'],
-  list_processes: ['processes', 'list'],
-  read_process_output: ['processes', 'readOutput'],
-
-  // Historical Windows desktop automation surface.
-  list_apps: ['desktop', 'listApps'],
-  launch_app: ['desktop', 'launchApp'],
-  focus_app: ['desktop', 'focusApp'],
-  ui_snapshot: ['desktop', 'uiSnapshot'],
-  ui_invoke: ['desktop', 'uiInvoke'],
-  close_app: ['desktop', 'closeApp'],
-  desktop_screenshot: ['desktop', 'screenshot'],
-  mouse_click: ['desktop', 'mouseClick'],
-  keyboard_type: ['desktop', 'keyboardType'],
-  key_press: ['desktop', 'keyPress'],
-  window_list: ['desktop', 'windowList'],
-  window_move_resize: ['desktop', 'windowMoveResize'],
-
-  // Historical embedded browser surface plus restored extraction/download lifecycle.
-  browser_open: ['browser', 'open'],
-  browser_google: ['browser', 'google'],
-  browser_snapshot: ['browser', 'snapshot'],
-  browser_click: ['browser', 'click'],
-  browser_type: ['browser', 'type'],
-  browser_back: ['browser', 'back'],
-  browser_show: ['browser', 'show'],
-  browser_reload: ['browser', 'reload'],
-  browser_close: ['browser', 'close'],
-  browser_extract: ['browser', 'extract'],
-  browser_download: ['browser', 'download'],
-
-  // Historical network / knowledge / host observation surface.
-  web_get: ['web', 'get'],
-  web_search: ['web', 'search'],
-  search_cyber_core: ['cyberCore', 'search'],
-  system_info: ['system', 'info'],
-  clipboard_read: ['clipboard', 'read'],
-  clipboard_write: ['clipboard', 'write'],
-
-  // Reconstructed MONOLITH capability services.
   vision_analyze_image: ['vision', 'analyze'],
   vision_ocr_screen: ['vision', 'ocrScreen'],
   evidence_record: ['evidence', 'record'],
@@ -75,27 +17,8 @@ const CAPABILITY_TOOL_BINDINGS = Object.freeze({
   llera_bench: ['diagnostics', 'bench']
 });
 
-const DIRECT_ARG_TOOLS = new Set([
-  'list_dir','read_file','write_file','apply_patch','search_files','make_dir','copy_path','move_path','delete_path',
-  'read_text_range','file_stat','path_exists','hash_file',
-  'run_command','start_process','process_status','process_stop','list_processes','read_process_output',
-  'list_apps','launch_app','focus_app','ui_snapshot','ui_invoke','close_app','desktop_screenshot','mouse_click','keyboard_type','key_press',
-  'window_list','window_move_resize',
-  'browser_open','browser_google','browser_snapshot','browser_click','browser_type','browser_back','browser_show',
-  'browser_reload','browser_close','browser_extract','browser_download',
-  'web_get','web_search','search_cyber_core','system_info','clipboard_read','clipboard_write'
-]);
-
 class MonolithCapabilityBroker {
   constructor({
-    filesystem,
-    processes,
-    desktop,
-    browser,
-    web,
-    cyberCore,
-    system,
-    clipboard,
     vision,
     evidence,
     updater,
@@ -108,7 +31,6 @@ class MonolithCapabilityBroker {
     diagnostics
   } = {}) {
     Object.assign(this, {
-      filesystem, processes, desktop, browser, web, cyberCore, system, clipboard,
       vision, evidence, updater, hostguard, outcomeMemory,
       autonomy, knowledgeGraph, skills, snapshots, diagnostics
     });
@@ -137,11 +59,6 @@ class MonolithCapabilityBroker {
   }
 
   async invoke(tool, args = {}, context = {}) {
-    if (DIRECT_ARG_TOOLS.has(tool)) {
-      const [serviceName, methodName] = CAPABILITY_TOOL_BINDINGS[tool];
-      return this._call(serviceName, methodName, `${serviceName} capability unavailable`, { ...args, context });
-    }
-
     switch (tool) {
       case 'vision_analyze_image':
         return this._call('vision', 'analyze', 'vision pipeline unavailable',
@@ -227,4 +144,4 @@ function compact(value) {
   return Object.fromEntries(Object.entries(value || {}).filter(([, v]) => v !== undefined));
 }
 
-module.exports = { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS, DIRECT_ARG_TOOLS };
+module.exports = { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS };

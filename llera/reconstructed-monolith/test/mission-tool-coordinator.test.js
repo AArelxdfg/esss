@@ -29,7 +29,7 @@ const { MissionToolCoordinator } = require('../src/mission-tool-coordinator');
     throw new Error(`unexpected historical tool ${tool}`);
   };
   const snapshots = [];
-  const broker = new GuardedMonolithToolBroker({ historicalExecutor: executor });
+  const broker = new GuardedMonolithToolBroker({ historicalExecutor: executor, actionAuthorizer:async () => true });
   const coordinator = new MissionToolCoordinator({
     missionEngine: engine,
     broker,
@@ -45,6 +45,7 @@ const { MissionToolCoordinator } = require('../src/mission-tool-coordinator');
   assert.strictEqual(write.persisted, true);
   assert.strictEqual(write.persistedTrace.material, true);
   assert.strictEqual(write.persistedTrace.verification, false);
+  assert.strictEqual(write.persistedTrace.scope, 'path:x.txt');
   assert.strictEqual(write.checkpoint.payload.type, 'material-action');
   assert.strictEqual(coordinator.canFinalize(mission.id), false);
 
@@ -64,6 +65,7 @@ const { MissionToolCoordinator } = require('../src/mission-tool-coordinator');
   });
   assert.strictEqual(verify.ok, true);
   assert.strictEqual(verify.persistedTrace.verification, true);
+  assert.strictEqual(verify.persistedTrace.scope, 'path:x.txt');
   assert.strictEqual(verify.checkpoint.payload.type, 'verification');
   assert.strictEqual(coordinator.canFinalize(mission.id), true);
 
@@ -76,7 +78,7 @@ const { MissionToolCoordinator } = require('../src/mission-tool-coordinator');
   await restartedEngine.init();
   const restartedCoordinator = new MissionToolCoordinator({
     missionEngine: restartedEngine,
-    broker: new GuardedMonolithToolBroker({ historicalExecutor: executor })
+    broker: new GuardedMonolithToolBroker({ historicalExecutor: executor, actionAuthorizer:async () => true })
   });
   assert.strictEqual(restartedCoordinator.canFinalize(mission.id), true);
 

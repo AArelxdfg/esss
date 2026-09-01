@@ -7,6 +7,7 @@ const { GuardedMonolithToolBroker } = require('../src/guarded-tool-broker');
 (async () => {
   assert.strictEqual(RESTORED_MONOLITH_TOOLS.length, 62);
   const calls = [];
+  const authorizations = [];
   const historicalExecutor = async (tool,args) => {
     calls.push({tool,args});
     if (tool === 'write_file') return {written:args.path};
@@ -20,10 +21,17 @@ const { GuardedMonolithToolBroker } = require('../src/guarded-tool-broker');
     updater:{status:async()=>({state:'idle'})},
     hostguard:{snapshot:async()=>({pressure:'normal'})}
   });
-  const broker = new GuardedMonolithToolBroker({historicalExecutor,capabilityBroker,guard:new ToolExecutionGuard()});
+  const broker = new GuardedMonolithToolBroker({
+    historicalExecutor,
+    capabilityBroker,
+    guard:new ToolExecutionGuard(),
+    actionAuthorizer:async request=>{authorizations.push(request);return {allow:true};}
+  });
   const write = await broker.invoke('write_file',{path:'x.txt',text:'hello'});
   assert.strictEqual(write.ok,true);
   assert.strictEqual(write.canFinalize,false);
+  assert.strictEqual(authorizations.length,1);
+  assert.strictEqual(authorizations[0].tool,'write_file');
   const blocked = await broker.invoke('write_file',{path:'y.txt',text:'second'});
   assert.strictEqual(blocked.blocked,true);
   assert.strictEqual(blocked.reason,'verification_debt_open');
@@ -40,5 +48,6 @@ const { GuardedMonolithToolBroker } = require('../src/guarded-tool-broker');
   assert.strictEqual(unknown.blocked,true);
   assert.strictEqual(unknown.reason,'unknown_tool');
   assert.strictEqual(calls.length >= 2,true);
-  console.log('guarded MONOLITH broker PASS',{toolCount:RESTORED_MONOLITH_TOOLS.length,verificationDebtClosed:broker.status().canFinalize,specialCapabilities:6});
+  assert.strictEqual(broker.status().materialActionAuthorizationCoverageComplete,true);
+  console.log('guarded MONOLITH broker PASS',{toolCount:RESTORED_MONOLITH_TOOLS.length,verificationDebtClosed:broker.status().canFinalize,specialCapabilities:6,allMaterialAuthorization:true});
 })().catch(err=>{ console.error(err); process.exit(1); });

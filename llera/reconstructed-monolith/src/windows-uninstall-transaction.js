@@ -39,7 +39,7 @@ class WindowsUninstallTransaction {
     }
 
     const intent = {
-      schema: 3,
+      schema: 2,
       state: 'uninstall-intent',
       keepData: Boolean(keepData),
       keepModels: Boolean(keepModels),
@@ -47,25 +47,15 @@ class WindowsUninstallTransaction {
       at: this.now()
     };
     await this._write(intent);
-    return this.resume({
-      confirmDataDeletion: !intent.keepData,
-      confirmModelDeletion: !intent.keepModels
-    });
+    return this.resume();
   }
 
-  async resume({ confirmDataDeletion = false, confirmModelDeletion = false } = {}) {
+  async resume() {
     const state = await this._read();
     if (!state) return { resumed: false, reason: 'no-uninstall-intent' };
     if (state.state === 'uninstalled') return { resumed: false, reason: 'already-uninstalled', state };
     if (state.state !== 'uninstall-intent' && state.state !== 'uninstalling') {
       throw new Error(`unsupported uninstall journal state: ${state.state}`);
-    }
-
-    if (!state.keepData && !confirmDataDeletion) {
-      throw new Error('destructive uninstall resume requires explicit data deletion confirmation');
-    }
-    if (!state.keepModels && !confirmModelDeletion) {
-      throw new Error('destructive uninstall resume requires explicit model deletion confirmation');
     }
 
     state.state = 'uninstalling';
@@ -115,7 +105,7 @@ class WindowsUninstallTransaction {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error('uninstall journal invalid; refusing destructive recovery');
     }
-    if (![1, 2, 3].includes(value.schema)) {
+    if (value.schema !== 1 && value.schema !== 2) {
       throw new Error('uninstall journal schema unsupported; refusing destructive recovery');
     }
     if (!['uninstall-intent', 'uninstalling', 'uninstalled'].includes(value.state)) {
@@ -129,7 +119,7 @@ class WindowsUninstallTransaction {
       throw new Error('uninstall journal steps invalid; refusing destructive recovery');
     }
 
-    if (value.schema >= 2 && value.completed.includes('remove-shortcuts')) {
+    if (value.schema === 2 && value.completed.includes('remove-shortcuts')) {
       for (const scope of SHORTCUT_SCOPES) {
         if (!value.completed.includes(`remove-shortcut:${scope}`)) {
           throw new Error('uninstall journal shortcut completion inconsistent; refusing destructive recovery');

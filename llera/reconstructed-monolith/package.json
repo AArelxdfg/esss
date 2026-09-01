@@ -1,0 +1,49 @@
+{
+  "name": "llera-monolith-omega-reconstructed",
+  "version": "0.0.0-reconstructed",
+  "private": true,
+  "description": "Buildable desktop packaging project for the verified LLera MONOLITH OMEGA reconstruction. This is not exact historical V5.4 source.",
+  "main": "app/main.cjs",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "desktop:dev": "electron .",
+    "pack:win": "electron-builder --win dir --x64",
+    "dist:win": "electron-builder --win nsis --x64",
+    "source:zip": "node build/package-source.cjs"
+  },
+  "devDependencies": {
+    "archiver": "7.0.1",
+    "electron": "43.4.0",
+    "electron-builder": "26.0.20"
+  },
+  "build": {
+    "appId": "com.llera.monolith.omega.reconstructed",
+    "productName": "LLera MONOLITH OMEGA",
+    "asar": true,
+    "files": [
+      "app/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "LLera_MONOLITH_OMEGA_Reconstructed_${version}_${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

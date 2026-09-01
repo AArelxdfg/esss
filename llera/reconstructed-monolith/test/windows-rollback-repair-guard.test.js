@@ -40,7 +40,7 @@ const sha = v => crypto.createHash('sha256').update(v).digest('hex');
   assert.strictEqual(recovered.recovered, false);
   assert.strictEqual(recovered.blocked, true);
   assert.strictEqual(recovered.repairRequired, true);
-  assert.strictEqual(recovered.reason, 'rollback-backup-missing');
+  assert.strictEqual(recovered.reason, 'rollback-backup-missing:interrupted-self-test');
   assert.strictEqual((await fs.readFile(current)).toString(), newBytes.toString());
   assert.ok(recovered.quarantinedCurrent);
   assert.strictEqual((await fs.readFile(recovered.quarantinedCurrent.path)).toString(), newBytes.toString());

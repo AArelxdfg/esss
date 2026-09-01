@@ -16,7 +16,7 @@ assert.strictEqual(native.verificationDebt.tool, 'write_file');
 const mission = new ToolExecutionGuard();
 mission.restore([
   {id:'m1', tool:'write_file', argumentsHash:materialHash, outcome:'success', material:true, verification:false, at:'t1'},
-  {id:'m2', tool:'read_file', argumentsHash:observationHash, outcome:'observed', material:false, verification:true, at:'t2'}
+  {id:'m2', tool:'read_file', argumentsHash:observationHash, outcome:'observed', material:false, verification:true, verifiesFingerprint:materialHash, at:'t2'}
 ]);
 assert.strictEqual(mission.canFinalize(), true);
 assert.strictEqual(mission.history[0].verifiedBy, observationHash);

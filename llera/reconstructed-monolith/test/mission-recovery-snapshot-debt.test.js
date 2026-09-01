@@ -93,6 +93,11 @@ class FakeBroker {
   snapshotFailure = false;
   const repair = await coordinator.repairRecoverySnapshot('m1');
   assert.strictEqual(repair.repaired, true);
+  assert.strictEqual(repair.remainingDebtCount, 1);
+  assert.notStrictEqual(coordinator.status('m1').recoverySnapshotDebt, null);
+  const secondRepair = await coordinator.repairRecoverySnapshot('m1');
+  assert.strictEqual(secondRepair.repaired, true);
+  assert.strictEqual(secondRepair.remainingDebtCount, 0);
   assert.strictEqual(coordinator.status('m1').recoverySnapshotDebt, null);
   assert.strictEqual(coordinator.canFinalize('m1'), true);
 
@@ -105,7 +110,8 @@ class FakeBroker {
     durableSnapshotDebt:true,
     futureMaterialActionsFailClosed:true,
     observationsRemainAvailableForVerification:true,
-    explicitRepairClearsDebt:true
+    explicitRepairClearsDebt:true,
+    eachRepairClearsOnlyItsBoundDebt:true
   });
 })().catch(error => {
   console.error(error.stack || error);

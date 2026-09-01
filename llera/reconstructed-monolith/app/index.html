@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
+  <title>LLera</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8.5 4v16"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></symbol>
+    <symbol id="i-attach" viewBox="0 0 24 24"><path d="m8.5 12.5 6.3-6.3a3.2 3.2 0 0 1 4.5 4.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8-8"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m0 0L6.5 10.5M12 5l5.5 5.5"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z"/><path d="M14 3.5v4h4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.8a7 7 0 0 0 0-3.6l2-1.5-2-3.4-2.5 1a7 7 0 0 0-3.1-1.8L13 2h-4l-.4 2.5a7 7 0 0 0-3.1 1.8l-2.5-1-2 3.4 2 1.5a7 7 0 0 0 0 3.6l-2 1.5 2 3.4 2.5-1a7 7 0 0 0 3.1 1.8L9 22h4l.4-2.5a7 7 0 0 0 3.1-1.8l2.5 1 2-3.4-2-1.5Z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></symbol>
+  </svg>
+
+  <div id="app" class="app-shell">
+    <header class="titlebar">
+      <div class="titlebar-drag">
+        <button id="sidebar-toggle" class="icon-button no-drag" aria-label="Toggle sidebar" title="Toggle sidebar"><svg><use href="#i-panel"/></svg></button>
+        <div class="wordmark"><span class="brand-image brand-image-small"><img src="assets/llera-logo.png" alt=""></span><span>LLera</span></div>
+        <span id="window-title" class="window-title">New conversation</span>
+      </div>
+      <div class="window-controls no-drag" aria-label="Window controls">
+        <button data-window="minimize" aria-label="Minimize"><span>—</span></button>
+        <button data-window="maximize" aria-label="Maximize"><span>□</span></button>
+        <button data-window="close" class="window-close" aria-label="Close"><span>×</span></button>
+      </div>
+    </header>
+
+    <aside id="sidebar" class="sidebar" aria-label="Conversations">
+      <div class="product-brand"><span class="brand-image brand-lockup-image"><img src="assets/llera-logo.png" alt="LLera"></span><span><strong>LLera</strong><small>MONOLITH OMEGA</small></span></div>
+      <div class="sidebar-actions">
+        <button id="new-chat" class="primary-action"><svg><use href="#i-plus"/></svg><span>New chat</span><kbd>Ctrl N</kbd></button>
+        <button id="search-open" class="sidebar-action"><svg><use href="#i-search"/></svg><span>Search</span><kbd>Ctrl K</kbd></button>
+      </div>
+      <nav class="product-nav" aria-label="Product sections"><button class="active" data-section="workspace">Workspace</button><button data-section="missions">Missions</button><button data-section="evidence">Evidence</button><button data-section="memory">Outcome Memory</button><button data-section="skills">Skills &amp; Evolution</button><button data-section="health">System Health</button></nav>
+      <div class="sidebar-section-label">CONVERSATIONS</div>
+      <nav id="conversation-list" class="conversation-list" aria-label="Conversation history"></nav>
+      <div id="active-work" class="active-work"></div>
+      <footer class="sidebar-footer">
+        <button id="settings-open" class="account-row"><span class="local-glyph"><i></i></span><span class="account-copy"><strong>Local workspace</strong><small id="local-status">Checking model…</small></span><svg><use href="#i-settings"/></svg></button>
+      </footer>
+    </aside>
+
+    <main class="workspace">
+      <header class="workspace-header">
+        <div><h1>WORKSPACE</h1><p>Your missions, evidence, tools and memory — unified.</p></div>
+        <div class="workspace-header-actions"><button id="command-open" class="command-button"><svg><use href="#i-spark"/></svg>Command Palette</button><button id="settings-header-open" class="icon-button" aria-label="Settings"><svg><use href="#i-settings"/></svg></button></div>
+      </header>
+      <section id="summary-strip" class="summary-strip" aria-label="Workspace summary"></section>
+      <div class="workspace-grid">
+      <section class="missions-panel panel" aria-labelledby="missions-heading"><header class="panel-header"><h2 id="missions-heading">ACTIVE MISSIONS</h2><button id="new-mission" class="panel-action"><svg><use href="#i-plus"/></svg>New Mission</button></header><div id="mission-list" class="mission-list"></div><button id="all-missions" class="text-action">View all missions <span>→</span></button></section>
+      <section class="conversation-panel panel" aria-labelledby="conversation-heading">
+      <div class="conversation-bar">
+        <div class="conversation-context">
+          <h2 id="conversation-heading">CONVERSATION</h2><span id="conversation-title" class="conversation-title">New conversation</span>
+          <button id="mode-switch" class="mode-switch" aria-haspopup="menu"><span id="mode-label">Chat</span><svg><use href="#i-chevron"/></svg></button>
+        </div>
+        <div class="conversation-actions">
+          <button id="mission-chip" class="mission-chip is-hidden"><span class="pulse-dot"></span><span>Task</span></button>
+          <button id="context-open" class="icon-button" aria-label="Open activity" title="Activity"><svg><use href="#i-more"/></svg></button>
+        </div>
+      </div>
+
+      <section id="transcript" class="transcript" aria-label="Conversation" aria-live="polite"></section>
+
+      <div id="drop-zone" class="drop-zone" aria-hidden="true"><div><svg><use href="#i-attach"/></svg><strong>Drop to add</strong><span>Images, text, or PDF</span></div></div>
+
+      <div class="composer-dock">
+        <div id="composer-status" class="composer-status"></div>
+        <div id="attachment-tray" class="attachment-tray"></div>
+        <div id="composer-surface" class="composer-surface">
+          <textarea id="composer" rows="1" aria-label="Message LLera" placeholder="Ask, create, or start a task…"></textarea>
+          <div class="composer-toolbar">
+            <div class="composer-tools">
+              <label class="tool-button file-input" title="Attach file"><svg><use href="#i-attach"/></svg><span>Attach</span><input id="file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,text/plain,application/pdf"></label>
+              <button id="model-picker-open" class="tool-button"><span class="model-indicator"></span><span id="composer-model">Choose model</span><svg class="mini-chevron"><use href="#i-chevron"/></svg></button>
+            </div>
+            <div class="send-area">
+              <span id="send-hint" class="send-hint">Enter to send</span>
+              <button id="send-button" class="send-button" aria-label="Send message"><svg><use href="#i-send"/></svg></button>
+              <button id="stop-button" class="send-button stop-button is-hidden" aria-label="Stop response"><svg><use href="#i-stop"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <p class="composer-note">Local processing · LLera can make mistakes. Review important changes.</p>
+      </div>
+      </section>
+      <aside class="workspace-context" aria-label="Mission context"><section class="context-card"><header><h2>MISSION CONTEXT</h2></header><div id="mission-context"></div></section><section class="context-card"><header><h2>KEY EVIDENCE</h2></header><div id="key-evidence"></div><button id="open-evidence" class="text-action">View ledger <span>→</span></button></section><section class="context-card"><header><h2>SYSTEM HEALTH</h2></header><div id="system-health"></div></section></aside>
+      </div>
+    </main>
+
+    <aside id="context-drawer" class="context-drawer" aria-hidden="true" aria-label="Context details">
+      <header class="drawer-header"><div><span id="drawer-eyebrow" class="eyebrow">Context</span><h2 id="drawer-title">Activity</h2></div><button id="drawer-close" class="icon-button" aria-label="Close details"><svg><use href="#i-close"/></svg></button></header>
+      <div id="drawer-body" class="drawer-body"></div>
+    </aside>
+    <div id="drawer-scrim" class="drawer-scrim"></div>
+  </div>
+
+  <div id="palette" class="modal-layer" aria-hidden="true">
+    <section class="command-palette" role="dialog" aria-modal="true" aria-labelledby="palette-label">
+      <label id="palette-label" class="palette-search"><svg><use href="#i-search"/></svg><input id="palette-input" autocomplete="off" placeholder="Search LLera or run a command"><kbd>Esc</kbd></label>
+      <div id="palette-results" class="palette-results" role="listbox"></div>
+      <footer class="palette-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open</span></footer>
+    </section>
+  </div>
+
+  <div id="model-menu" class="popover" aria-hidden="true"><div class="popover-head"><strong>Local models</strong><span>Runs on this computer</span></div><div id="model-list"></div></div>
+  <div id="mode-menu" class="popover compact-popover" aria-hidden="true"><button data-mode="chat"><strong>Chat</strong><span>Ask and explore</span></button><button data-mode="work"><strong>Work</strong><span>Goal-driven task</span></button></div>
+  <div id="conversation-menu" class="popover compact-popover" aria-hidden="true"></div>
+
+  <div id="confirm-dialog" class="modal-layer" aria-hidden="true"><section class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"><span class="eyebrow">Confirm action</span><h2 id="confirm-title">Delete conversation?</h2><p id="confirm-copy">This removes the conversation from this computer.</p><div class="confirm-actions"><button id="confirm-cancel" class="secondary-button">Cancel</button><button id="confirm-accept" class="danger-button">Delete</button></div></section></div>
+  <div id="rename-dialog" class="modal-layer" aria-hidden="true"><section class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="rename-title"><span class="eyebrow">Conversation</span><h2 id="rename-title">Rename conversation</h2><label class="dialog-field"><span>Title</span><input id="rename-input" maxlength="120" autocomplete="off"></label><div class="confirm-actions"><button id="rename-cancel" class="secondary-button">Cancel</button><button id="rename-accept" class="primary-dialog-button">Save</button></div></section></div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <div id="screen-reader-status" class="sr-only" aria-live="assertive"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>

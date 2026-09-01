@@ -68,7 +68,7 @@ assert.deepStrictEqual(reduced.getMotionPolicy(), {
 
 const self = ui.selfTest();
 assert.strictEqual(self.ok, true);
-assert.strictEqual(self.schema, 541);
+assert.strictEqual(self.schema, 545);
 assert.strictEqual(self.accessibility.paletteRestoresFocus, true);
 assert.strictEqual(self.accessibility.liveRegionForStateChanges, true);
 

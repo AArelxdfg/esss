@@ -25,36 +25,14 @@ class HostguardRuntimeCoordinator {
     const policy = snapshot.policy || this.governor.policy();
     const actions = [];
 
-    // Fence new inference admissions before runtime preemption begins. Without
-    // this ordering, applyHostPressure('critical') can await an abort callback
-    // while the inference governor still exposes the previous profile. A new
-    // Council/Adversarial task admitted in that window is absent from the
-    // runtime victim snapshot and can survive CRITICAL pressure. Applying the
-    // governor profile first closes that race; runtime cancellation then drains
-    // the already-active low-priority work.
-    if (this.inferenceGovernor && policy.pressure !== this.lastApplied.inferencePressure) {
-      const governed = await this.inferenceGovernor.applyPressure(policy.pressure);
-      actions.push({ type: 'inference-governor', pressure: policy.pressure, profile: governed && governed.profile ? governed.profile : null, preemptionCandidates: Array.isArray(governed && governed.preemptionCandidates) ? governed.preemptionCandidates.map(x => x.id || x) : [] });
-      this.lastApplied.inferencePressure = policy.pressure;
-    }
-
     if (policy.pressure !== this.lastApplied.pressure) {
       const pressureResult = await this.runtime.applyHostPressure(policy.pressure);
       const aborted = Array.isArray(pressureResult && pressureResult.aborted) ? [...pressureResult.aborted] : [];
       const failures = Array.isArray(pressureResult && pressureResult.failures)
         ? pressureResult.failures.map(x => ({ id: x && x.id || null, error: String(x && x.error || 'unknown preemption failure') }))
         : [];
-      const deferred = Boolean(pressureResult && pressureResult.deferred);
       const degraded = Boolean(pressureResult && pressureResult.degraded) || failures.length > 0;
-      actions.push({
-        type: 'runtime-pressure',
-        pressure: policy.pressure,
-        aborted,
-        failures,
-        degraded,
-        deferred,
-        reason: deferred ? String(pressureResult && pressureResult.reason || 'runtime-transition') : null
-      });
+      actions.push({ type: 'runtime-pressure', pressure: policy.pressure, aborted, failures, degraded });
 
       if (this.inferenceCoordinator && aborted.length) {
         const reconciled = this.inferenceCoordinator.reconcileRuntimeAborts(aborted, { reason: `host-pressure-${policy.pressure}` });
@@ -69,21 +47,13 @@ class HostguardRuntimeCoordinator {
         });
       }
 
-      if (deferred) {
-        // Do not mark runtime pressure as applied. RuntimeLifecycle deliberately
-        // defers HOSTGUARD cancellation while a stop/recovery/model-switch owns
-        // the inference drain. That transition can fail and reopen admission
-        // with low-priority work still present. Keeping lastApplied.pressure
-        // unchanged guarantees the next telemetry sample retries CRITICAL
-        // preemption instead of treating a deferred pass as completed.
-        actions.push({
-          type: 'runtime-pressure-retry-pending',
-          pressure: policy.pressure,
-          reason: String(pressureResult && pressureResult.reason || 'runtime-transition')
-        });
-      } else {
-        this.lastApplied.pressure = policy.pressure;
-      }
+      this.lastApplied.pressure = policy.pressure;
+    }
+
+    if (this.inferenceGovernor && policy.pressure !== this.lastApplied.inferencePressure) {
+      const governed = await this.inferenceGovernor.applyPressure(policy.pressure);
+      actions.push({ type: 'inference-governor', pressure: policy.pressure, profile: governed && governed.profile ? governed.profile : null, preemptionCandidates: Array.isArray(governed && governed.preemptionCandidates) ? governed.preemptionCandidates.map(x => x.id || x) : [] });
+      this.lastApplied.inferencePressure = policy.pressure;
     }
 
     if (this.downloader && policy.downloadWorkers !== this.lastApplied.downloadWorkers) {

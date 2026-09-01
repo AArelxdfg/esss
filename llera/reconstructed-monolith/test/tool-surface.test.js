@@ -3,7 +3,7 @@ const assert = require('assert');
 const {HISTORICAL_V2_TOOLS, RESTORED_MONOLITH_TOOLS, fingerprint, ToolExecutionGuard} = require('../src/tool-surface');
 
 assert.strictEqual(new Set(HISTORICAL_V2_TOOLS).size, 34, 'V2 historical baseline must remain 34 unique tools');
-assert.strictEqual(new Set(RESTORED_MONOLITH_TOOLS).size, 56, 'reconstructed V4 minimum must expose 56 unique tools');
+assert.strictEqual(new Set(RESTORED_MONOLITH_TOOLS).size, 62, 'current reconstructed MONOLITH contract must expose 62 unique tools');
 for (const t of HISTORICAL_V2_TOOLS) assert(RESTORED_MONOLITH_TOOLS.includes(t), `missing historical tool ${t}`);
 
 assert.strictEqual(fingerprint('read_file',{b:2,a:1}), fingerprint('read_file',{a:1,b:2}), 'fingerprint must be stable over key order');

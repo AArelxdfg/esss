@@ -61,3 +61,64 @@ test('desktop product service emits structured events for real blocked flow and 
   assert.ok(events.some(event => event.type === 'message.blocked' && event.detail.message?.code === 'MODEL_NOT_CONFIGURED'));
   assert.ok(events.some(event => event.type === 'mission.created'));
 });
+
+test('desktop inference is generation-bound and stale completion is discarded', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'llera-product-generation-'));
+  const service = new MonolithService({ userData });
+  await service.init();
+  service.catalog = { local: { path: 'unused.gguf' } };
+
+  let registered = null;
+  service.runtime = {
+    snapshot: () => ({ state: 'ready', model: 'local', generation: 7 }),
+    start: async () => { throw new Error('unexpected start'); },
+    registerInference: (id, options) => {
+      registered = { id, ...options, generation: 7 };
+      return { id, generation: 7, priority: options.priority };
+    },
+    completeInference: () => false,
+  };
+  service.backend = {
+    chatCompletion: async ({ signal }) => {
+      assert.equal(signal instanceof AbortSignal, true);
+      return { content: 'stale answer', model: 'local', usage: null, finishReason: 'stop' };
+    },
+  };
+
+  const result = await service.send({ content: 'generation safety' });
+  assert.equal(registered.priority, 'normal');
+  assert.equal(typeof registered.abort, 'function');
+  assert.equal(result.blocked, true);
+  assert.equal(result.code, 'STALE_INFERENCE_GENERATION');
+  assert.equal(result.snapshot.activeConversation.messages.some(message => message.content === 'stale answer'), false);
+  assert.match(result.snapshot.activeConversation.messages.at(-1).content, /runtime generation changed/i);
+});
+
+test('desktop inference registers abortable lifecycle work and records a valid completion', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'llera-product-completion-'));
+  const service = new MonolithService({ userData });
+  await service.init();
+  service.catalog = { local: { path: 'unused.gguf' } };
+
+  const completions = [];
+  service.runtime = {
+    snapshot: () => ({ state: 'ready', model: 'local', generation: 11 }),
+    start: async () => { throw new Error('unexpected start'); },
+    registerInference: (id, options) => ({ id, generation: 11, priority: options.priority }),
+    completeInference: (id, generation) => { completions.push({ id, generation }); return true; },
+  };
+  service.backend = {
+    chatCompletion: async ({ messages, signal }) => {
+      assert.equal(signal instanceof AbortSignal, true);
+      assert.equal(messages.at(-1).content, 'real local request');
+      return { content: 'real local response', model: 'local', usage: { total_tokens: 4 }, finishReason: 'stop' };
+    },
+  };
+
+  const result = await service.send({ content: 'real local request' });
+  assert.equal(result.blocked, false);
+  assert.equal(completions.length, 1);
+  assert.equal(completions[0].generation, 11);
+  assert.equal(result.snapshot.activeConversation.messages.at(-1).content, 'real local response');
+  assert.equal(result.snapshot.activeConversation.messages.at(-1).model, 'local');
+});

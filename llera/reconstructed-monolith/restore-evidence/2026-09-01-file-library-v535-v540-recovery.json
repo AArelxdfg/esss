@@ -1,0 +1,33 @@
+{
+  "capturedAt": "2026-09-01T07:46:27Z",
+  "source": "ChatGPT File Library direct document inspection",
+  "status": "provenance-only; exact historical bytes not recovered",
+  "v535": {
+    "report": "LLera_V5_3_5_EVIDENCE_LEDGER_BUILD_REPORT.md",
+    "version": "5.3.5",
+    "baseline": "V5.3.4 MONOLITH OMEGA HOST EVIDENCE",
+    "installer": "LLera_V5_3_5_MONOLITH_OMEGA_EVIDENCE_LEDGER_Setup.exe",
+    "installerSha256": "1852b9c116fca9c4107e814b556956028d4732f4f04a00f606908d47667b9d2e",
+    "sourceZipSha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "reportedRegression": "15 JavaScript regression/contract tests PASS",
+    "physicalWindowsValidation": false
+  },
+  "v540": {
+    "report": "LLera_V5_4_0_AURORA_UX_BUILD_REPORT.md",
+    "version": "5.4.0",
+    "baseline": "verified V5.3.5 Evidence Ledger source baseline",
+    "installerSha256": "0304fc6586a0002b2c327ee113dfa9348a220e83668ebbb5aa3c1ef405fd969a",
+    "sourceZipSha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "reportedRegression": "16/16 JavaScript regression/contract tests PASS",
+    "physicalWindowsValidation": false
+  },
+  "recoveryDecision": {
+    "exactV54ClaimAllowed": false,
+    "reason": "The File Library contains build reports that establish historical artifact identities and hashes, but this run did not recover artifact bytes whose SHA-256 matches those historical identities.",
+    "nextRecoveryTargets": [
+      "artifact bytes matching V5.3.5 installer/source hashes",
+      "artifact bytes matching V5.4.0 installer/source hashes",
+      "source tree or archive whose content can be cryptographically tied to those reports"
+    ]
+  }
+}

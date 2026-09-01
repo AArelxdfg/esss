@@ -20,6 +20,15 @@ function normalizeText(value) {
   return String(value || '').trim().toLocaleLowerCase('en-US');
 }
 
+function normalizeFocusOrigin(value) {
+  const fallback = 'composer';
+  const candidate = String(value ?? '').trim();
+  if (!candidate || candidate.length > 128) return fallback;
+  if (/[\u0000-\u001f\u007f]/.test(candidate)) return fallback;
+  if (!/^[A-Za-z][A-Za-z0-9_.:-]*$/.test(candidate)) return fallback;
+  return candidate;
+}
+
 class AuroraUIContract {
   constructor(options = {}) {
     this.prefersReducedMotion = Boolean(options.prefersReducedMotion);
@@ -122,14 +131,14 @@ class AuroraUIContract {
     this.palette.open = true;
     this.palette.query = '';
     this.palette.activeIndex = 0;
-    this.palette.returnFocusTo = String(returnFocusTo || 'composer');
+    this.palette.returnFocusTo = normalizeFocusOrigin(returnFocusTo);
     this.palette.focusTarget = 'aurora-command-search';
     this.announce('Command palette opened');
     return this.getPaletteState();
   }
 
   closePalette({ restoreFocus = true } = {}) {
-    const returnFocusTo = this.palette.returnFocusTo || 'composer';
+    const returnFocusTo = normalizeFocusOrigin(this.palette.returnFocusTo);
     this.palette.open = false;
     this.palette.query = '';
     this.palette.activeIndex = 0;
@@ -230,7 +239,7 @@ class AuroraUIContract {
     }
     if (key === 'enter') {
       const command = items[this.palette.activeIndex];
-      const focusAfterClose = this.palette.returnFocusTo || 'composer';
+      const focusAfterClose = normalizeFocusOrigin(this.palette.returnFocusTo);
       this.setSurface(command.surface);
       const closed = this.closePalette({ restoreFocus: false });
       closed.focusTarget = focusAfterClose;
@@ -306,6 +315,7 @@ class AuroraUIContract {
       composerHasAccessibleName: true,
       paletteIsModalDialog: true,
       paletteRestoresFocus: true,
+      paletteReturnFocusOriginSanitized: true,
       paletteExposesActiveDescendant: true,
       paletteHandlesEmptyResults: true,
       liveRegionForStateChanges: true,
@@ -329,11 +339,12 @@ class AuroraUIContract {
         a11y.focusVisible &&
         a11y.reducedMotionRespected &&
         a11y.paletteRestoresFocus &&
+        a11y.paletteReturnFocusOriginSanitized &&
         a11y.liveRegionForStateChanges &&
         a11y.navigationKeyboardOperable &&
         rovingTabIndexValid &&
         tabSemanticsValid,
-      schema: 541,
+      schema: 545,
       surfaces: REQUIRED_SURFACES.length,
       paletteCommands: PALETTE_COMMANDS.length,
       layout,

@@ -2,6 +2,8 @@
 
 AArel OS uses an original **Obsidian Glass** language: near-black graphite surfaces, cool moonlight accents, restrained translucency, floating geometry and high-density developer ergonomics. It must feel premium and technical, never childish, gamer-themed, or like a direct Windows/macOS copy.
 
+The AArelOS product experience, including this visual language, its workflows and AArel-owned integration layer, is developed from scratch by AArel. Upstream open-source components retain their own licenses and attribution.
+
 ## Visual contract
 - Base canvas: #090B10 / #0D1118
 - Surface: #121722 / #171D2A

@@ -2,6 +2,8 @@ AArel OS Linux Preview — Foundation Notice
 
 AArel MMonolith OS is an independent product assembled from open-source archive components with the Linux kernel and KDE Plasma.
 
+The AArelOS product layer is developed from scratch by AArel: its product identity, visual system, Forge workspace, LLera integration, service policy, workflow defaults, recovery experience and release gates are original AArel work.
+
 AArel MMonolith OS, MMonolith, Forge and LLera are AArel project identities. They do not imply endorsement by upstream projects or their contributors. Required package copyright and license notices remain installed with their packages.
 
 Original package licenses, copyright notices, source obligations and attribution remain in force and must not be removed by AArel branding. The independent SerenityOS-based MMonolith research track is preserved separately and is not represented as the kernel of this Linux Preview.

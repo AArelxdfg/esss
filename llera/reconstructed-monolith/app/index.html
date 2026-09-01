@@ -1,4 +1,114 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"><title>LLera MONOLITH OMEGA</title><style>
-:root{color-scheme:dark;--bg:#101114;--panel:#18191e;--panel2:#202126;--line:#303138;--text:#f5f2eb;--muted:#9c9ba2;--accent:#d4ff58;--danger:#ffb4ab;font:14px/1.45 Inter,Segoe UI,system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 65% -30%,#293126 0,var(--bg) 45%);color:var(--text)}button,textarea,select{font:inherit}button{color:inherit;cursor:pointer}.app{min-height:100vh;display:grid;grid-template-columns:276px minmax(0,1fr)}.rail{background:rgba(20,21,25,.92);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:18px}.brand{display:flex;align-items:center;gap:9px;padding:6px 10px;font-weight:800;letter-spacing:.06em}.orb{width:19px;height:19px;border-radius:50%;background:var(--accent);box-shadow:0 0 24px #d4ff5880}.new,.send{border:0;border-radius:11px;background:var(--accent);color:#182000;font-weight:750;padding:11px 13px}.chats{display:grid;gap:3px;overflow:auto}.chat{background:transparent;border:0;border-radius:9px;text-align:left;padding:10px;color:var(--muted)}.chat.active,.chat:hover{background:var(--panel2);color:var(--text)}.chat small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px}.rail-bottom{margin-top:auto;display:grid;gap:4px}.quiet{background:transparent;border:0;color:var(--muted);padding:9px;text-align:left}.main{min-width:0;display:grid;grid-template-rows:auto 1fr auto}.top{height:65px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px}.title{font-size:15px;font-weight:700}.top-actions{display:flex;gap:8px;align-items:center}.chip,.icon{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:7px 9px;color:var(--muted)}.content{overflow:auto;max-width:930px;width:100%;margin:auto;padding:42px 28px 22px}.welcome{max-width:650px;margin:13vh auto 0}.welcome h1{font-size:38px;letter-spacing:-.045em;margin:0 0 12px}.welcome p,.notice{color:var(--muted)}.suggestions{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}.suggestions button{border:1px solid var(--line);border-radius:99px;background:var(--panel);padding:9px 12px}.message{max-width:760px;margin:0 auto 24px}.message .role{font-size:12px;color:var(--muted);margin-bottom:6px}.bubble{white-space:pre-wrap;background:var(--panel);border:1px solid var(--line);padding:14px 16px;border-radius:4px 15px 15px 15px}.message.user .bubble{background:#25291d;border-color:#3f4927}.message.blocked .bubble{color:var(--danger);border-color:#693d38}.composer-wrap{padding:12px 28px 24px}.composer{max-width:930px;margin:auto;background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:11px}.composer:focus-within{border-color:#708640;box-shadow:0 0 0 3px #d4ff5818}.attachments{display:flex;gap:6px;flex-wrap:wrap}.attachment{font-size:12px;padding:4px 7px;background:#292a30;border-radius:6px}textarea{width:100%;resize:none;min-height:56px;max-height:180px;padding:10px 5px;background:transparent;border:0;color:var(--text);outline:0}.compose-bottom{display:flex;align-items:center;gap:8px}.file{position:relative;overflow:hidden}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}.spacer{flex:1}.send:disabled{opacity:.45;cursor:not-allowed}.drawer{position:fixed;right:0;top:0;bottom:0;width:min(380px,100vw);background:#17181d;border-left:1px solid var(--line);padding:22px;transform:translateX(100%);transition:transform .18s ease;overflow:auto;z-index:2}.drawer.open{transform:translateX(0)}.drawer h2{margin-top:0}.activity{border-bottom:1px solid var(--line);padding:10px 0}.activity small{color:var(--muted);display:block}.palette{position:fixed;inset:0;background:#0008;display:none;place-items:start center;padding-top:14vh;z-index:5}.palette.open{display:grid}.palette-box{width:min(600px,92vw);background:#202126;border:1px solid #45464e;border-radius:14px;padding:12px;box-shadow:0 22px 80px #000}.palette input{width:100%;background:#141519;border:1px solid var(--line);padding:12px;border-radius:8px;color:var(--text)}.command{width:100%;text-align:left;border:0;background:transparent;padding:11px;border-radius:8px}.command:hover{background:#31323a}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}@media(max-width:760px){.app{grid-template-columns:1fr}.rail{display:none}.content{padding:28px 16px}.composer-wrap{padding:10px 16px 18px}.top{padding:0 16px}.welcome{margin-top:7vh}}
-</style></head><body><div class="app"><aside class="rail"><div class="brand"><i class="orb"></i>LLERA</div><button id="new" class="new">+ New conversation</button><div id="chats" class="chats" aria-label="Recent conversations"></div><div class="rail-bottom"><button class="quiet" data-drawer="missions">⌘ Missions</button><button class="quiet" data-drawer="activity">◌ Activity</button><button class="quiet" data-drawer="system">⚙ System</button></div></aside><main class="main"><header class="top"><div class="title" id="title">New conversation</div><div class="top-actions"><button id="model" class="chip">Local model</button><button id="palette-open" class="icon" aria-label="Open command palette">⌘ K</button><button class="icon" data-drawer="activity" aria-label="Open activity">☰</button></div></header><section id="content" class="content" aria-live="polite"></section><div class="composer-wrap"><div id="attachments" class="attachments"></div><div class="composer"><textarea id="composer" aria-label="Message LLera" placeholder="Ask anything, plan work, or attach a file"></textarea><div class="compose-bottom"><label class="chip file">Attach<input id="file" type="file" accept="image/png,image/jpeg,image/webp,text/plain,application/pdf"></label><span id="runtime" class="notice"></span><span class="spacer"></span><button id="send" class="send">Send</button></div></div></div></main></div><aside id="drawer" class="drawer" aria-label="Details"></aside><div id="palette" class="palette" role="dialog" aria-modal="true" aria-label="Command palette"><div class="palette-box"><input id="palette-input" placeholder="Search commands"><div id="commands"></div></div></div><div id="live" class="sr" aria-live="assertive"></div><script src="renderer.js"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
+  <title>LLera</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8.5 4v16"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></symbol>
+    <symbol id="i-attach" viewBox="0 0 24 24"><path d="m8.5 12.5 6.3-6.3a3.2 3.2 0 0 1 4.5 4.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8-8"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m0 0L6.5 10.5M12 5l5.5 5.5"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z"/><path d="M14 3.5v4h4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.8a7 7 0 0 0 0-3.6l2-1.5-2-3.4-2.5 1a7 7 0 0 0-3.1-1.8L13 2h-4l-.4 2.5a7 7 0 0 0-3.1 1.8l-2.5-1-2 3.4 2 1.5a7 7 0 0 0 0 3.6l-2 1.5 2 3.4 2.5-1a7 7 0 0 0 3.1 1.8L9 22h4l.4-2.5a7 7 0 0 0 3.1-1.8l2.5 1 2-3.4-2-1.5Z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></symbol>
+  </svg>
+
+  <div id="app" class="app-shell">
+    <header class="titlebar">
+      <div class="titlebar-drag">
+        <button id="sidebar-toggle" class="icon-button no-drag" aria-label="Toggle sidebar" title="Toggle sidebar"><svg><use href="#i-panel"/></svg></button>
+        <div class="wordmark"><span class="brand-image brand-image-small"><img src="assets/llera-logo.png" alt=""></span><span>LLera</span></div>
+        <span id="window-title" class="window-title">New conversation</span>
+      </div>
+      <div class="window-controls no-drag" aria-label="Window controls">
+        <button data-window="minimize" aria-label="Minimize"><span>—</span></button>
+        <button data-window="maximize" aria-label="Maximize"><span>□</span></button>
+        <button data-window="close" class="window-close" aria-label="Close"><span>×</span></button>
+      </div>
+    </header>
+
+    <aside id="sidebar" class="sidebar" aria-label="Conversations">
+      <div class="sidebar-actions">
+        <button id="new-chat" class="primary-action"><svg><use href="#i-plus"/></svg><span>New chat</span><kbd>Ctrl N</kbd></button>
+        <button id="search-open" class="sidebar-action"><svg><use href="#i-search"/></svg><span>Search</span><kbd>Ctrl K</kbd></button>
+      </div>
+      <nav id="conversation-list" class="conversation-list" aria-label="Conversation history"></nav>
+      <div id="active-work" class="active-work"></div>
+      <footer class="sidebar-footer">
+        <button id="settings-open" class="account-row"><span class="local-glyph"><i></i></span><span class="account-copy"><strong>Local workspace</strong><small id="local-status">Checking model…</small></span><svg><use href="#i-settings"/></svg></button>
+      </footer>
+    </aside>
+
+    <main class="workspace">
+      <div class="conversation-bar">
+        <div class="conversation-context">
+          <h1 id="conversation-title">New conversation</h1>
+          <button id="mode-switch" class="mode-switch" aria-haspopup="menu"><span id="mode-label">Chat</span><svg><use href="#i-chevron"/></svg></button>
+        </div>
+        <div class="conversation-actions">
+          <button id="mission-chip" class="mission-chip is-hidden"><span class="pulse-dot"></span><span>Task</span></button>
+          <button id="context-open" class="icon-button" aria-label="Open activity" title="Activity"><svg><use href="#i-more"/></svg></button>
+        </div>
+      </div>
+
+      <section id="transcript" class="transcript" aria-label="Conversation" aria-live="polite"></section>
+
+      <div id="drop-zone" class="drop-zone" aria-hidden="true"><div><svg><use href="#i-attach"/></svg><strong>Drop to add</strong><span>Images, text, or PDF</span></div></div>
+
+      <div class="composer-dock">
+        <div id="composer-status" class="composer-status"></div>
+        <div id="attachment-tray" class="attachment-tray"></div>
+        <div id="composer-surface" class="composer-surface">
+          <textarea id="composer" rows="1" aria-label="Message LLera" placeholder="Ask, create, or start a task…"></textarea>
+          <div class="composer-toolbar">
+            <div class="composer-tools">
+              <label class="tool-button file-input" title="Attach file"><svg><use href="#i-attach"/></svg><span>Attach</span><input id="file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,text/plain,application/pdf"></label>
+              <button id="model-picker-open" class="tool-button"><span class="model-indicator"></span><span id="composer-model">Choose model</span><svg class="mini-chevron"><use href="#i-chevron"/></svg></button>
+            </div>
+            <div class="send-area">
+              <span id="send-hint" class="send-hint">Enter to send</span>
+              <button id="send-button" class="send-button" aria-label="Send message"><svg><use href="#i-send"/></svg></button>
+              <button id="stop-button" class="send-button stop-button is-hidden" aria-label="Stop response"><svg><use href="#i-stop"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <p class="composer-note">Local processing · LLera can make mistakes. Review important changes.</p>
+      </div>
+    </main>
+
+    <aside id="context-drawer" class="context-drawer" aria-hidden="true" aria-label="Context details">
+      <header class="drawer-header"><div><span id="drawer-eyebrow" class="eyebrow">Context</span><h2 id="drawer-title">Activity</h2></div><button id="drawer-close" class="icon-button" aria-label="Close details"><svg><use href="#i-close"/></svg></button></header>
+      <div id="drawer-body" class="drawer-body"></div>
+    </aside>
+    <div id="drawer-scrim" class="drawer-scrim"></div>
+  </div>
+
+  <div id="palette" class="modal-layer" aria-hidden="true">
+    <section class="command-palette" role="dialog" aria-modal="true" aria-labelledby="palette-label">
+      <label id="palette-label" class="palette-search"><svg><use href="#i-search"/></svg><input id="palette-input" autocomplete="off" placeholder="Search LLera or run a command"><kbd>Esc</kbd></label>
+      <div id="palette-results" class="palette-results" role="listbox"></div>
+      <footer class="palette-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open</span></footer>
+    </section>
+  </div>
+
+  <div id="model-menu" class="popover" aria-hidden="true"><div class="popover-head"><strong>Local models</strong><span>Runs on this computer</span></div><div id="model-list"></div></div>
+  <div id="mode-menu" class="popover compact-popover" aria-hidden="true"><button data-mode="chat"><strong>Chat</strong><span>Ask and explore</span></button><button data-mode="work"><strong>Work</strong><span>Goal-driven task</span></button></div>
+  <div id="conversation-menu" class="popover compact-popover" aria-hidden="true"></div>
+
+  <div id="confirm-dialog" class="modal-layer" aria-hidden="true"><section class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"><span class="eyebrow">Confirm action</span><h2 id="confirm-title">Delete conversation?</h2><p id="confirm-copy">This removes the conversation from this computer.</p><div class="confirm-actions"><button id="confirm-cancel" class="secondary-button">Cancel</button><button id="confirm-accept" class="danger-button">Delete</button></div></section></div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <div id="screen-reader-status" class="sr-only" aria-live="assertive"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>

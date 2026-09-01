@@ -2,20 +2,17 @@
 
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain } = require('electron');
-const { AuroraUIContract } = require('../src/aurora-ui-contract');
-const { MonolithService } = require('./services/monolith-service.cjs');
+const { MonolithService, MAX_ATTACHMENT_BYTES } = require('./services/monolith-service.cjs');
 
 let windowRef = null;
-const ui = new AuroraUIContract();
 let monolith = null;
 
 function productIdentity() {
-  return Object.freeze({
-    product: 'LLera MONOLITH OMEGA reconstructed',
-    exactHistoricalV54: false,
-    historicalClaimAllowed: false,
-    uiSelfTest: ui.selfTest(),
-  });
+  return Object.freeze({ product: 'LLera MONOLITH OMEGA', exactHistoricalV54: false, historicalClaimAllowed: false, version: app.getVersion() });
+}
+
+function publish(event) {
+  if (windowRef && !windowRef.isDestroyed()) windowRef.webContents.send('llera:event', event);
 }
 
 function createWindow() {
@@ -25,7 +22,9 @@ function createWindow() {
     minWidth: 760,
     minHeight: 560,
     show: false,
-    backgroundColor: '#090b10',
+    frame: false,
+    titleBarStyle: 'hidden',
+    backgroundColor: '#11141a',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -36,57 +35,40 @@ function createWindow() {
       allowRunningInsecureContent: false,
     },
   });
-
   win.once('ready-to-show', () => win.show());
+  win.on('maximize', () => publish({ type: 'window.changed', detail: { maximized: true } }));
+  win.on('unmaximize', () => publish({ type: 'window.changed', detail: { maximized: false } }));
+  win.on('closed', () => { if (windowRef === win) windowRef = null; });
   win.loadFile(path.join(__dirname, 'index.html'));
-  win.on('closed', () => {
-    if (windowRef === win) windowRef = null;
-  });
   windowRef = win;
 }
 
-ipcMain.handle('llera:identity', () => productIdentity());
-ipcMain.handle('llera:ui-state', () => ({
-  navigation: ui.getNavigationState(),
-  layout: ui.getResponsiveLayout(),
-  motion: ui.getMotionPolicy(),
-  accessibility: ui.getAccessibilityContract(),
-  composer: ui.getComposerState(),
-  palette: ui.getPaletteState(),
-}));
-ipcMain.handle('llera:set-surface', (_event, surface) => {
-  ui.setSurface(surface);
-  return { navigation: ui.getNavigationState(), liveRegion: ui.getLiveRegionState() };
-});
-ipcMain.handle('llera:set-viewport', (_event, width) => ui.setViewportWidth(Number(width)));
-ipcMain.handle('llera:shortcut', (_event, input) => ui.handleShortcut(input || {}));
-ipcMain.handle('llera:palette-query', (_event, query) => {
-  ui.setPaletteQuery(query);
-  return ui.getPaletteState();
-});
-ipcMain.handle('llera:composer', (_event, value) => ui.updateComposer(value));
-ipcMain.handle('llera:product-snapshot', () => monolith.snapshot());
-ipcMain.handle('llera:new-conversation', () => monolith.createConversation());
-ipcMain.handle('llera:select-conversation', (_event, id) => monolith.selectConversation(validateId(id, 'conversation')));
-ipcMain.handle('llera:send-message', (_event, input) => monolith.send(validateMessage(input)));
-ipcMain.handle('llera:attach', (_event, input) => monolith.attach(validateAttachment(input)));
-ipcMain.handle('llera:create-mission', (_event, input) => monolith.createMission(validateMission(input)));
-
 function validateId(value, label) { if (typeof value !== 'string' || !/^[a-z_][a-z0-9_]{5,80}$/i.test(value)) throw new Error(`${label} id is invalid`); return value; }
-function validateMessage(value) { if (!value || typeof value !== 'object') throw new Error('message payload is required'); const content = typeof value.content === 'string' ? value.content.slice(0, 20000) : ''; const attachmentIds = Array.isArray(value.attachmentIds) ? value.attachmentIds.map(id => validateId(id, 'attachment')).slice(0, 8) : []; const model = value.model == null ? null : (typeof value.model === 'string' && value.model.length <= 100 ? value.model : null); return { content, attachmentIds, model }; }
-function validateAttachment(value) { if (!value || typeof value !== 'object' || typeof value.name !== 'string' || typeof value.type !== 'string' || !value.bytes) throw new Error('attachment payload is invalid'); return { name: value.name, type: value.type, bytes: value.bytes }; }
+function validateText(value, limit, label) { if (typeof value !== 'string') throw new Error(`${label} must be text`); return value.slice(0, limit); }
+function validateMessage(value) { if (!value || typeof value !== 'object') throw new Error('message payload is required'); return { content: typeof value.content === 'string' ? value.content.slice(0, 20000) : '', attachmentIds: Array.isArray(value.attachmentIds) ? value.attachmentIds.map(item => validateId(item, 'attachment')).slice(0, 8) : [], model: value.model == null ? null : validateText(value.model, 100, 'model') }; }
+function validateAttachment(value) { if (!value || typeof value !== 'object' || typeof value.name !== 'string' || typeof value.type !== 'string' || !value.bytes) throw new Error('attachment payload is invalid'); if (value.bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('attachment is too large'); return { name: value.name.slice(0, 180), type: value.type.slice(0, 100), bytes: value.bytes }; }
 function validateMission(value) { if (!value || typeof value !== 'object') throw new Error('mission payload is invalid'); return { title: typeof value.title === 'string' ? value.title.slice(0, 120) : '', goal: typeof value.goal === 'string' ? value.goal.slice(0, 2000) : '' }; }
 
-app.whenReady().then(() => {
-  monolith = new MonolithService({ userData: app.getPath('userData') });
-  return monolith.init();
-}).then(() => {
+ipcMain.handle('llera:identity', () => productIdentity());
+ipcMain.handle('llera:snapshot', () => monolith.snapshot());
+ipcMain.handle('llera:conversation:new', () => monolith.createConversation());
+ipcMain.handle('llera:conversation:select', (_event, id) => monolith.selectConversation(validateId(id, 'conversation')));
+ipcMain.handle('llera:conversation:rename', (_event, input) => monolith.renameConversation(validateId(input?.id, 'conversation'), validateText(input?.title, 120, 'title')));
+ipcMain.handle('llera:conversation:pin', (_event, input) => monolith.pinConversation(validateId(input?.id, 'conversation'), Boolean(input?.pinned)));
+ipcMain.handle('llera:conversation:delete', (_event, id) => monolith.deleteConversation(validateId(id, 'conversation')));
+ipcMain.handle('llera:search', (_event, query) => monolith.search(validateText(query || '', 300, 'query')));
+ipcMain.handle('llera:message:send', (_event, input) => monolith.send(validateMessage(input)));
+ipcMain.handle('llera:message:stop', () => monolith.stopGeneration());
+ipcMain.handle('llera:attachment:add', (_event, input) => monolith.attach(validateAttachment(input)));
+ipcMain.handle('llera:mission:create', (_event, input) => monolith.createMission(validateMission(input)));
+ipcMain.handle('llera:settings:update', (_event, input) => monolith.updateSettings(input && typeof input === 'object' ? input : {}));
+ipcMain.handle('llera:window', (_event, action) => { const win = BrowserWindow.fromWebContents(_event.sender); if (!win) return false; if (action === 'minimize') win.minimize(); else if (action === 'maximize') win.isMaximized() ? win.unmaximize() : win.maximize(); else if (action === 'close') win.close(); else throw new Error('window action is invalid'); return true; });
+
+app.whenReady().then(async () => {
+  monolith = new MonolithService({ userData: app.getPath('userData'), onEvent: publish });
+  await monolith.init();
   createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
+const { Readable } = require('node:stream');
 const { LlamaCppProcessBackend, assertContained } = require('../src/llama-cpp-process-backend');
 
 function fakeFs(existing) {
@@ -93,6 +94,23 @@ test('backend sends bounded OpenAI-compatible chat completions to loopback llama
   assert.equal(payload.max_tokens, 32768);
   assert.equal(payload.temperature, 2);
   assert.equal(payload.stream, false);
+  assert.equal(result.content, 'MONOLITH ONLINE');
+  assert.equal(result.finishReason, 'stop');
+  assert.equal(result.usage.total_tokens, 6);
+});
+
+test('backend streams real llama.cpp deltas without synthetic typing', async () => {
+  const root = path.resolve('tmp-llera-runtime'); let request = null; const deltas = [];
+  const events = [
+    'data: {"model":"instant","choices":[{"delta":{"content":"MONOLITH "},"finish_reason":null}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"ONLINE"},"finish_reason":"stop"}],"usage":{"total_tokens":6}}\n\n',
+    'data: [DONE]\n\n',
+  ];
+  const backend = new LlamaCppProcessBackend({ runtimeRoot: root, fetch: async (url, options) => { request = { url, options }; return { ok: true, status: 200, body: Readable.from(events.map(value => Buffer.from(value))) }; } });
+  const result = await backend.chatCompletionStream({ messages: [{ role: 'user', content: 'Reply exactly' }], onDelta: delta => deltas.push(delta) });
+  assert.equal(request.url, 'http://127.0.0.1:18191/v1/chat/completions');
+  assert.equal(JSON.parse(request.options.body).stream, true);
+  assert.deepEqual(deltas, ['MONOLITH ', 'ONLINE']);
   assert.equal(result.content, 'MONOLITH ONLINE');
   assert.equal(result.finishReason, 'stop');
   assert.equal(result.usage.total_tokens, 6);

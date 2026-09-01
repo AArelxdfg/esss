@@ -203,6 +203,45 @@ class LlamaCppProcessBackend {
     }
   }
 
+  async chatCompletionStream({ messages, maxTokens = 1024, temperature = 0.2, signal = null, onDelta = null } = {}) {
+    assertLoopbackEndpoint(this.endpoint);
+    if (!Array.isArray(messages) || messages.length === 0) {
+      const error = new Error('messages are required for llama.cpp inference');
+      error.code = 'LLAMA_MESSAGES_REQUIRED';
+      throw error;
+    }
+    if (onDelta !== null && typeof onDelta !== 'function') throw new Error('onDelta must be a function when provided');
+    const normalizedMessages = messages.map(message => ({ role: String(message?.role || '').trim(), content: String(message?.content ?? '') }));
+    if (normalizedMessages.some(message => !['system', 'user', 'assistant', 'tool'].includes(message.role))) {
+      const error = new Error('unsupported chat message role'); error.code = 'LLAMA_MESSAGE_ROLE_INVALID'; throw error;
+    }
+    const tokenLimit = Math.max(1, Math.min(32768, Number.isFinite(Number(maxTokens)) ? Math.floor(Number(maxTokens)) : 1024));
+    const temp = Math.max(0, Math.min(2, Number.isFinite(Number(temperature)) ? Number(temperature) : 0.2));
+    const controller = new AbortController(); const abortFromCaller = () => controller.abort(signal?.reason);
+    if (signal?.aborted) abortFromCaller(); else signal?.addEventListener?.('abort', abortFromCaller, { once: true });
+    const timer = setTimeout(() => controller.abort(new Error('llama.cpp inference timeout')), this.inferenceTimeoutMs);
+    try {
+      const response = await this.fetch(`${this.endpoint}/v1/chat/completions`, { method: 'POST', headers: { accept: 'text/event-stream', 'content-type': 'application/json' }, body: JSON.stringify({ messages: normalizedMessages, max_tokens: tokenLimit, temperature: temp, stream: true, stream_options: { include_usage: true } }), signal: controller.signal });
+      if (!response?.ok) { const error = new Error(`llama.cpp inference failed${response ? ` (${response.status})` : ''}`); error.code = 'LLAMA_INFERENCE_HTTP_ERROR'; error.status = response?.status ?? null; throw error; }
+      if (!response.body || typeof response.body[Symbol.asyncIterator] !== 'function') { const error = new Error('llama.cpp streaming response body is unavailable'); error.code = 'LLAMA_STREAM_UNAVAILABLE'; throw error; }
+      const decoder = new TextDecoder(); let buffer = ''; let content = ''; let finishReason = null; let usage = null; let model = null;
+      for await (const chunk of response.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split(/\r?\n/); buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue; const payload = line.slice(5).trim(); if (!payload || payload === '[DONE]') continue;
+          const event = JSON.parse(payload); const choice = event?.choices?.[0]; const delta = choice?.delta?.content;
+          if (typeof delta === 'string' && delta) { content += delta; await onDelta?.(delta); }
+          if (choice?.finish_reason) finishReason = choice.finish_reason; if (event?.usage) usage = { ...event.usage }; if (event?.model) model = event.model;
+        }
+      }
+      return { content, finishReason, usage, model };
+    } catch (error) {
+      if (controller.signal.aborted && error?.code !== 'LLAMA_INFERENCE_HTTP_ERROR') { const aborted = new Error('llama.cpp inference aborted'); aborted.code = 'LLAMA_INFERENCE_ABORTED'; aborted.cause = error; throw aborted; }
+      throw error;
+    } finally { clearTimeout(timer); signal?.removeEventListener?.('abort', abortFromCaller); }
+  }
+
   async stop({ pid } = {}) {
     const child = this.children.get(pid);
     if (!child) return;

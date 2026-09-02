@@ -58,7 +58,10 @@ class RuntimeLifecycle {
   _runLifecycle(type, operation) {
     const owner = `${type}:${++this.lifecycleSequence}`;
     this.lifecyclePending += 1;
-    const scheduled = this.lifecycleQueue.then(async () => {
+    // Keep a synchronously visible admission gate, but defer the lifecycle owner
+    // one microtask so a just-queued transition cannot race the caller's immediate
+    // pressure/admission decision.
+    const scheduled = this.lifecycleQueue.then(() => Promise.resolve().then(async () => {
       if (this.lifecycleOperation) {
         const error = new Error(`runtime lifecycle owner collision: ${this.lifecycleOperation.owner}`);
         error.code = 'RUNTIME_LIFECYCLE_OWNER_COLLISION';
@@ -70,7 +73,7 @@ class RuntimeLifecycle {
       } finally {
         if (this.lifecycleOperation?.owner === owner) this.lifecycleOperation = null;
       }
-    });
+    }));
     const tracked = scheduled.finally(() => {
       this.lifecyclePending = Math.max(0, this.lifecyclePending - 1);
     });

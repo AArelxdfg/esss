@@ -102,6 +102,7 @@ class LlamaCppProcessBackend {
     this.stopForceTimeoutMs = stopForceTimeoutMs;
     this.extraArgs = Array.isArray(extraArgs) ? [...extraArgs] : [];
     this.children = new Map();
+    this.exitedPids = new Set();
   }
 
   resolveEngine() {
@@ -172,8 +173,12 @@ class LlamaCppProcessBackend {
       error.code = 'LLAMA_SPAWN_NO_PID';
       throw error;
     }
+    this.exitedPids.delete(child.pid);
     this.children.set(child.pid, child);
-    child.once?.('exit', () => this.children.delete(child.pid));
+    child.once?.('exit', () => {
+      this.children.delete(child.pid);
+      this.exitedPids.add(child.pid);
+    });
     child.stderr?.on?.('data', () => {});
     child.stdout?.on?.('data', () => {});
     return { pid: child.pid, model, generation: Number(generation || 0), endpoint: this.endpoint };
@@ -371,12 +376,14 @@ class LlamaCppProcessBackend {
       }, this.stopGraceTimeoutMs);
     });
     this.children.delete(pid);
+    this.exitedPids.add(pid);
   }
 
   async isAlive({ pid } = {}) {
     if (!Number.isSafeInteger(pid) || pid <= 0) return false;
     const child = this.children.get(pid);
     if (child) return child.exitCode == null && child.signalCode == null;
+    if (this.exitedPids.has(pid)) return false;
     try { process.kill(pid, 0); return true; } catch (_) { return false; }
   }
 }

@@ -12,6 +12,8 @@ const { buildVerifiedAttachmentContext } = require('../../src/attachment-context
 const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'text/plain', 'application/pdf']);
 const DEFAULT_SETTINGS = Object.freeze({ theme: 'system', activityDensity: 'balanced', sidebarCollapsed: false, mode: 'chat', textScale: 1, motion: true, defaultModel: null });
+const RUNTIME_HEALTH_WAIT_MS = 15000;
+const RUNTIME_HEALTH_POLL_MS = 150;
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function safeRead(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return clone(fallback); } }
@@ -23,6 +25,15 @@ function atomicWrite(file, value) {
 }
 function id(prefix) { return `${prefix}_${crypto.randomBytes(10).toString('hex')}`; }
 function titleFrom(text) { return String(text || '').replace(/\s+/g, ' ').trim().slice(0, 58) || 'Untitled conversation'; }
+async function waitForRuntimeHealth(health, { timeoutMs = RUNTIME_HEALTH_WAIT_MS, pollMs = RUNTIME_HEALTH_POLL_MS } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (await health()) return true;
+    if (Date.now() >= deadline) break;
+    await new Promise(resolve => setTimeout(resolve, pollMs));
+  } while (true);
+  return false;
+}
 
 class MonolithService {
   constructor({ userData, runtimeRoot = null, now = () => new Date().toISOString(), onEvent = () => {} } = {}) {
@@ -43,7 +54,7 @@ class MonolithService {
     this.runtimeRoot = runtimeRoot || path.join(this.userData, 'runtime');
     this.catalog = safeRead(path.join(this.runtimeRoot, 'models.json'), {});
     this.backend = new LlamaCppProcessBackend({ runtimeRoot: this.runtimeRoot, modelCatalog: this.catalog });
-    this.runtime = new RuntimeLifecycle({ start: args => this.backend.start(args), stop: args => this.backend.stop(args), health: () => this.backend.health(), isAlive: args => this.backend.isAlive(args) });
+    this.runtime = new RuntimeLifecycle({ start: args => this.backend.start(args), stop: args => this.backend.stop(args), health: () => waitForRuntimeHealth(() => this.backend.health()), isAlive: args => this.backend.isAlive(args) });
     this.activeAbort = null;
   }
 
@@ -91,7 +102,7 @@ class MonolithService {
     const conversation = this._ensureConversation(text); const user = { id: id('msg'), role: 'user', content: text, attachments: attached, createdAt: this.now(), status: 'complete' }; conversation.messages.push(user); conversation.updatedAt = user.createdAt; if (conversation.messages.length === 1) conversation.title = titleFrom(text || attached[0]?.name); this._save(); this._emit('message.started', { conversationId: conversation.id, message: user });
     if (!Object.keys(this.catalog).length) return this._block(conversation, 'MODEL_NOT_CONFIGURED', 'Choose a local model to start.');
     const selected = model || this.state.settings.defaultModel || Object.keys(this.catalog)[0];
-    try { if (this.runtime.snapshot().state !== 'ready' || this.runtime.snapshot().model !== selected) { this._emit('runtime.starting', { model: selected }); await this.runtime.start(selected); this._emit('runtime.ready', { model: selected }); } }
+    try { if (this.runtime.snapshot().state !== 'ready' || this.runtime.snapshot().model !== selected) { this._emit('runtime.starting', { model: selected }); await this.runtime.ensureRunning(selected); this._emit('runtime.ready', { model: selected }); } }
     catch (error) { this._emit('runtime.failed', { code: error.code || 'RUNTIME_START_FAILED' }); return this._block(conversation, error.code || 'RUNTIME_START_FAILED', "LLera couldn't start the local model. Open model details and try again."); }
     const assistant = { id: id('msg'), role: 'assistant', content: '', model: selected, createdAt: this.now(), status: 'streaming' }; conversation.messages.push(assistant); this.activeAbort = new AbortController(); const inferenceId = id('inf'); let inferenceTask = null; this._save(); this._emit('message.started', { conversationId: conversation.id, message: assistant });
     try {
@@ -117,4 +128,4 @@ class MonolithService {
   async recordEvidence({ missionId, stepId, summary }) { const ledger = new EvidenceLedger({ missionId, storagePath: path.join(this.userData, 'evidence', `${missionId}.json`) }); const entry = ledger.add({ stepId, tool: 'desktop-ui', kind: 'observation', target: 'user-action', bytes: summary, summary }); this._activity('evidence.verified', 'Outcome verified', { evidenceId: entry.id, missionId }); this._save(); return entry; }
 }
 
-module.exports = { MonolithService, MAX_ATTACHMENT_BYTES, ALLOWED_MIME, DEFAULT_SETTINGS };
+module.exports = { MonolithService, MAX_ATTACHMENT_BYTES, ALLOWED_MIME, DEFAULT_SETTINGS, waitForRuntimeHealth };

@@ -230,6 +230,7 @@ class RuntimeLifecycle {
   }
 
   async _cleanupOrphanedInference(reason) {
+    const cleanupGeneration = this.generation;
     const tasks = [...this.activeInference.values()]
       .sort((a, b) => a.startedAt - b.startedAt || String(a.id).localeCompare(String(b.id)));
     const aborted = [];
@@ -248,6 +249,7 @@ class RuntimeLifecycle {
 
     this.lastOrphanedInferenceCleanup = {
       reason,
+      generation: cleanupGeneration,
       aborted,
       failures,
       at: this.now()

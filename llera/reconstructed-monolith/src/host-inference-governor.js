@@ -65,7 +65,9 @@ class HostInferenceGovernor {
     const sameClass = [...this.active.values()].filter(x => x.className === cls).length;
     if (sameClass >= cap) return { allow: false, reason: 'class_concurrency_limit', className: cls, pressure: this.pressure };
     const tokenCap = profile.tokenCaps[cls];
-    const maxTokens = requestedTokens == null ? tokenCap : Math.max(1, Math.min(tokenCap, Number(requestedTokens) || tokenCap));
+    const requested = requestedTokens == null ? tokenCap : Number(requestedTokens);
+    const finiteRequested = Number.isFinite(requested) && requested > 0 ? requested : tokenCap;
+    const maxTokens = Math.max(1, Math.min(tokenCap, Math.floor(finiteRequested)));
     const admission = {
       allow: true,
       id,

@@ -1,6 +1,7 @@
 'use strict';
 
 const EVIDENCE_ID_PATTERN = /^ev_[a-f0-9]{24}$/;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 function evidenceBindingError(code, message) {
   const error = new Error(message);
@@ -52,6 +53,18 @@ function resolveEntry(ledger, id) {
   return entry;
 }
 
+function validateEntryIntegrity(entry, id) {
+  if (typeof entry.target !== 'string' || entry.target.trim().length === 0) {
+    throw evidenceBindingError('MISSION_EVIDENCE_TARGET_INVALID', `evidence ${id} has no valid target binding`);
+  }
+  if (typeof entry.sha256 !== 'string' || !SHA256_PATTERN.test(entry.sha256)) {
+    throw evidenceBindingError('MISSION_EVIDENCE_SHA256_INVALID', `evidence ${id} has no valid SHA-256 result binding`);
+  }
+  if (typeof entry.bindingSha256 !== 'string' || !SHA256_PATTERN.test(entry.bindingSha256)) {
+    throw evidenceBindingError('MISSION_EVIDENCE_BINDING_SHA256_INVALID', `evidence ${id} has no valid binding SHA-256`);
+  }
+}
+
 function validateEvidenceBindings({ evidenceIds, ledger, missionId, stepId, tool } = {}) {
   const ids = normalizeEvidenceIds(evidenceIds);
   if (ids.length === 0) return [];
@@ -70,20 +83,22 @@ function validateEvidenceBindings({ evidenceIds, ledger, missionId, stepId, tool
     if (entry.tool !== tool) {
       throw evidenceBindingError('MISSION_EVIDENCE_TOOL_MISMATCH', `evidence ${id} belongs to another tool`);
     }
+    validateEntryIntegrity(entry, id);
     return {
       id,
       missionId: entry.missionId,
       stepId: entry.stepId,
       tool: entry.tool,
-      target: entry.target || null,
-      sha256: entry.sha256 || null,
-      bindingSha256: entry.bindingSha256 || null
+      target: entry.target,
+      sha256: entry.sha256,
+      bindingSha256: entry.bindingSha256
     };
   });
 }
 
 module.exports = {
   EVIDENCE_ID_PATTERN,
+  SHA256_PATTERN,
   normalizeEvidenceIds,
   validateEvidenceBindings
 };

@@ -16,6 +16,16 @@ for (const [filePath, reason] of [
   ['C:\\LLera\\llera.exe', 'absolute-path'],
   ['bin//llera.exe', 'non-canonical-path'],
   ['bin/llera.exe\0shadow', 'path-nul-byte'],
+  ['bin/llera.exe:shadow', 'windows-ads-path'],
+  ['bin/CON', 'windows-reserved-name'],
+  ['bin/con.txt', 'windows-reserved-name'],
+  ['bin/COM1.log', 'windows-reserved-name'],
+  ['bin/LPT9', 'windows-reserved-name'],
+  ['bin/llera.exe.', 'windows-trailing-dot-space'],
+  ['bin/llera.exe ', 'windows-trailing-dot-space'],
+  ['bin/llera?.exe', 'windows-illegal-char'],
+  ['bin/llera*.exe', 'windows-illegal-char'],
+  ['bin/llera|shadow.exe', 'windows-illegal-char'],
 ]) {
   const result = validateManifest({ files: [entry(filePath)] });
   assert.strictEqual(result.ok, false, `${filePath} must fail closed`);

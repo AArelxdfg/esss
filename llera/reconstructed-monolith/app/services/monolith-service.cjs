@@ -11,7 +11,7 @@ const { buildVerifiedAttachmentContext } = require('../../src/attachment-context
 
 const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'text/plain', 'application/pdf']);
-const DEFAULT_SETTINGS = Object.freeze({ theme: 'system', activityDensity: 'balanced', sidebarCollapsed: true, showSummary: false, showContext: false, showMissions: false, mode: 'chat', textScale: 1, motion: true, defaultModel: null });
+const DEFAULT_SETTINGS = Object.freeze({ theme: 'system', activityDensity: 'balanced', sidebarCollapsed: false, showSummary: false, showContext: false, showMissions: false, mode: 'chat', textScale: 1, motion: true, defaultModel: null });
 const RUNTIME_HEALTH_WAIT_MS = 15000;
 const RUNTIME_HEALTH_POLL_MS = 150;
 
@@ -42,14 +42,14 @@ class MonolithService {
     this.stateFile = path.join(this.userData, 'product-state.json');
     this.missionFile = path.join(this.userData, 'missions.json');
     const persisted = safeRead(this.stateFile, {});
-    const isLegacySidebarLayout = Number(persisted.schema || 0) < 4;
+    const isLegacySidebarLayout = Number(persisted.schema || 0) < 5;
     this.state = {
-      schema: 4,
+      schema: 5,
       conversations: Array.isArray(persisted.conversations) ? persisted.conversations : [],
       activeConversationId: persisted.activeConversationId || null,
       activity: Array.isArray(persisted.activity) ? persisted.activity : [],
       attachments: Array.isArray(persisted.attachments) ? persisted.attachments : [],
-      settings: { ...DEFAULT_SETTINGS, ...(persisted.settings || {}), sidebarCollapsed: isLegacySidebarLayout ? true : Boolean(persisted.settings?.sidebarCollapsed) },
+      settings: { ...DEFAULT_SETTINGS, ...(persisted.settings || {}), sidebarCollapsed: isLegacySidebarLayout ? false : Boolean(persisted.settings?.sidebarCollapsed) },
     };
     this.missions = new MissionEngine({ load: async () => safeRead(this.missionFile, null), save: async value => atomicWrite(this.missionFile, value) });
     this.runtimeRoot = runtimeRoot || path.join(this.userData, 'runtime');

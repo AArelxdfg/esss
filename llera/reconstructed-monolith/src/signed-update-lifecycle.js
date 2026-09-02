@@ -228,10 +228,16 @@ class SignedUpdateLifecycle {
       throw new Error('rollback backup integrity mismatch');
     }
     const tmp=`${currentFile}.rollback`;
+    await fsp.rm(tmp,{recursive:true,force:true});
     await fsp.copyFile(expectedBackup,tmp);
+    const tmpStat=await fsp.lstat(tmp);
+    if (!tmpStat.isFile() || tmpStat.isSymbolicLink()) {
+      await fsp.rm(tmp,{recursive:true,force:true});
+      throw new Error('rollback copy must be a regular bound file');
+    }
     const tmpDigest=await sha256File(tmp);
     if (tmpDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
-      await fsp.rm(tmp,{force:true});
+      await fsp.rm(tmp,{recursive:true,force:true});
       throw new Error('rollback copy integrity mismatch');
     }
     await fsp.rename(tmp,currentFile);

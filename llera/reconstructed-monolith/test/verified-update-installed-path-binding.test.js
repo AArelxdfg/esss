@@ -2,16 +2,17 @@
 const assert=require('assert');
 const crypto=require('crypto');
 const path=require('path');
-const {VerifiedUpdateInstallCoordinator}=require('../src/verified-update-install-coordinator');
+const {VerifiedUpdateInstallCoordinator,isCanonicalVersion}=require('../src/verified-update-install-coordinator');
 
 (async()=>{
   const artifactSha256=crypto.createHash('sha256').update('payload').digest('hex');
   const payloadSha256=crypto.createHash('sha256').update('manifest').digest('hex');
   const manifest={version:'5.4.0-reconstructed.1',artifact:{sha256:artifactSha256,size:7,url:'https://example.invalid/LLera.exe'}};
   const receipt={verified:true,payloadSha256,artifactSha256};
+  let downloads=0;
   const updater={
     verifySignedManifest(){return receipt},
-    async downloadArtifact(){return{path:'/tmp/download.bin',sha256:artifactSha256,size:7}},
+    async downloadArtifact(){downloads+=1;return{path:'/tmp/download.bin',sha256:artifactSha256,size:7}},
     async stageArtifact(){return'/tmp/staged.exe'}
   };
   let stableMarks=0;
@@ -19,6 +20,12 @@ const {VerifiedUpdateInstallCoordinator}=require('../src/verified-update-install
   const appDir=path.resolve('/tmp/llera-path-binding/app');
   const canonical=path.join(appDir,'LLera.exe');
   const escaped=path.resolve('/tmp/attacker/LLera.exe');
+
+  assert.strictEqual(isCanonicalVersion('5.4.0-reconstructed.1'),true);
+  assert.strictEqual(isCanonicalVersion('5.4.0+win.x64'),true);
+  for (const badVersion of ['', '../5.4.0', '5.4.0/../../evil', '5.4', 'v5.4.0', '5.4.0\nnext', '5.4.0 beta', '5.4.0-' ]) {
+    assert.strictEqual(isCanonicalVersion(badVersion),false,`must reject non-canonical version ${JSON.stringify(badVersion)}`);
+  }
 
   const goodInstaller={
     paths:{app:appDir},
@@ -29,6 +36,7 @@ const {VerifiedUpdateInstallCoordinator}=require('../src/verified-update-install
   assert.strictEqual(ok.ok,true);
   assert.strictEqual(ok.installedPath,canonical);
   assert.strictEqual(stableMarks,1);
+  assert.strictEqual(downloads,1);
 
   const badInstaller={
     paths:{app:appDir},
@@ -63,13 +71,15 @@ const {VerifiedUpdateInstallCoordinator}=require('../src/verified-update-install
   assert.strictEqual(versionRejected,true);
   assert.strictEqual(stableMarks,1,'watchdog must not mark a version-divergent install stable');
 
-  const missingVersion={...manifest,version:''};
-  const invalidManifestVersion=new VerifiedUpdateInstallCoordinator({updater,installer:goodInstaller,watchdog});
-  const invalidVersionResult=await invalidManifestVersion.apply({manifest:missingVersion,signatureBase64:'signed'});
-  assert.strictEqual(invalidVersionResult.ok,false);
-  assert.strictEqual(invalidVersionResult.blocked,true);
-  assert.strictEqual(invalidVersionResult.reason,'signed_manifest_version_invalid');
-  assert.strictEqual(stableMarks,1);
+  for (const badVersion of ['', '../5.4.0', '5.4.0/../../evil', '5.4', 'v5.4.0', '5.4.0\nnext', '5.4.0 beta', '5.4.0-' ]) {
+    const beforeDownloads=downloads;
+    const invalidVersionResult=await new VerifiedUpdateInstallCoordinator({updater,installer:goodInstaller,watchdog}).apply({manifest:{...manifest,version:badVersion},signatureBase64:'signed'});
+    assert.strictEqual(invalidVersionResult.ok,false);
+    assert.strictEqual(invalidVersionResult.blocked,true);
+    assert.strictEqual(invalidVersionResult.reason,'signed_manifest_version_invalid');
+    assert.strictEqual(downloads,beforeDownloads,'invalid signed version must fail before download I/O');
+    assert.strictEqual(stableMarks,1);
+  }
 
-  console.log('verified update installed identity binding PASS',{canonicalPathBound:true,pathDivergenceFailsClosed:true,missingPathFailsClosed:true,versionDivergenceFailsClosed:true,missingManifestVersionFailsClosed:true,watchdogStableAfterCanonicalIdentityOnly:true});
+  console.log('verified update installed identity binding PASS',{canonicalPathBound:true,pathDivergenceFailsClosed:true,missingPathFailsClosed:true,versionDivergenceFailsClosed:true,nonCanonicalSignedVersionFailsClosed:true,invalidVersionRejectedBeforeDownload:true,watchdogStableAfterCanonicalIdentityOnly:true});
 })().catch(error=>{console.error(error);process.exit(1)});

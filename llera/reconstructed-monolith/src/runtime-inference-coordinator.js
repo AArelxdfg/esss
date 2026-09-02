@@ -15,9 +15,38 @@ class RuntimeInferenceCoordinator {
     this.active = new Map();
     this.completed = [];
     this.lastRuntimeCleanupSignature = null;
+    this.pendingGovernorCleanup = new Map();
+  }
+
+  _retryGovernorCleanup() {
+    if (!this.pendingGovernorCleanup.size) return [];
+    const cleared = [];
+    for (const [id, debt] of [...this.pendingGovernorCleanup]) {
+      try {
+        const removed = Boolean(this.governor.complete(id));
+        this.pendingGovernorCleanup.delete(id);
+        const entry = {
+          id,
+          reason: `${debt.reason || 'governor-cleanup'}-retry-cleared`,
+          className: debt.className || null,
+          governorRemoved: removed,
+          cleanupAttempts: (debt.attempts || 1) + 1
+        };
+        this.completed.push(entry);
+        cleared.push(entry);
+      } catch (error) {
+        this.pendingGovernorCleanup.set(id, {
+          ...debt,
+          attempts: (debt.attempts || 1) + 1,
+          lastError: String(error?.message || error)
+        });
+      }
+    }
+    return cleared;
   }
 
   _reconcileRuntimeCleanup() {
+    this._retryGovernorCleanup();
     if (typeof this.runtime.snapshot !== 'function') return [];
     const snapshot = this.runtime.snapshot();
     const cleanup = snapshot && snapshot.lastOrphanedInferenceCleanup;
@@ -119,7 +148,15 @@ class RuntimeInferenceCoordinator {
       try {
         this.governor.complete(id);
       } catch (cleanupError) {
-        error.governorCleanupError = String(cleanupError?.message || cleanupError);
+        const cleanupMessage = String(cleanupError?.message || cleanupError);
+        this.pendingGovernorCleanup.set(id, {
+          id,
+          reason: 'admission-rollback-governor-cleanup',
+          className: admission && admission.className || className || null,
+          attempts: 1,
+          lastError: cleanupMessage
+        });
+        error.governorCleanupError = cleanupMessage;
         error.cleanupDegraded = true;
       }
       throw error;
@@ -133,9 +170,20 @@ class RuntimeInferenceCoordinator {
     if (!local || !Number.isSafeInteger(generation) || generation !== local.generation) return false;
     const runtimeRemoved = this.runtime.completeInference(id, generation);
     if (!runtimeRemoved) return false;
-    const governorRemoved = this.governor.complete(id);
+    let governorRemoved = false;
+    try {
+      governorRemoved = Boolean(this.governor.complete(id));
+    } catch (error) {
+      this.pendingGovernorCleanup.set(id, {
+        id,
+        reason: 'inference-complete-governor-cleanup',
+        className: local.className || null,
+        attempts: 1,
+        lastError: String(error?.message || error)
+      });
+    }
     const localRemoved = this.active.delete(id);
-    if (runtimeRemoved || governorRemoved || localRemoved) this.completed.push({ id, reason: 'completed' });
+    if (runtimeRemoved || governorRemoved || localRemoved) this.completed.push({ id, reason: 'completed', ...(this.pendingGovernorCleanup.has(id) ? { cleanupDegraded: true } : {}) });
     return Boolean(runtimeRemoved || governorRemoved || localRemoved);
   }
 
@@ -150,6 +198,13 @@ class RuntimeInferenceCoordinator {
         governorRemoved = Boolean(this.governor.complete(id));
       } catch (error) {
         governorError = String(error?.message || error);
+        this.pendingGovernorCleanup.set(id, {
+          id,
+          reason,
+          className: local && local.className || null,
+          attempts: 1,
+          lastError: governorError
+        });
       }
       const localRemoved = this.active.delete(id);
       if (governorRemoved || localRemoved || governorError) {
@@ -170,6 +225,7 @@ class RuntimeInferenceCoordinator {
     return {
       active: [...this.active.values()].map(x => ({ ...x })),
       completed: this.completed.slice(-100).map(x => ({ ...x })),
+      governorCleanupDebt: [...this.pendingGovernorCleanup.values()].map(x => ({ ...x })),
       governor: typeof this.governor.snapshot === 'function' ? this.governor.snapshot() : null,
       runtime: typeof this.runtime.snapshot === 'function' ? this.runtime.snapshot() : null
     };

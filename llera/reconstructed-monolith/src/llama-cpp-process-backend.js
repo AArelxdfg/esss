@@ -73,6 +73,8 @@ class LlamaCppProcessBackend {
     healthTimeoutMs = 15000,
     healthPollIntervalMs = 250,
     inferenceTimeoutMs = 120000,
+    stopGraceTimeoutMs = 5000,
+    stopForceTimeoutMs = 2000,
     extraArgs = [],
   } = {}) {
     if (!runtimeRoot) throw new Error('runtimeRoot is required');
@@ -81,6 +83,8 @@ class LlamaCppProcessBackend {
     if (!Number.isFinite(healthTimeoutMs) || healthTimeoutMs <= 0) throw new Error('healthTimeoutMs must be positive');
     if (!Number.isFinite(healthPollIntervalMs) || healthPollIntervalMs <= 0) throw new Error('healthPollIntervalMs must be positive');
     if (!Number.isFinite(inferenceTimeoutMs) || inferenceTimeoutMs <= 0) throw new Error('inferenceTimeoutMs must be positive');
+    if (!Number.isFinite(stopGraceTimeoutMs) || stopGraceTimeoutMs <= 0) throw new Error('stopGraceTimeoutMs must be positive');
+    if (!Number.isFinite(stopForceTimeoutMs) || stopForceTimeoutMs <= 0) throw new Error('stopForceTimeoutMs must be positive');
 
     this.runtimeRoot = path.resolve(runtimeRoot);
     this.engineRoot = path.join(this.runtimeRoot, 'engine');
@@ -94,6 +98,8 @@ class LlamaCppProcessBackend {
     this.healthTimeoutMs = healthTimeoutMs;
     this.healthPollIntervalMs = healthPollIntervalMs;
     this.inferenceTimeoutMs = inferenceTimeoutMs;
+    this.stopGraceTimeoutMs = stopGraceTimeoutMs;
+    this.stopForceTimeoutMs = stopForceTimeoutMs;
     this.extraArgs = Array.isArray(extraArgs) ? [...extraArgs] : [];
     this.children = new Map();
   }
@@ -129,10 +135,6 @@ class LlamaCppProcessBackend {
   _liveTrackedChildren() {
     const live = [];
     for (const [pid, child] of this.children.entries()) {
-      // Node's ChildProcess.killed only means a signal was sent successfully; it
-      // does NOT prove the process has exited. Keep signalled-but-not-exited
-      // children under ownership so HOSTGUARD cannot race a second llama-server
-      // into existence during shutdown.
       if (!child || child.exitCode != null || child.signalCode != null) {
         this.children.delete(pid);
         continue;
@@ -213,10 +215,7 @@ class LlamaCppProcessBackend {
       error.code = 'LLAMA_MESSAGES_REQUIRED';
       throw error;
     }
-    const normalizedMessages = messages.map((message) => ({
-      role: String(message?.role || '').trim(),
-      content: String(message?.content ?? ''),
-    }));
+    const normalizedMessages = messages.map((message) => ({ role: String(message?.role || '').trim(), content: String(message?.content ?? '') }));
     if (normalizedMessages.some((message) => !['system', 'user', 'assistant', 'tool'].includes(message.role))) {
       const error = new Error('unsupported chat message role');
       error.code = 'LLAMA_MESSAGE_ROLE_INVALID';
@@ -250,12 +249,7 @@ class LlamaCppProcessBackend {
         error.code = 'LLAMA_INFERENCE_INVALID_RESPONSE';
         throw error;
       }
-      return {
-        content,
-        finishReason: choice?.finish_reason || null,
-        usage: body?.usage ? { ...body.usage } : null,
-        model: body?.model || null,
-      };
+      return { content, finishReason: choice?.finish_reason || null, usage: body?.usage ? { ...body.usage } : null, model: body?.model || null };
     } catch (error) {
       if (controller.signal.aborted && error?.code !== 'LLAMA_INFERENCE_HTTP_ERROR') {
         const aborted = new Error('llama.cpp inference aborted');
@@ -307,9 +301,6 @@ class LlamaCppProcessBackend {
         const lines = buffer.split(/\r?\n/); buffer = lines.pop() || '';
         for (const line of lines) await consumeLine(line);
       }
-      // Flush TextDecoder's internal tail and consume the final SSE line even if
-      // llama.cpp closes the stream without a trailing newline. Dropping this tail
-      // can lose the last token, finish_reason, usage, or model metadata.
       buffer += decoder.decode();
       if (buffer) {
         const tailLines = buffer.split(/\r?\n/);
@@ -327,18 +318,57 @@ class LlamaCppProcessBackend {
     if (!child) return;
     await new Promise((resolve, reject) => {
       let settled = false;
+      let graceTimer = null;
+      let forceTimer = null;
+      const cleanup = () => {
+        if (graceTimer) clearTimeout(graceTimer);
+        if (forceTimer) clearTimeout(forceTimer);
+        child.removeListener?.('exit', onExit);
+      };
       const finish = (err) => {
         if (settled) return;
         settled = true;
-        child.removeListener?.('exit', onExit);
+        cleanup();
         if (err) reject(err); else resolve();
       };
       const onExit = () => finish();
       child.once?.('exit', onExit);
+
       try {
         const signaled = child.kill('SIGTERM');
-        if (signaled === false) finish(new Error(`failed to signal llama.cpp pid ${pid}`));
-      } catch (err) { finish(err); }
+        if (signaled === false) {
+          const error = new Error(`failed to signal llama.cpp pid ${pid}`);
+          error.code = 'LLAMA_STOP_SIGNAL_FAILED';
+          finish(error);
+          return;
+        }
+      } catch (err) {
+        finish(err);
+        return;
+      }
+
+      graceTimer = setTimeout(() => {
+        if (settled) return;
+        try {
+          const forced = child.kill('SIGKILL');
+          if (forced === false) {
+            const error = new Error(`failed to force-stop llama.cpp pid ${pid}`);
+            error.code = 'LLAMA_STOP_FORCE_SIGNAL_FAILED';
+            finish(error);
+            return;
+          }
+        } catch (err) {
+          finish(err);
+          return;
+        }
+
+        forceTimer = setTimeout(() => {
+          const error = new Error(`llama.cpp pid ${pid} did not exit after forced termination`);
+          error.code = 'LLAMA_STOP_TIMEOUT';
+          error.pid = pid;
+          finish(error);
+        }, this.stopForceTimeoutMs);
+      }, this.stopGraceTimeoutMs);
     });
     this.children.delete(pid);
   }
@@ -346,13 +376,7 @@ class LlamaCppProcessBackend {
   async isAlive({ pid } = {}) {
     if (!Number.isSafeInteger(pid) || pid <= 0) return false;
     const child = this.children.get(pid);
-    if (child) {
-      // ChildProcess.killed means kill() successfully sent a signal, not that the
-      // process has exited. Treat it as alive until Node reports an exit/signal
-      // code; otherwise HOSTGUARD can incorrectly authorize a replacement runtime
-      // while the old llama-server is still shutting down.
-      return child.exitCode == null && child.signalCode == null;
-    }
+    if (child) return child.exitCode == null && child.signalCode == null;
     try { process.kill(pid, 0); return true; } catch (_) { return false; }
   }
 }

@@ -28,12 +28,34 @@ class RuntimeInferenceCoordinator {
       ? cleanup.failures.map(item => item && item.id).filter(Boolean)
       : [];
     const ids = [...new Set([...aborted, ...failures])];
-    // Runtime cleanup timestamps are millisecond-granularity and may collide across
-    // two very fast llama.cpp death/recovery cycles. Include the runtime generation
-    // in the dedupe key so a later cleanup for the same inference IDs is never
-    // mistaken for the prior event and allowed to leave a stale governor slot.
+
+    // A cleanup belongs to the backend-death event that produced it, not to whatever
+    // runtime generation happens to be current when the coordinator observes it.
+    // Recovery can advance snapshot.generation while lastOrphanedInferenceCleanup is
+    // still the previous event; keying only on the current generation would replay the
+    // stale cleanup and call governor.complete() again. Prefer an event-bound cleanup
+    // generation when newer runtimes provide one. Current RuntimeLifecycle always
+    // records lastBackendExit for external-death cleanup, so use that stable backend
+    // identity as the compatibility key. Only fall back to snapshot.generation for
+    // older/fake snapshots that expose neither event-scoped signal.
+    const exit = snapshot && snapshot.lastBackendExit;
+    const cleanupGeneration = Number.isSafeInteger(cleanup.generation) ? cleanup.generation : null;
+    const hasExitIdentity = Boolean(exit && (exit.pid || exit.at != null || exit.model || exit.kind));
+    const eventIdentity = cleanupGeneration !== null
+      ? { cleanupGeneration }
+      : hasExitIdentity
+        ? {
+            exitPid: exit.pid ?? null,
+            exitAt: exit.at ?? null,
+            exitModel: exit.model || null,
+            exitKind: exit.kind || null
+          }
+        : {
+            runtimeGeneration: Number.isSafeInteger(snapshot && snapshot.generation) ? snapshot.generation : null
+          };
+
     const signature = JSON.stringify({
-      generation: Number.isSafeInteger(snapshot && snapshot.generation) ? snapshot.generation : null,
+      eventIdentity,
       at: cleanup.at ?? null,
       reason: cleanup.reason || null,
       ids

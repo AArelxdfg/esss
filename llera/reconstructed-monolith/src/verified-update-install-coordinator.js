@@ -16,8 +16,11 @@ class VerifiedUpdateInstallCoordinator {
     if (!/^[a-f0-9]{64}$/.test(expectedSha256)) {
       const result={ok:false,blocked:true,reason:'signed_manifest_artifact_sha256_invalid',version:manifest&&manifest.version||null,manifestPayloadSha256:receiptPayloadSha256,at:this.now()}; this.history.push(result); return result;
     }
-    const receiptArtifactSha256=verificationReceipt.artifactSha256==null?null:String(verificationReceipt.artifactSha256).trim().toLowerCase();
-    if (receiptArtifactSha256!==null && receiptArtifactSha256!==expectedSha256) {
+    const receiptArtifactSha256=String(verificationReceipt.artifactSha256||'').trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(receiptArtifactSha256)) {
+      const result={ok:false,blocked:true,reason:'signed_manifest_receipt_artifact_invalid',version:manifest&&manifest.version||null,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,at:this.now()}; this.history.push(result); return result;
+    }
+    if (receiptArtifactSha256!==expectedSha256) {
       const result={ok:false,blocked:true,reason:'signed_manifest_receipt_artifact_mismatch',version:manifest&&manifest.version||null,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,at:this.now()}; this.history.push(result); return result;
     }
     const watchdogProfile=this.watchdog ? await this.watchdog.launchProfile() : {mode:'normal'};

@@ -28,6 +28,7 @@ class RuntimeLifecycle {
     this.transitionLog = [];
     this.lifecycleSequence = 0;
     this.lifecycleOperation = null;
+    this.lifecyclePending = 0;
     this.lifecycleQueue = Promise.resolve();
   }
 
@@ -40,6 +41,7 @@ class RuntimeLifecycle {
       generation: this.generation,
       activeInference: [...this.activeInference.values()].map(x => ({ id: x.id, priority: x.priority, startedAt: x.startedAt, generation: x.generation })),
       lifecycleOperation: this.lifecycleOperation ? { ...this.lifecycleOperation } : null,
+      lifecyclePending: this.lifecyclePending,
       lastError: this.lastError,
       lastSwitchFailure: this.lastSwitchFailure ? { ...this.lastSwitchFailure } : null,
       lastBackendExit: this.lastBackendExit ? { ...this.lastBackendExit } : null,
@@ -55,6 +57,7 @@ class RuntimeLifecycle {
 
   _runLifecycle(type, operation) {
     const owner = `${type}:${++this.lifecycleSequence}`;
+    this.lifecyclePending += 1;
     const scheduled = this.lifecycleQueue.then(async () => {
       if (this.lifecycleOperation) {
         const error = new Error(`runtime lifecycle owner collision: ${this.lifecycleOperation.owner}`);
@@ -68,8 +71,11 @@ class RuntimeLifecycle {
         if (this.lifecycleOperation?.owner === owner) this.lifecycleOperation = null;
       }
     });
-    this.lifecycleQueue = scheduled.then(() => undefined, () => undefined);
-    return scheduled;
+    const tracked = scheduled.finally(() => {
+      this.lifecyclePending = Math.max(0, this.lifecyclePending - 1);
+    });
+    this.lifecycleQueue = tracked.then(() => undefined, () => undefined);
+    return tracked;
   }
 
   _assertTransitionOwner(owner) {
@@ -396,7 +402,7 @@ class RuntimeLifecycle {
   }
 
   registerInference(id, { priority = 'normal', abort } = {}) {
-    if (this.lifecycleOperation) throw new Error('runtime lifecycle transition in progress');
+    if (this.lifecycleOperation || this.lifecyclePending > 0) throw new Error('runtime lifecycle transition in progress');
     if (this.state !== 'ready') throw new Error('runtime is not ready');
     if (!id || this.activeInference.has(id)) throw new Error('unique inference id required');
     if (typeof abort !== 'function') throw new Error('abort callback required');
@@ -414,7 +420,7 @@ class RuntimeLifecycle {
   async applyHostPressure(level) {
     const normalized = String(level || '').toUpperCase();
     if (normalized !== 'CRITICAL') return { level: normalized, aborted: [], failures: [] };
-    if (this.lifecycleOperation) {
+    if (this.lifecycleOperation || this.lifecyclePending > 0) {
       return {
         level: normalized,
         aborted: [],

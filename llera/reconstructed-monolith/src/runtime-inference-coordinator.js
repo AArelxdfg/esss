@@ -131,10 +131,25 @@ class RuntimeInferenceCoordinator {
     const reconciled = [];
     for (const id of unique) {
       const local = this.active.get(id) || null;
-      const governorRemoved = this.governor.complete(id);
+      let governorRemoved = false;
+      let governorError = null;
+      try {
+        governorRemoved = Boolean(this.governor.complete(id));
+      } catch (error) {
+        // Runtime-death reconciliation must never strand coordinator admission state
+        // merely because governor cleanup itself is degraded. Remove the local record,
+        // preserve the cleanup error for observability, and continue reconciling the
+        // remaining inference IDs rather than aborting the entire cleanup batch.
+        governorError = String(error?.message || error);
+      }
       const localRemoved = this.active.delete(id);
-      if (governorRemoved || localRemoved) {
-        const entry = { id, reason, className: local && local.className || null };
+      if (governorRemoved || localRemoved || governorError) {
+        const entry = {
+          id,
+          reason,
+          className: local && local.className || null,
+          ...(governorError ? { governorCleanupError: governorError, degraded: true } : {})
+        };
         this.completed.push(entry);
         reconciled.push(entry);
       }

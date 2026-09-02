@@ -292,15 +292,28 @@ class LlamaCppProcessBackend {
       if (!response?.ok) { const error = new Error(`llama.cpp inference failed${response ? ` (${response.status})` : ''}`); error.code = 'LLAMA_INFERENCE_HTTP_ERROR'; error.status = response?.status ?? null; throw error; }
       if (!response.body || typeof response.body[Symbol.asyncIterator] !== 'function') { const error = new Error('llama.cpp streaming response body is unavailable'); error.code = 'LLAMA_STREAM_UNAVAILABLE'; throw error; }
       const decoder = new TextDecoder(); let buffer = ''; let content = ''; let finishReason = null; let usage = null; let model = null;
+      const consumeLine = async (line) => {
+        if (!line.startsWith('data:')) return;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') return;
+        const event = JSON.parse(payload); const choice = event?.choices?.[0]; const delta = extractAssistantText(choice?.delta);
+        if (typeof delta === 'string' && delta) { content += delta; await onDelta?.(delta); }
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
+        if (event?.usage) usage = { ...event.usage };
+        if (event?.model) model = event.model;
+      };
       for await (const chunk of response.body) {
         buffer += decoder.decode(chunk, { stream: true });
         const lines = buffer.split(/\r?\n/); buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue; const payload = line.slice(5).trim(); if (!payload || payload === '[DONE]') continue;
-          const event = JSON.parse(payload); const choice = event?.choices?.[0]; const delta = extractAssistantText(choice?.delta);
-          if (typeof delta === 'string' && delta) { content += delta; await onDelta?.(delta); }
-          if (choice?.finish_reason) finishReason = choice.finish_reason; if (event?.usage) usage = { ...event.usage }; if (event?.model) model = event.model;
-        }
+        for (const line of lines) await consumeLine(line);
+      }
+      // Flush TextDecoder's internal tail and consume the final SSE line even if
+      // llama.cpp closes the stream without a trailing newline. Dropping this tail
+      // can lose the last token, finish_reason, usage, or model metadata.
+      buffer += decoder.decode();
+      if (buffer) {
+        const tailLines = buffer.split(/\r?\n/);
+        for (const line of tailLines) await consumeLine(line);
       }
       return { content, finishReason, usage, model };
     } catch (error) {

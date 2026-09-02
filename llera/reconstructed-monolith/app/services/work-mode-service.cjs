@@ -14,6 +14,9 @@ class WorkModeService {
     this.userData = path.resolve(userData);
     this.workspaceRoot = path.join(this.userData, 'workspace');
     this.onEvent = onEvent;
+    this.operationQueue = Promise.resolve();
+    this.operationPending = 0;
+    this.activeOperationMissionId = null;
     fs.mkdirSync(this.workspaceRoot, { recursive: true });
     this.runtime = createMonolithToolRuntime({
       missionEngine: this.missions,
@@ -37,9 +40,33 @@ class WorkModeService {
     return mission;
   }
 
+  _enqueueMissionOperation(missionId, operation) {
+    this.operationPending += 1;
+    const scheduled = this.operationQueue.catch(() => {}).then(async () => {
+      this.activeOperationMissionId = missionId;
+      try {
+        return await operation();
+      } finally {
+        this.activeOperationMissionId = null;
+      }
+    });
+    this.operationQueue = scheduled.finally(() => {
+      this.operationPending = Math.max(0, this.operationPending - 1);
+    });
+    return scheduled;
+  }
+
   status(missionId) {
     const mission = this._mission(missionId);
-    this.runtime.missionTools.restoreMission(missionId);
+    // The guarded tool broker is intentionally a single shared execution boundary.
+    // Never restore it with another mission's trace while an async operation owns it;
+    // doing so could cross-contaminate anti-loop/failure/verification-debt state.
+    if (this.activeOperationMissionId && this.activeOperationMissionId !== missionId) {
+      const error = new Error(`Work Mode is executing mission ${this.activeOperationMissionId}; status restore for ${missionId} is temporarily blocked`);
+      error.code = 'WORK_MODE_CROSS_MISSION_OPERATION_BUSY';
+      throw error;
+    }
+    if (!this.activeOperationMissionId) this.runtime.missionTools.restoreMission(missionId);
     return clone({
       mission,
       execution: this.runtime.missionTools.status(missionId),
@@ -48,6 +75,10 @@ class WorkModeService {
   }
 
   async startMission(missionId) {
+    return this._enqueueMissionOperation(missionId, () => this._startMission(missionId));
+  }
+
+  async _startMission(missionId) {
     let mission = this._mission(missionId);
     if (['pending', 'paused', 'interrupted'].includes(mission.status)) {
       mission = await this.missions.startMission(missionId);
@@ -60,8 +91,12 @@ class WorkModeService {
   }
 
   async beginNextStep(missionId) {
+    return this._enqueueMissionOperation(missionId, () => this._beginNextStep(missionId));
+  }
+
+  async _beginNextStep(missionId) {
     let mission = this._mission(missionId);
-    if (['pending', 'paused', 'interrupted'].includes(mission.status)) await this.startMission(missionId);
+    if (['pending', 'paused', 'interrupted'].includes(mission.status)) await this._startMission(missionId);
     mission = this._mission(missionId);
     if (mission.status !== 'running') throw new Error(`mission is not runnable from ${mission.status}`);
     if (mission.currentStepId) return this.status(missionId);
@@ -72,7 +107,11 @@ class WorkModeService {
     return this.status(missionId);
   }
 
-  async invokeTool({ missionId, stepId = null, tool, args = {}, materialAuthorization = false } = {}) {
+  async invokeTool(request = {}) {
+    return this._enqueueMissionOperation(request.missionId, () => this._invokeTool(request));
+  }
+
+  async _invokeTool({ missionId, stepId = null, tool, args = {}, materialAuthorization = false } = {}) {
     const mission = this._mission(missionId);
     if (mission.status !== 'running') {
       const error = new Error(`mission is not runnable from ${mission.status}`);
@@ -86,6 +125,10 @@ class WorkModeService {
       error.code = 'WORK_MODE_STEP_MISMATCH';
       throw error;
     }
+    // Rebind the shared guard immediately before every tool operation. The global
+    // operation queue guarantees no second mission can replace this trace until the
+    // real tool result, durable trace and checkpoint have all been persisted.
+    this.runtime.missionTools.restoreMission(missionId);
     const result = await this.runtime.missionTools.invoke({
       missionId,
       stepId: activeStepId,
@@ -110,8 +153,18 @@ class WorkModeService {
   }
 
   async completeCurrentStep(missionId, result = {}) {
+    return this._enqueueMissionOperation(missionId, () => this._completeCurrentStep(missionId, result));
+  }
+
+  async _completeCurrentStep(missionId, result = {}) {
     const mission = this._mission(missionId);
+    if (mission.status !== 'running') {
+      const error = new Error(`mission is not runnable from ${mission.status}`);
+      error.code = 'WORK_MODE_MISSION_NOT_RUNNING';
+      throw error;
+    }
     if (!mission.currentStepId) throw new Error('mission has no active step');
+    this.runtime.missionTools.restoreMission(missionId);
     const execution = this.runtime.missionTools.status(missionId);
     if (execution.verificationDebt || !execution.canFinalize) {
       return clone({

@@ -102,6 +102,13 @@ kbd { font: 11px var(--font-ui); color: var(--text-tertiary); background: transp
 .model-import-action:hover { background:#214676; }
 #app:not(.context-visible) .workspace-grid { grid-template-columns:minmax(250px,33fr) minmax(0,67fr); }
 #app:not(.summary-visible) .summary-strip { display:none; }
+#app:not(.missions-visible) .missions-panel { display:none; }
+#app:not(.missions-visible):not(.context-visible) .workspace-grid { grid-template-columns:minmax(0,1fr) !important; }
+#app:not(.missions-visible).context-visible .workspace-grid { grid-template-columns:minmax(0,1fr) 248px !important; }
+#app:not(.context-visible) .workspace-context { display:none !important; }
+:root { --bg-canvas:#0b0d10; --bg-sidebar:#11151a; --bg-elevated:#15191f; --bg-raised:#1b2027; --bg-soft:#14181e; --bg-hover:#1b2129; --bg-active:#202834; --text-primary:#f1f3f5; --text-secondary:#a9b1ba; --text-tertiary:#737d88; --accent:#6d9dde; --accent-strong:#9bc1f5; --hairline:rgba(222,229,238,.10); --hairline-strong:rgba(222,229,238,.16); }
+.conversation-panel,.missions-panel,.context-card { box-shadow:none; }
+.conversation-panel { border-radius:12px; }
 .brand-image-small { width: 21px; height: 21px; border-radius: 6px; }
 :root[data-theme="light"] .brand-image { mix-blend-mode: multiply; }
 .window-title { color: var(--text-tertiary); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

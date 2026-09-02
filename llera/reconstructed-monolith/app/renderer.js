@@ -35,6 +35,7 @@ function applySettings() {
   $('app').classList.toggle('sidebar-collapsed', Boolean(settings.sidebarCollapsed) && innerWidth > 780);
   $('app').classList.toggle('summary-visible', Boolean(settings.showSummary));
   $('app').classList.toggle('context-visible', Boolean(settings.showContext));
+  $('app').classList.toggle('missions-visible', Boolean(settings.showMissions));
 }
 
 function groupConversations(items) {
@@ -306,7 +307,7 @@ function renderSettings(root) {
   const general = node('section', 'setting-group'); general.append(node('label', '', 'Appearance'));
   const themes = node('div', 'segmented'); ['system', 'dark', 'light'].forEach(value => { const button = node('button', state.settings.theme === value ? 'active' : '', value[0].toUpperCase() + value.slice(1)); button.onclick = async () => { state = await window.llera.updateSettings({ theme: value }); renderAll(); }; themes.append(button); }); general.append(themes);
   const densityGroup = node('section', 'setting-group'); densityGroup.append(node('label', '', 'Activity detail')); const density = node('div', 'segmented'); ['compact', 'balanced', 'detailed'].forEach(value => { const button = node('button', state.settings.activityDensity === value ? 'active' : '', value[0].toUpperCase() + value.slice(1)); button.onclick = async () => { state = await window.llera.updateSettings({ activityDensity: value }); renderAll(); }; density.append(button); }); densityGroup.append(density);
-  const layout = node('section', 'setting-group'); layout.append(node('label', '', 'Çalışma alanı')); [['showSummary', 'Üst özet şeridi'], ['showContext', 'Sağ bağlam paneli']].forEach(([key, label]) => { const row = node('button', 'layout-toggle'); row.append(node('span', '', label), node('strong', '', state.settings[key] ? 'Açık' : 'Kapalı')); row.onclick = async () => { state = await window.llera.updateSettings({ [key]: !state.settings[key] }); renderAll(); }; layout.append(row); });
+  const layout = node('section', 'setting-group'); layout.append(node('label', '', 'Çalışma alanı')); [['showMissions', 'Görev paneli'], ['showSummary', 'Üst özet şeridi'], ['showContext', 'Sağ bağlam paneli']].forEach(([key, label]) => { const row = node('button', 'layout-toggle'); row.append(node('span', '', label), node('strong', '', state.settings[key] ? 'Açık' : 'Kapalı')); row.onclick = async () => { state = await window.llera.updateSettings({ [key]: !state.settings[key] }); renderAll(); }; layout.append(row); });
   const advanced = node('section', 'drawer-section'); advanced.append(node('h3', '', 'Advanced')); [['Runtime', state.runtime.state], ['Version', identity?.version || 'Unknown'], ['Processing', 'Local']].forEach(([label, value]) => { const row = node('div', 'detail-row'); row.append(node('span', '', label), node('strong', '', value)); advanced.append(row); });
   root.append(general, densityGroup, layout, advanced);
 }

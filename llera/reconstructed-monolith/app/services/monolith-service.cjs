@@ -92,6 +92,17 @@ class MonolithService {
   search(query) { const needle = String(query || '').trim().toLowerCase(); if (!needle) return { conversations: [], missions: [] }; const conversations = this.state.conversations.filter(item => `${item.title} ${(item.messages || []).map(message => message.content).join(' ')}`.toLowerCase().includes(needle)).slice(0, 30).map(item => ({ id: item.id, title: item.title, type: 'conversation' })); const missions = this.missions.listMissions().filter(item => `${item.title} ${item.goal}`.toLowerCase().includes(needle)).slice(0, 20).map(item => ({ id: item.id, title: item.title, type: 'mission', status: item.status })); return { conversations, missions }; }
 
   async updateSettings(input) { const allowed = ['theme', 'activityDensity', 'sidebarCollapsed', 'mode', 'textScale', 'motion', 'defaultModel']; for (const key of allowed) if (Object.hasOwn(input || {}, key)) this.state.settings[key] = input[key]; if (!['dark', 'light', 'system'].includes(this.state.settings.theme)) this.state.settings.theme = 'system'; if (!['compact', 'balanced', 'detailed'].includes(this.state.settings.activityDensity)) this.state.settings.activityDensity = 'balanced'; if (!['chat', 'work'].includes(this.state.settings.mode)) this.state.settings.mode = 'chat'; this.state.settings.textScale = Math.max(.9, Math.min(1.2, Number(this.state.settings.textScale) || 1)); this._save(); this._emit('settings.changed', this.state.settings); return this.snapshot(); }
+  async importModel({ sourcePath, name }) {
+    const source = path.resolve(String(sourcePath || ''));
+    if (!source.toLowerCase().endsWith('.gguf') || !fs.statSync(source).isFile()) throw new Error('Geçerli bir GGUF model dosyası seçin.');
+    const safeName = path.basename(source).replace(/[^a-z0-9._-]/gi, '_');
+    const targetDir = path.join(this.runtimeRoot, 'models'); fs.mkdirSync(targetDir, { recursive:true });
+    const target = path.join(targetDir, safeName); if (!fs.existsSync(target)) fs.copyFileSync(source, target);
+    const modelId = `local_${crypto.createHash('sha256').update(safeName).digest('hex').slice(0, 12)}`;
+    this.catalog[modelId] = { name: String(name || safeName).slice(0, 120), path: safeName, context: 2048 };
+    atomicWrite(path.join(this.runtimeRoot, 'models.json'), this.catalog); this.state.settings.defaultModel = modelId; this._save();
+    this._activity('model.imported', `${this.catalog[modelId].name} içe aktarıldı`, { modelId }); return this.snapshot();
+  }
 
   async attach({ name, type, bytes }) { const data = Buffer.from(bytes || []); if (!name || typeof name !== 'string' || name.length > 180) throw new Error('attachment name is invalid'); if (!ALLOWED_MIME.has(type)) throw new Error('attachment type is not supported'); if (!data.length || data.length > MAX_ATTACHMENT_BYTES) throw new Error('attachment size is invalid'); const attachmentId = id('att'); const dir = path.join(this.userData, 'attachments'); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, attachmentId), data, { mode: 0o600, flag: 'wx' }); const item = { id: attachmentId, name: path.basename(name), type, bytes: data.length, sha256: crypto.createHash('sha256').update(data).digest('hex'), status: 'ready', createdAt: this.now() }; this.state.attachments.push(item); this._activity('attachment.ready', `${item.name} is ready`, { attachmentId }); this._save(); return clone(item); }
 

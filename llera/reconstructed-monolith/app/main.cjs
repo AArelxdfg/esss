@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { MonolithService, MAX_ATTACHMENT_BYTES } = require('./services/monolith-service.cjs');
 
 let windowRef = null;
@@ -25,6 +25,7 @@ function createWindow() {
     frame: false,
     titleBarStyle: 'hidden',
     backgroundColor: '#11141a',
+    icon: path.join(__dirname, 'assets', 'llera-logo.png'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -62,6 +63,7 @@ ipcMain.handle('llera:message:stop', () => monolith.stopGeneration());
 ipcMain.handle('llera:attachment:add', (_event, input) => monolith.attach(validateAttachment(input)));
 ipcMain.handle('llera:mission:create', (_event, input) => monolith.createMission(validateMission(input)));
 ipcMain.handle('llera:settings:update', (_event, input) => monolith.updateSettings(input && typeof input === 'object' ? input : {}));
+ipcMain.handle('llera:model:import', async event => { const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Yerel modeli seçin', properties:['openFile'], filters:[{ name:'GGUF model', extensions:['gguf'] }] }); if (result.canceled || !result.filePaths[0]) return monolith.snapshot(); return monolith.importModel({ sourcePath: result.filePaths[0] }); });
 ipcMain.handle('llera:window', (_event, action) => { const win = BrowserWindow.fromWebContents(_event.sender); if (!win) return false; if (action === 'minimize') win.minimize(); else if (action === 'maximize') win.isMaximized() ? win.unmaximize() : win.maximize(); else if (action === 'close') win.close(); else throw new Error('window action is invalid'); return true; });
 
 app.whenReady().then(async () => {

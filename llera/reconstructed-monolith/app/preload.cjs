@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('llera', Object.freeze({
   addAttachment: input => ipcRenderer.invoke('llera:attachment:add', input),
   createMission: input => ipcRenderer.invoke('llera:mission:create', input),
   updateSettings: input => ipcRenderer.invoke('llera:settings:update', input),
+  importModel: () => ipcRenderer.invoke('llera:model:import'),
   windowAction: action => ipcRenderer.invoke('llera:window', action),
   onEvent: listener => {
     if (typeof listener !== 'function') throw new Error('event listener must be a function');

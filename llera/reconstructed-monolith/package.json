@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.llera.monolith.omega.reconstructed",
     "productName": "LLera MONOLITH OMEGA",
+    "icon": "app/assets/llera-logo.png",
     "asar": true,
     "files": [
       "app/**/*",

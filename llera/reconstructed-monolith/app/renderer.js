@@ -85,9 +85,9 @@ function renderActiveWork() {
 function renderEmpty(root) {
   const empty = node('div', 'empty-state');
   const mark = node('span', 'brand-image empty-mark'); const logo = node('img'); logo.src = 'assets/llera-logo.png'; logo.alt = 'LLera'; mark.append(logo);
-  empty.append(mark, node('h2', '', 'What are we working on?'));
+  empty.append(mark, node('h2', '', 'Bugün ne üzerinde çalışıyoruz?'));
   const actions = node('div', 'quick-actions');
-  [['Attach a file', () => $('file-input').click()], ['Analyze an image', () => $('file-input').click()], ['Start a task', () => setMode('work')], ['Plan something', () => fillComposer('Help me plan ')]]
+  [['Dosya ekle', () => $('file-input').click()], ['Görsel analiz et', () => $('file-input').click()], ['Görev başlat', () => setMode('work')], ['Plan oluştur', () => fillComposer('Şunu planlamama yardım et: ')]]
     .forEach(([label, action]) => { const button = node('button', 'quick-action', label); button.onclick = action; actions.append(button); });
   empty.append(actions); root.append(empty);
 }
@@ -143,13 +143,13 @@ function renderComposer() {
   const configured = state.runtimeConfigured;
   const modelId = selectedModel || state.settings.defaultModel || state.models?.[0]?.id || null;
   const model = state.models?.find(item => item.id === modelId);
-  $('composer-model').textContent = model?.name || 'Choose model';
+  $('composer-model').textContent = model?.name || 'Model seç';
   document.querySelector('.model-indicator').classList.toggle('ready', Boolean(model));
-  $('local-status').textContent = configured ? `${model?.name || state.models[0].name} available` : 'Model setup needed';
+  $('local-status').textContent = configured ? `${model?.name || state.models[0].name} hazır` : 'Model kurulumu gerekli';
   document.querySelector('.local-glyph i').classList.toggle('ready', configured);
   const status = $('composer-status'); status.replaceChildren();
   if (!configured) {
-    const message = node('div', 'runtime-message'); message.append(node('span', 'status-dot'), document.createTextNode('Choose a local model to start. ')); const action = node('button', '', 'Choose model'); action.onclick = openModelPicker; message.append(action); status.append(message);
+    const message = node('div', 'runtime-message'); message.append(node('span', 'status-dot'), document.createTextNode('Başlamak için yerel bir model seçin. ')); const action = node('button', '', 'Model seç'); action.onclick = openModelPicker; message.append(action); status.append(message);
   } else if (state.runtime.state === 'starting') status.append(node('div', 'runtime-message', `Loading ${model?.name || modelId}…`));
   else if (state.runtime.state === 'failed') { const message = node('div', 'runtime-message'); message.append(node('span', 'status-dot'), document.createTextNode("Couldn't start the local model. ")); const details = node('button', '', 'Details'); details.onclick = () => openDrawer('models'); message.append(details); status.append(message); }
   $('send-button').classList.toggle('is-hidden', sending); $('stop-button').classList.toggle('is-hidden', !sending);
@@ -227,7 +227,7 @@ function closePopovers() { document.querySelectorAll('.popover.open').forEach(it
 
 function openModelPicker() {
   closePopovers(); const menu = $('model-menu'); const list = $('model-list'); list.replaceChildren();
-  if (!state.models?.length) { const empty = node('div', 'popover-head'); empty.append(node('strong', '', 'No local models found'), node('span', '', 'Add a model to the LLera runtime folder, then restart LLera.')); list.append(empty); }
+  if (!state.models?.length) { const empty = node('div', 'popover-head'); empty.append(node('strong', '', 'Yerel model bulunamadı'), node('span', '', 'GGUF model dosyanızı seçerek içe aktarın.')); const add = node('button', 'model-option', 'GGUF model içe aktar'); add.onclick = async () => { state = await window.llera.importModel(); selectedModel = state.settings.defaultModel; renderAll(); openModelPicker(); }; list.append(empty, add); }
   for (const model of state.models || []) {
     const button = node('button', 'model-option'); button.append(node('span', 'status-dot'));
     const copy = node('span', 'model-option-copy'); copy.append(node('strong', '', model.name), node('small', '', `${model.local ? 'Local' : 'Cloud'}${model.vision ? ' · Vision' : ''}${model.context ? ` · ${model.context} context` : ''}`)); button.append(copy);

@@ -52,5 +52,24 @@ const {VerifiedUpdateInstallCoordinator}=require('../src/verified-update-install
   assert.strictEqual(missingRejected,true);
   assert.strictEqual(stableMarks,1);
 
-  console.log('verified update installed path binding PASS',{canonicalPathBound:true,pathDivergenceFailsClosed:true,missingPathFailsClosed:true,watchdogStableAfterCanonicalOnly:true});
+  const wrongVersionInstaller={
+    paths:{app:appDir},
+    async install(i){return{current:canonical,version:'5.4.0-reconstructed.0',sha256:i.expectedSha256,verified:true}}
+  };
+  const wrongVersion=new VerifiedUpdateInstallCoordinator({updater,installer:wrongVersionInstaller,watchdog});
+  let versionRejected=false;
+  try { await wrongVersion.apply({manifest,signatureBase64:'signed'}); }
+  catch(error) { versionRejected=/version diverges from signed manifest/.test(String(error&&error.message||error)); }
+  assert.strictEqual(versionRejected,true);
+  assert.strictEqual(stableMarks,1,'watchdog must not mark a version-divergent install stable');
+
+  const missingVersion={...manifest,version:''};
+  const invalidManifestVersion=new VerifiedUpdateInstallCoordinator({updater,installer:goodInstaller,watchdog});
+  const invalidVersionResult=await invalidManifestVersion.apply({manifest:missingVersion,signatureBase64:'signed'});
+  assert.strictEqual(invalidVersionResult.ok,false);
+  assert.strictEqual(invalidVersionResult.blocked,true);
+  assert.strictEqual(invalidVersionResult.reason,'signed_manifest_version_invalid');
+  assert.strictEqual(stableMarks,1);
+
+  console.log('verified update installed identity binding PASS',{canonicalPathBound:true,pathDivergenceFailsClosed:true,missingPathFailsClosed:true,versionDivergenceFailsClosed:true,missingManifestVersionFailsClosed:true,watchdogStableAfterCanonicalIdentityOnly:true});
 })().catch(error=>{console.error(error);process.exit(1)});

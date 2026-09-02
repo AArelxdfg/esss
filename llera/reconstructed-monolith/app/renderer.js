@@ -39,14 +39,14 @@ function groupConversations(items) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
   const week = new Date(today); week.setDate(today.getDate() - 7);
-  const groups = { Pinned: [], Today: [], Yesterday: [], 'Previous 7 days': [], Earlier: [] };
+  const groups = { Sabitlenmiş: [], Bugün: [], Dün: [], 'Son 7 gün': [], Önceki: [] };
   for (const item of items) {
-    if (item.pinned) { groups.Pinned.push(item); continue; }
+    if (item.pinned) { groups.Sabitlenmiş.push(item); continue; }
     const date = new Date(item.updatedAt || item.createdAt);
-    if (date >= today) groups.Today.push(item);
-    else if (date >= yesterday) groups.Yesterday.push(item);
-    else if (date >= week) groups['Previous 7 days'].push(item);
-    else groups.Earlier.push(item);
+    if (date >= today) groups.Bugün.push(item);
+    else if (date >= yesterday) groups.Dün.push(item);
+    else if (date >= week) groups['Son 7 gün'].push(item);
+    else groups.Önceki.push(item);
   }
   return groups;
 }
@@ -67,7 +67,7 @@ function renderSidebar() {
     }
     root.append(section);
   }
-  if (!state.conversations.length) { const empty = node('p', 'section-label', 'Your conversations will appear here.'); empty.style.paddingTop = '18px'; root.append(empty); }
+  if (!state.conversations.length) { const empty = node('p', 'section-label', 'Sohbetleriniz burada görünür.'); empty.style.paddingTop = '18px'; root.append(empty); }
   renderActiveWork();
 }
 
@@ -117,7 +117,7 @@ function renderMessages() {
     article.append(content);
     if (message.role === 'assistant' || message.status === 'failed' || message.status === 'stopped') {
       const meta = node('div', 'message-meta');
-      meta.append(document.createTextNode(message.status === 'streaming' ? 'Working' : message.status === 'failed' ? 'Needs attention' : message.status === 'stopped' ? 'Stopped' : `${message.model || 'Local model'} · ${formatTime(message.completedAt || message.createdAt)}`)); article.append(meta);
+      meta.append(document.createTextNode(message.status === 'streaming' ? 'Yanıt hazırlanıyor' : message.status === 'failed' ? 'İlgi gerekiyor' : message.status === 'stopped' ? 'Durduruldu' : `${message.model || 'Yerel model'} · ${formatTime(message.completedAt || message.createdAt)}`)); article.append(meta);
     }
     root.append(article);
   }

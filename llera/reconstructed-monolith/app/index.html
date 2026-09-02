@@ -44,12 +44,12 @@
         <button id="new-chat" class="primary-action"><svg><use href="#i-plus"/></svg><span>Yeni sohbet</span><kbd>Ctrl N</kbd></button>
         <button id="search-open" class="sidebar-action"><svg><use href="#i-search"/></svg><span>Ara</span><kbd>Ctrl K</kbd></button>
       </div>
-      <nav class="product-nav" aria-label="Product sections"><button class="active" data-section="workspace">Workspace</button><button data-section="missions">Missions</button><button data-section="evidence">Evidence</button><button data-section="memory">Outcome Memory</button><button data-section="skills">Skills &amp; Evolution</button><button data-section="health">System Health</button></nav>
-      <div class="sidebar-section-label">CONVERSATIONS</div>
+      <nav class="product-nav" aria-label="Ürün bölümleri"><button class="active" data-section="workspace">Çalışma alanı</button><button data-section="missions">Görevler</button><button data-section="evidence">Kanıtlar</button><button data-section="memory">Sonuç belleği</button><button data-section="skills">Beceriler</button><button data-section="health">Sistem durumu</button></nav>
+      <div class="sidebar-section-label">SOHBETLER</div>
       <nav id="conversation-list" class="conversation-list" aria-label="Conversation history"></nav>
       <div id="active-work" class="active-work"></div>
       <footer class="sidebar-footer">
-        <button id="settings-open" class="account-row"><span class="local-glyph"><i></i></span><span class="account-copy"><strong>Local workspace</strong><small id="local-status">Checking model…</small></span><svg><use href="#i-settings"/></svg></button>
+        <button id="settings-open" class="account-row"><span class="local-glyph"><i></i></span><span class="account-copy"><strong>Yerel çalışma alanı</strong><small id="local-status">Model denetleniyor…</small></span><svg><use href="#i-settings"/></svg></button>
       </footer>
     </aside>
 
@@ -60,12 +60,12 @@
       </header>
       <section id="summary-strip" class="summary-strip" aria-label="Workspace summary"></section>
       <div class="workspace-grid">
-      <section class="missions-panel panel" aria-labelledby="missions-heading"><header class="panel-header"><h2 id="missions-heading">ACTIVE MISSIONS</h2><button id="new-mission" class="panel-action"><svg><use href="#i-plus"/></svg>New Mission</button></header><div id="mission-list" class="mission-list"></div><button id="all-missions" class="text-action">View all missions <span>→</span></button></section>
+      <section class="missions-panel panel" aria-labelledby="missions-heading"><header class="panel-header"><h2 id="missions-heading">AKTİF GÖREVLER</h2><button id="new-mission" class="panel-action"><svg><use href="#i-plus"/></svg>Yeni görev</button></header><div id="mission-list" class="mission-list"></div><button id="all-missions" class="text-action">Tüm görevleri gör <span>→</span></button></section>
       <section class="conversation-panel panel" aria-labelledby="conversation-heading">
       <div class="conversation-bar">
         <div class="conversation-context">
-          <h2 id="conversation-heading">CONVERSATION</h2><span id="conversation-title" class="conversation-title">New conversation</span>
-          <button id="mode-switch" class="mode-switch" aria-haspopup="menu"><span id="mode-label">Chat</span><svg><use href="#i-chevron"/></svg></button>
+          <h2 id="conversation-heading">SOHBET</h2><span id="conversation-title" class="conversation-title">Yeni sohbet</span>
+          <button id="mode-switch" class="mode-switch" aria-haspopup="menu"><span id="mode-label">Sohbet</span><svg><use href="#i-chevron"/></svg></button>
         </div>
         <div class="conversation-actions">
           <button id="mission-chip" class="mission-chip is-hidden"><span class="pulse-dot"></span><span>Task</span></button>
@@ -84,11 +84,11 @@
           <textarea id="composer" rows="1" aria-label="LLera'ya mesaj gönder" placeholder="Sor, oluştur veya bir görev başlat…"></textarea>
           <div class="composer-toolbar">
             <div class="composer-tools">
-              <label class="tool-button file-input" title="Attach file"><svg><use href="#i-attach"/></svg><span>Attach</span><input id="file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,text/plain,application/pdf"></label>
+              <label class="tool-button file-input" title="Dosya ekle"><svg><use href="#i-attach"/></svg><span>Dosya ekle</span><input id="file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,text/plain,application/pdf"></label>
               <button id="model-picker-open" class="tool-button"><span class="model-indicator"></span><span id="composer-model">Model seç</span><svg class="mini-chevron"><use href="#i-chevron"/></svg></button>
             </div>
             <div class="send-area">
-              <span id="send-hint" class="send-hint">Enter to send</span>
+              <span id="send-hint" class="send-hint">Göndermek için Enter</span>
               <button id="send-button" class="send-button" aria-label="Send message"><svg><use href="#i-send"/></svg></button>
               <button id="stop-button" class="send-button stop-button is-hidden" aria-label="Stop response"><svg><use href="#i-stop"/></svg></button>
             </div>

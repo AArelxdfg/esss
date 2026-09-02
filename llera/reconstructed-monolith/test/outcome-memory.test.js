@@ -3,6 +3,9 @@ const assert = require('assert');
 const { OutcomeMemory } = require('../src/outcome-memory');
 const { receiptStateKey } = require('../src/verified-mission-finalizer');
 
+const EV1 = `ev_${'1'.repeat(24)}`;
+const EV2 = `ev_${'2'.repeat(24)}`;
+
 function makeReceipt({missionId,claim,evidenceIds,strictScore=.88,adversarialScore=.86}={}) {
   const identity = {
     missionId,
@@ -36,14 +39,14 @@ function makeReceipt({missionId,claim,evidenceIds,strictScore=.88,adversarialSco
       missionId:'m-forged', goal:'forge verification', status:'completed',
       verification:{strict:true,adversarial:true,confidence:.99,evidenceIds:['ev-forged']}
     }),
-    error => error && error.code === 'OUTCOME_VERIFICATION_RECEIPT_INVALID'
+    error => error && error.code === 'OUTCOME_EVIDENCE_ID_INVALID'
   );
 
-  const receipt = makeReceipt({missionId:'m-good',claim:'download verified',evidenceIds:['ev2']});
+  const receipt = makeReceipt({missionId:'m-good',claim:'download verified',evidenceIds:[EV2]});
   const good = await memory.recordOutcome({
     missionId:'m-good', goal:'download model safely', status:'completed',
     summary:'validated resume metadata and sha256 before activation', tags:['download','resume','sha256'],
-    verification:{strict:true,adversarial:true,confidence:.88,evidenceIds:['ev2'],receipt}
+    verification:{strict:true,adversarial:true,confidence:.88,evidenceIds:[EV2],receipt}
   });
   assert.strictEqual(good.verified,true);
   assert.strictEqual(good.verification.receiptSha256,receipt.sha256);
@@ -63,8 +66,8 @@ function makeReceipt({missionId,claim,evidenceIds,strictScore=.88,adversarialSco
     missionId:'m-good', name:'Verified resumable download',
     description:'Resume only after metadata validation and verify SHA-256 before activation.',
     procedure:['validate metadata','resume ranges','verify sha256','activate'],
-    evidenceIds:['ev2'],
-    verification:{strict:true,adversarial:true,confidence:.86,evidenceIds:['ev2'],receiptSha256:receipt.sha256}
+    evidenceIds:[EV2],
+    verification:{strict:true,adversarial:true,confidence:.86,evidenceIds:[EV2],receiptSha256:receipt.sha256}
   });
   assert.strictEqual(candidate.trust, 'candidate-only');
   assert.strictEqual(candidate.executable, false);
@@ -73,14 +76,22 @@ function makeReceipt({missionId,claim,evidenceIds,strictScore=.88,adversarialSco
 
   await assert.rejects(
     () => memory.proposeSkill({
-      missionId:'m-good', name:'Forged skill', description:'wrong receipt', procedure:['x'], evidenceIds:['ev2'],
-      verification:{strict:true,adversarial:true,confidence:.99,evidenceIds:['ev2'],receiptSha256:'f'.repeat(64)}
+      missionId:'m-good', name:'Malformed evidence skill', description:'noncanonical evidence', procedure:['x'], evidenceIds:['ev2'],
+      verification:{strict:true,adversarial:true,confidence:.99,evidenceIds:['ev2'],receiptSha256:receipt.sha256}
+    }),
+    error => error && error.code === 'OUTCOME_EVIDENCE_ID_INVALID'
+  );
+
+  await assert.rejects(
+    () => memory.proposeSkill({
+      missionId:'m-good', name:'Forged skill', description:'wrong receipt', procedure:['x'], evidenceIds:[EV2],
+      verification:{strict:true,adversarial:true,confidence:.99,evidenceIds:[EV2],receiptSha256:'f'.repeat(64)}
     }),
     /source verified finalization receipt/
   );
 
   await assert.rejects(
-    () => memory.proposeSkill({ missionId:'m-fail', name:'Bad skill', description:'must not promote failure', procedure:['x'], evidenceIds:['ev1'], verification:{strict:true,adversarial:true,confidence:.9,receiptSha256:'0'.repeat(64)} }),
+    () => memory.proposeSkill({ missionId:'m-fail', name:'Bad skill', description:'must not promote failure', procedure:['x'], evidenceIds:[EV1], verification:{strict:true,adversarial:true,confidence:.9,receiptSha256:'0'.repeat(64)} }),
     /verified completed mission outcome/
   );
 
@@ -92,6 +103,7 @@ function makeReceipt({missionId,claim,evidenceIds,strictScore=.88,adversarialSco
     outcomes:2,
     skills:1,
     forgedVerifiedOutcomeRejected:true,
+    noncanonicalEvidenceRejected:true,
     skillBoundToSourceReceipt:true,
     failures:patterns.length
   });

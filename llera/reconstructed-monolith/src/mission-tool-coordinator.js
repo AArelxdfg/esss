@@ -44,6 +44,11 @@ class MissionToolCoordinator {
     if (!tool) throw new Error('tool is required');
     const mission = this.missionEngine.getMission(missionId);
     if (!mission) throw new Error(`unknown mission ${missionId}`);
+    if (mission.status !== 'running') {
+      const error = new Error(`mission is not runnable from ${mission.status}`);
+      error.code = 'MISSION_TOOL_MISSION_NOT_RUNNING';
+      throw error;
+    }
     const activeStepId = this._resolveStepBinding(mission, stepId);
 
     this.broker.restore(mission.toolTrace || []);
@@ -172,13 +177,18 @@ class MissionToolCoordinator {
 
   _resolveStepBinding(mission, requestedStepId) {
     const currentStepId = mission && mission.currentStepId || null;
+    if (!currentStepId) {
+      const error = new Error('mission has no active step');
+      error.code = 'MISSION_TOOL_NO_ACTIVE_STEP';
+      throw error;
+    }
     if (requestedStepId == null) return currentStepId;
     if (typeof requestedStepId !== 'string' || requestedStepId.length === 0) {
       throw new Error('stepId must be a non-empty string when provided');
     }
     const exists = Array.isArray(mission.steps) && mission.steps.some(step => step && step.id === requestedStepId);
     if (!exists) throw new Error(`unknown mission step ${requestedStepId}`);
-    if (currentStepId && currentStepId !== requestedStepId) {
+    if (currentStepId !== requestedStepId) {
       throw new Error(`mission step binding mismatch: active ${currentStepId}, requested ${requestedStepId}`);
     }
     return requestedStepId;
@@ -210,8 +220,6 @@ class MissionToolCoordinator {
 
       if (type === 'recovery-snapshot-repaired') {
         const debtId = checkpoint.payload.debtCheckpointId;
-        // Fail closed: repair must explicitly bind to a real debt ID.
-        // Missing/unknown IDs never clear arbitrary recovery debt.
         if (typeof debtId === 'string' && debtId.length > 0 && open.has(debtId)) {
           open.delete(debtId);
         }

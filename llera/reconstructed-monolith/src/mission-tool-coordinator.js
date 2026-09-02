@@ -1,6 +1,31 @@
 'use strict';
 const { fingerprint } = require('./tool-surface');
 
+const EVIDENCE_ID_PATTERN = /^ev_[a-f0-9]{24}$/;
+
+function normalizeEvidenceIds(evidenceIds) {
+  if (evidenceIds == null) return [];
+  if (!Array.isArray(evidenceIds)) {
+    const error = new Error('evidenceIds must be an array');
+    error.code = 'MISSION_TOOL_EVIDENCE_IDS_INVALID';
+    throw error;
+  }
+  const normalized = [];
+  const seen = new Set();
+  for (const value of evidenceIds) {
+    if (typeof value !== 'string' || !EVIDENCE_ID_PATTERN.test(value)) {
+      const error = new Error(`invalid evidence id: ${String(value)}`);
+      error.code = 'MISSION_TOOL_EVIDENCE_ID_INVALID';
+      throw error;
+    }
+    if (!seen.has(value)) {
+      seen.add(value);
+      normalized.push(value);
+    }
+  }
+  return normalized;
+}
+
 class MissionToolCoordinator {
   constructor({ missionEngine, broker, recoverySnapshots = null, autoCheckpoint = true } = {}) {
     if (!missionEngine || typeof missionEngine.appendToolTrace !== 'function' || typeof missionEngine.checkpoint !== 'function') {
@@ -50,6 +75,7 @@ class MissionToolCoordinator {
       throw error;
     }
     const activeStepId = this._resolveStepBinding(mission, stepId);
+    const boundEvidenceIds = normalizeEvidenceIds(evidenceIds);
 
     this.broker.restore(mission.toolTrace || []);
 
@@ -86,7 +112,7 @@ class MissionToolCoordinator {
       observation: Boolean(trace.observation),
       scope: trace.scope || null,
       verifiesFingerprint: trace.verifies || trace.verifiesFingerprint || null,
-      evidenceIds
+      evidenceIds: boundEvidenceIds
     });
 
     let checkpoint = null;
@@ -237,4 +263,4 @@ class MissionToolCoordinator {
   }
 }
 
-module.exports = { MissionToolCoordinator };
+module.exports = { EVIDENCE_ID_PATTERN, normalizeEvidenceIds, MissionToolCoordinator };

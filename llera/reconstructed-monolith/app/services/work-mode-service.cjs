@@ -74,8 +74,18 @@ class WorkModeService {
 
   async invokeTool({ missionId, stepId = null, tool, args = {}, materialAuthorization = false } = {}) {
     const mission = this._mission(missionId);
-    const activeStepId = stepId || mission.currentStepId;
+    if (mission.status !== 'running') {
+      const error = new Error(`mission is not runnable from ${mission.status}`);
+      error.code = 'WORK_MODE_MISSION_NOT_RUNNING';
+      throw error;
+    }
+    const activeStepId = mission.currentStepId;
     if (!activeStepId) throw new Error('mission has no active step');
+    if (stepId && stepId !== activeStepId) {
+      const error = new Error(`tool step ${stepId} does not match active mission step ${activeStepId}`);
+      error.code = 'WORK_MODE_STEP_MISMATCH';
+      throw error;
+    }
     const result = await this.runtime.missionTools.invoke({
       missionId,
       stepId: activeStepId,

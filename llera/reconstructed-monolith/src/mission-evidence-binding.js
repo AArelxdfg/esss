@@ -23,10 +23,11 @@ function normalizeEvidenceIds(evidenceIds) {
     if (typeof value !== 'string' || !EVIDENCE_ID_PATTERN.test(value)) {
       throw evidenceBindingError('MISSION_EVIDENCE_ID_INVALID', `invalid evidence id: ${String(value)}`);
     }
-    if (!seen.has(value)) {
-      seen.add(value);
-      normalized.push(value);
+    if (seen.has(value)) {
+      throw evidenceBindingError('MISSION_EVIDENCE_ID_DUPLICATE', `duplicate evidence id: ${value}`);
     }
+    seen.add(value);
+    normalized.push(value);
   }
   return normalized;
 }

@@ -8,9 +8,49 @@ function sha256Bytes(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
+function normalizeManifestPath(value) {
+  return String(value || '').replace(/\\/g, '/');
+}
+
+function validateManifest(manifest) {
+  const failures = [];
+  if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.files)) {
+    return { ok: false, failures: [{ reason: 'manifest-files-required' }] };
+  }
+
+  const seenPaths = new Set();
+  for (let index = 0; index < manifest.files.length; index += 1) {
+    const entry = manifest.files[index];
+    if (!entry || typeof entry !== 'object') {
+      failures.push({ index, reason: 'entry-object-required' });
+      continue;
+    }
+
+    const normalizedPath = normalizeManifestPath(entry.path);
+    if (!normalizedPath || normalizedPath === '.' || normalizedPath.endsWith('/')) {
+      failures.push({ index, path: normalizedPath, reason: 'invalid-path' });
+    } else if (seenPaths.has(normalizedPath)) {
+      failures.push({ index, path: normalizedPath, reason: 'duplicate-path' });
+    } else {
+      seenPaths.add(normalizedPath);
+    }
+
+    if (!/^[a-f0-9]{64}$/i.test(String(entry.sha256 || ''))) {
+      failures.push({ index, path: normalizedPath, reason: 'invalid-sha256' });
+    }
+
+    const size = Number(entry.size);
+    if (!Number.isSafeInteger(size) || size < 0) {
+      failures.push({ index, path: normalizedPath, reason: 'invalid-size' });
+    }
+  }
+
+  return { ok: failures.length === 0, failures };
+}
+
 function canonicalManifestPayload(manifest) {
   const files = [...(manifest.files || [])]
-    .map((x) => ({ path: x.path.replace(/\\/g, '/'), sha256: String(x.sha256).toLowerCase(), size: Number(x.size) }))
+    .map((x) => ({ path: normalizeManifestPath(x.path), sha256: String(x.sha256).toLowerCase(), size: Number(x.size) }))
     .sort((a, b) => a.path.localeCompare(b.path));
   return JSON.stringify({ schema: manifest.schema || 1, product: manifest.product || 'LLera', version: manifest.version || '', files });
 }
@@ -52,6 +92,8 @@ class IntegritySentinel {
 
   verifyManifestSignature(manifest, signatureBase64) {
     if (!this.publicKeyPem) return { verified: false, reason: 'no-public-key' };
+    const validation = validateManifest(manifest);
+    if (!validation.ok) return { verified: false, reason: 'manifest-invalid', failures: validation.failures };
     const payload = Buffer.from(canonicalManifestPayload(manifest));
     const signature = Buffer.from(signatureBase64 || '', 'base64');
     const ok = crypto.verify('sha256', payload, this.publicKeyPem, signature);
@@ -72,7 +114,7 @@ class IntegritySentinel {
 
     const bytes = fs.readFileSync(resolved.realTarget);
     const actual = sha256Bytes(bytes);
-    if (Number.isFinite(Number(entry.size)) && Number(entry.size) !== bytes.length) {
+    if (Number(entry.size) !== bytes.length) {
       return { ok: false, path: entry.path, reason: 'size-mismatch', expectedSize: Number(entry.size), actualSize: bytes.length, actualSha256: actual };
     }
     if (actual !== String(entry.sha256).toLowerCase()) {
@@ -82,10 +124,14 @@ class IntegritySentinel {
   }
 
   verifyTree(manifest) {
-    if (!manifest || !Array.isArray(manifest.files)) throw new Error('manifest.files is required');
+    const validation = validateManifest(manifest);
+    if (!validation.ok) {
+      const failures = validation.failures.map((failure) => ({ ok: false, ...failure }));
+      return { ok: false, checked: 0, failures, results: [], manifestValid: false };
+    }
     const results = manifest.files.map((entry) => this.verifyFile(entry));
     const failures = results.filter((x) => !x.ok);
-    return { ok: failures.length === 0, checked: results.length, failures, results };
+    return { ok: failures.length === 0, checked: results.length, failures, results, manifestValid: true };
   }
 
   quarantine(relativePath, reason = 'integrity-failure') {
@@ -118,4 +164,4 @@ class IntegritySentinel {
   }
 }
 
-module.exports = { IntegritySentinel, sha256Bytes, canonicalManifestPayload, isPathWithin };
+module.exports = { IntegritySentinel, sha256Bytes, canonicalManifestPayload, isPathWithin, validateManifest, normalizeManifestPath };

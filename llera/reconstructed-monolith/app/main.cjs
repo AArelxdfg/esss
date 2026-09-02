@@ -64,6 +64,14 @@ function validateWorkTool(value) {
     materialAuthorization: value.materialAuthorization === true
   };
 }
+function validateStepCompletion(value) {
+  if (!value || typeof value !== 'object') throw new Error('step completion payload is invalid');
+  return {
+    missionId: validateId(value.missionId, 'mission'),
+    stepId: validateId(value.stepId, 'step'),
+    result: value.result && typeof value.result === 'object' && !Array.isArray(value.result) ? value.result : {}
+  };
+}
 
 ipcMain.handle('llera:identity', () => productIdentity());
 ipcMain.handle('llera:snapshot', () => monolith.snapshot());
@@ -81,7 +89,7 @@ ipcMain.handle('llera:mission:start', (_event, id) => workMode.startMission(vali
 ipcMain.handle('llera:mission:next', (_event, id) => workMode.beginNextStep(validateId(id, 'mission')));
 ipcMain.handle('llera:mission:status', (_event, id) => workMode.status(validateId(id, 'mission')));
 ipcMain.handle('llera:mission:tool', (_event, input) => workMode.invokeTool(validateWorkTool(input)));
-ipcMain.handle('llera:mission:complete-step', (_event, input) => workMode.completeCurrentStep(validateId(input?.missionId, 'mission'), input?.result && typeof input.result === 'object' ? input.result : {}));
+ipcMain.handle('llera:mission:complete-step', (_event, input) => { const value = validateStepCompletion(input); return workMode.completeCurrentStep(value.missionId, value.stepId, value.result); });
 ipcMain.handle('llera:settings:update', (_event, input) => monolith.updateSettings(input && typeof input === 'object' ? input : {}));
 ipcMain.handle('llera:model:import', async event => { const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Yerel modeli seçin', properties:['openFile'], filters:[{ name:'GGUF model', extensions:['gguf'] }] }); if (result.canceled || !result.filePaths[0]) return monolith.snapshot(); return monolith.importModel({ sourcePath: result.filePaths[0] }); });
 ipcMain.handle('llera:window', (_event, action) => { const win = BrowserWindow.fromWebContents(_event.sender); if (!win) return false; if (action === 'minimize') win.minimize(); else if (action === 'maximize') win.isMaximized() ? win.unmaximize() : win.maximize(); else if (action === 'close') win.close(); else throw new Error('window action is invalid'); return true; });

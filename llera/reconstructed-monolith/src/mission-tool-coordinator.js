@@ -44,7 +44,7 @@ class MissionToolCoordinator {
     if (!tool) throw new Error('tool is required');
     const mission = this.missionEngine.getMission(missionId);
     if (!mission) throw new Error(`unknown mission ${missionId}`);
-    const activeStepId = stepId || mission.currentStepId || null;
+    const activeStepId = this._resolveStepBinding(mission, stepId);
 
     this.broker.restore(mission.toolTrace || []);
 
@@ -168,6 +168,20 @@ class MissionToolCoordinator {
     this.restoreMission(missionId);
     const mission = this.missionEngine.getMission(missionId);
     return Boolean(this.broker.status().canFinalize) && this._recoverySnapshotDebts(mission).length === 0;
+  }
+
+  _resolveStepBinding(mission, requestedStepId) {
+    const currentStepId = mission && mission.currentStepId || null;
+    if (requestedStepId == null) return currentStepId;
+    if (typeof requestedStepId !== 'string' || requestedStepId.length === 0) {
+      throw new Error('stepId must be a non-empty string when provided');
+    }
+    const exists = Array.isArray(mission.steps) && mission.steps.some(step => step && step.id === requestedStepId);
+    if (!exists) throw new Error(`unknown mission step ${requestedStepId}`);
+    if (currentStepId && currentStepId !== requestedStepId) {
+      throw new Error(`mission step binding mismatch: active ${currentStepId}, requested ${requestedStepId}`);
+    }
+    return requestedStepId;
   }
 
   _classify(tool) {

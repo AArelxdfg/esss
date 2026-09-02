@@ -161,17 +161,46 @@ class SignedUpdateLifecycle {
   }
   async activateStaged(manifest, stagedPath, { verificationReceipt = null } = {}) {
     this._requireVerifiedManifest(manifest,verificationReceipt);
-    await this.init(); const version = safeVersionSegment(manifest.version);
+    await this.init();
+    const version = safeVersionSegment(manifest.version);
+    const expectedStaged = path.join(this.paths.staging,version,'LLera-update.bin');
+    if (!sameResolvedPath(stagedPath, expectedStaged)) throw new Error('activation staged path binding mismatch');
+    const stagedStat = await fsp.lstat(expectedStaged);
+    if (!stagedStat.isFile() || stagedStat.isSymbolicLink()) throw new Error('activation staged artifact must be a regular bound file');
+
     const currentFile=path.join(this.paths.current,'LLera.bin'), backupFile=path.join(this.paths.backup,'LLera.previous.bin');
     await fsp.mkdir(this.paths.current,{recursive:true}); await fsp.mkdir(this.paths.backup,{recursive:true});
     let hadCurrent=false, backupSha256=null;
+    let currentStat=null;
     try {
-      await fsp.access(currentFile);
+      currentStat=await fsp.lstat(currentFile);
+    } catch (err) {
+      if (!err || err.code !== 'ENOENT') throw err;
+    }
+    if (currentStat) {
+      if (!currentStat.isFile() || currentStat.isSymbolicLink()) throw new Error('activation current artifact must be a regular bound file');
       hadCurrent=true;
-      await fsp.copyFile(currentFile,backupFile);
-      backupSha256=await sha256File(backupFile);
-    } catch {}
-    const tmp=`${currentFile}.new`; await fsp.copyFile(stagedPath,tmp); const digest=await sha256File(tmp);
+      const currentSha256=await sha256File(currentFile);
+      const backupTmp=`${backupFile}.new`;
+      await fsp.rm(backupTmp,{recursive:true,force:true});
+      try {
+        await fsp.copyFile(currentFile,backupTmp);
+        const backupStat=await fsp.lstat(backupTmp);
+        if (!backupStat.isFile() || backupStat.isSymbolicLink()) throw new Error('backup copy is not a regular file');
+        backupSha256=await sha256File(backupTmp);
+        if (backupSha256.toLowerCase() !== currentSha256.toLowerCase()) throw new Error('backup copy digest mismatch');
+        await fsp.rm(backupFile,{force:true});
+        await fsp.rename(backupTmp,backupFile);
+      } catch (err) {
+        await fsp.rm(backupTmp,{recursive:true,force:true}).catch(() => {});
+        throw new Error(`activation backup failed: ${err && err.message ? err.message : err}`);
+      }
+    }
+
+    const tmp=`${currentFile}.new`;
+    await fsp.rm(tmp,{force:true});
+    await fsp.copyFile(expectedStaged,tmp);
+    const digest=await sha256File(tmp);
     if (digest.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) { await fsp.rm(tmp,{force:true}); throw new Error('activation integrity mismatch'); }
     await fsp.rename(tmp,currentFile);
     await this._writeJournal({

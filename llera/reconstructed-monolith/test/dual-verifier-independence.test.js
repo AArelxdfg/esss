@@ -18,6 +18,8 @@ const pass = dual.verify({
 assert.strictEqual(pass.ok,true);
 assert.strictEqual(pass.independence.distinctInstances,true);
 assert.strictEqual(pass.independence.distinctEngineIds,true);
+assert.deepStrictEqual(pass.independence.strictDuplicateSemanticKeys,[]);
+assert.deepStrictEqual(pass.independence.adversarialDuplicateSemanticKeys,[]);
 
 const criticalReject = dual.verify({
   claim:'state is x', evidence:[ev],
@@ -77,6 +79,30 @@ const overlap = dual.verify({
 assert.strictEqual(overlap.reason,'verifier_check_independence_reject');
 assert.deepStrictEqual(overlap.independence.semanticOverlap,['explicit:same-contract']);
 
+const duplicateStrict = dual.verify({
+  claim:'duplicate strict semantics must not inflate score', evidence:[ev],
+  strictChecks:[
+    {name:'strict-a',semanticKey:'same-strict-observation',ok:true,evidenceIds:[ev.id]},
+    {name:'strict-b',semanticKey:'same-strict-observation',ok:true,evidenceIds:[ev.id]}
+  ],
+  adversarialChecks:[{name:'adv-independent',semanticKey:'different-counterexample',ok:true,evidenceIds:[ev.id]}]
+});
+assert.strictEqual(duplicateStrict.reason,'verifier_check_independence_reject');
+assert.deepStrictEqual(duplicateStrict.independence.strictDuplicateSemanticKeys,['explicit:same-strict-observation']);
+assert.deepStrictEqual(duplicateStrict.independence.adversarialDuplicateSemanticKeys,[]);
+
+const duplicateAdversarial = dual.verify({
+  claim:'duplicate adversarial semantics must not inflate score', evidence:[ev],
+  strictChecks:[{name:'strict-independent',semanticKey:'different-observation',ok:true,evidenceIds:[ev.id]}],
+  adversarialChecks:[
+    {name:'adv-a',semanticKey:'same-counterexample',ok:true,evidenceIds:[ev.id]},
+    {name:'adv-b',semanticKey:'same-counterexample',ok:true,evidenceIds:[ev.id]}
+  ]
+});
+assert.strictEqual(duplicateAdversarial.reason,'verifier_check_independence_reject');
+assert.deepStrictEqual(duplicateAdversarial.independence.strictDuplicateSemanticKeys,[]);
+assert.deepStrictEqual(duplicateAdversarial.independence.adversarialDuplicateSemanticKeys,['explicit:same-counterexample']);
+
 const permitted = new DualVerifier({requireIndependentChecks:false}).verify({
   claim:'contract does not require independence', evidence:[ev], strictChecks:sharedChecks, adversarialChecks:sharedChecks
 });
@@ -88,6 +114,7 @@ console.log('MONOLITH dual verifier structural independence PASS', {
   distinctEngineIds:true,
   independentPolicies:true,
   repeatedOrOverlappingChecksRejected:true,
+  duplicateChecksWithinVerifierRejected:true,
   contractCanExplicitlyAllowOverlap:true,
   adversarialCriticalFailureFailClosed:true
 });

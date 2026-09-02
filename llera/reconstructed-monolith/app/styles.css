@@ -109,6 +109,9 @@ kbd { font: 11px var(--font-ui); color: var(--text-tertiary); background: transp
 :root { --bg-canvas:#0b0d10; --bg-sidebar:#11151a; --bg-elevated:#15191f; --bg-raised:#1b2027; --bg-soft:#14181e; --bg-hover:#1b2129; --bg-active:#202834; --text-primary:#f1f3f5; --text-secondary:#a9b1ba; --text-tertiary:#737d88; --accent:#6d9dde; --accent-strong:#9bc1f5; --hairline:rgba(222,229,238,.10); --hairline-strong:rgba(222,229,238,.16); }
 .conversation-panel,.missions-panel,.context-card { box-shadow:none; }
 .conversation-panel { border-radius:12px; }
+#app:not(.missions-visible):not(.context-visible) .conversation-panel { align-self:start; grid-template-rows:50px auto auto; min-height:0; }
+#app:not(.missions-visible):not(.context-visible) .transcript { max-height:calc(100vh - 255px); overflow:auto; }
+#app:not(.missions-visible):not(.context-visible) .composer-dock { border-top:1px solid var(--hairline); padding-top:8px; }
 .brand-image-small { width: 21px; height: 21px; border-radius: 6px; }
 :root[data-theme="light"] .brand-image { mix-blend-mode: multiply; }
 .window-title { color: var(--text-tertiary); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

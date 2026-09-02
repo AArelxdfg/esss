@@ -42,9 +42,9 @@ class MonolithService {
     this.stateFile = path.join(this.userData, 'product-state.json');
     this.missionFile = path.join(this.userData, 'missions.json');
     const persisted = safeRead(this.stateFile, {});
-    const isLegacySidebarLayout = Number(persisted.schema || 0) < 3;
+    const isLegacySidebarLayout = Number(persisted.schema || 0) < 4;
     this.state = {
-      schema: 3,
+      schema: 4,
       conversations: Array.isArray(persisted.conversations) ? persisted.conversations : [],
       activeConversationId: persisted.activeConversationId || null,
       activity: Array.isArray(persisted.activity) ? persisted.activity : [],

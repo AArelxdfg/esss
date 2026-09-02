@@ -3,6 +3,8 @@
 const crypto = require('crypto');
 const { receiptStateKey } = require('./verified-mission-finalizer');
 
+const CANONICAL_EVIDENCE_ID = /^ev_[a-f0-9]{24}$/;
+
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function normalizeTokens(value) {
   return new Set(String(value || '').toLowerCase().match(/[a-z0-9_\-]{2,}/g) || []);
@@ -16,9 +18,24 @@ function jaccard(a, b) {
 function stableId(prefix, seed) {
   return `${prefix}_${crypto.createHash('sha256').update(String(seed)).digest('hex').slice(0, 20)}`;
 }
-function normalizeEvidenceIds(values) {
-  if (!Array.isArray(values)) return [];
-  return [...new Set(values.filter(Boolean).map(v => String(v)))];
+function inspectEvidenceIds(values) {
+  if (values == null) return { ok: true, ids: [] };
+  if (!Array.isArray(values)) return { ok: false, ids: [], reason: 'evidence_ids_array_required' };
+  const ids = [...new Set(values.map(v => String(v || '').trim()))];
+  if (ids.some(id => !CANONICAL_EVIDENCE_ID.test(id))) {
+    return { ok: false, ids: [], reason: 'evidence_id_noncanonical' };
+  }
+  return { ok: true, ids };
+}
+function requireEvidenceIds(values, { allowEmpty = true, context = 'evidence' } = {}) {
+  const checked = inspectEvidenceIds(values);
+  if (!checked.ok || (!allowEmpty && checked.ids.length === 0)) {
+    const error = new Error(`${context} requires canonical Evidence IDs`);
+    error.code = 'OUTCOME_EVIDENCE_ID_INVALID';
+    error.reason = checked.ok ? 'evidence_ids_required' : checked.reason;
+    throw error;
+  }
+  return checked.ids;
 }
 function sameStringSet(a, b) {
   const aa = [...new Set((a || []).map(String))].sort();
@@ -34,8 +51,12 @@ function validateFinalizationReceipt(receipt, { missionId, evidenceIds = [] } = 
   if (!/^[a-f0-9]{64}$/i.test(String(receipt.toolTraceDigest || ''))) {
     return {ok:false, reason:'finalization_receipt_trace_digest_invalid'};
   }
-  const receiptEvidenceIds = normalizeEvidenceIds(receipt.evidenceIds);
-  if (!receiptEvidenceIds.length || !sameStringSet(receiptEvidenceIds, evidenceIds)) {
+  const suppliedEvidence = inspectEvidenceIds(evidenceIds);
+  if (!suppliedEvidence.ok) return {ok:false, reason:'finalization_receipt_evidence_noncanonical'};
+  const receiptEvidence = inspectEvidenceIds(receipt.evidenceIds);
+  if (!receiptEvidence.ok) return {ok:false, reason:'finalization_receipt_evidence_noncanonical'};
+  const receiptEvidenceIds = receiptEvidence.ids;
+  if (!receiptEvidenceIds.length || !sameStringSet(receiptEvidenceIds, suppliedEvidence.ids)) {
     return {ok:false, reason:'finalization_receipt_evidence_mismatch'};
   }
   const strictScore = Number(receipt.strictScore || 0);
@@ -88,7 +109,7 @@ class OutcomeMemory {
     if (!missionId || !goal) throw new Error('missionId and goal are required');
     if (!['completed', 'failed', 'partial'].includes(status)) throw new Error('invalid outcome status');
 
-    const suppliedEvidenceIds = normalizeEvidenceIds(verification.evidenceIds);
+    const suppliedEvidenceIds = requireEvidenceIds(verification.evidenceIds, { context: 'outcome verification' });
     const receiptValidation = status === 'completed'
       ? validateFinalizationReceipt(verification.receipt, { missionId, evidenceIds:suppliedEvidenceIds })
       : {ok:false, reason:'non_completed_outcome'};
@@ -189,13 +210,8 @@ class OutcomeMemory {
       throw new Error('skill candidate requires strict + adversarial verification at >=0.62 confidence');
     }
 
-    const candidateEvidenceIds = normalizeEvidenceIds(evidenceIds);
-    if (!candidateEvidenceIds.length) throw new Error('skill candidate requires bound evidence');
-
-    const sourceEvidenceIds = normalizeEvidenceIds(sourceOutcome.verification && sourceOutcome.verification.evidenceIds);
-    if (!sourceEvidenceIds.length) {
-      throw new Error('verified source outcome has no persisted evidence provenance');
-    }
+    const candidateEvidenceIds = requireEvidenceIds(evidenceIds, { allowEmpty: false, context: 'skill candidate' });
+    const sourceEvidenceIds = requireEvidenceIds(sourceOutcome.verification && sourceOutcome.verification.evidenceIds, { allowEmpty: false, context: 'source outcome' });
 
     const sourceEvidence = new Set(sourceEvidenceIds);
     const foreignEvidenceIds = candidateEvidenceIds.filter(id => !sourceEvidence.has(id));
@@ -203,7 +219,7 @@ class OutcomeMemory {
       throw new Error(`skill candidate evidence is not derived from source outcome: ${foreignEvidenceIds.join(',')}`);
     }
 
-    const verifierEvidenceIds = normalizeEvidenceIds(verification.evidenceIds);
+    const verifierEvidenceIds = requireEvidenceIds(verification.evidenceIds, { context: 'skill verifier' });
     if (verifierEvidenceIds.length) {
       const verifierEvidence = new Set(verifierEvidenceIds);
       const unverifiedCandidateEvidence = candidateEvidenceIds.filter(id => !verifierEvidence.has(id));
@@ -252,4 +268,4 @@ class OutcomeMemory {
   }
 }
 
-module.exports = { OutcomeMemory, validateFinalizationReceipt };
+module.exports = { OutcomeMemory, validateFinalizationReceipt, inspectEvidenceIds };

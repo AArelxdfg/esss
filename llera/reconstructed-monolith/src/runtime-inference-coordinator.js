@@ -29,15 +29,6 @@ class RuntimeInferenceCoordinator {
       : [];
     const ids = [...new Set([...aborted, ...failures])];
 
-    // A cleanup belongs to the backend-death event that produced it, not to whatever
-    // runtime generation happens to be current when the coordinator observes it.
-    // Recovery can advance snapshot.generation while lastOrphanedInferenceCleanup is
-    // still the previous event; keying only on the current generation would replay the
-    // stale cleanup and call governor.complete() again. Prefer an event-bound cleanup
-    // generation when newer runtimes provide one. Current RuntimeLifecycle always
-    // records lastBackendExit for external-death cleanup, so use that stable backend
-    // identity as the compatibility key. Only fall back to snapshot.generation for
-    // older/fake snapshots that expose neither event-scoped signal.
     const exit = snapshot && snapshot.lastBackendExit;
     const cleanupGeneration = Number.isSafeInteger(cleanup.generation) ? cleanup.generation : null;
     const hasExitIdentity = Boolean(exit && (exit.pid || exit.at != null || exit.model || exit.kind));
@@ -69,10 +60,29 @@ class RuntimeInferenceCoordinator {
     });
   }
 
+  _rollbackRuntimeRegistration(id, generation) {
+    let resolvedGeneration = Number.isSafeInteger(generation) && generation > 0 ? generation : null;
+    if (resolvedGeneration === null && typeof this.runtime.snapshot === 'function') {
+      try {
+        const snapshot = this.runtime.snapshot();
+        const tasks = Array.isArray(snapshot && snapshot.activeInference) ? snapshot.activeInference : [];
+        const task = tasks.find(item => item && item.id === id);
+        if (task && Number.isSafeInteger(task.generation) && task.generation > 0) {
+          resolvedGeneration = task.generation;
+        }
+      } catch (_) {
+        // Rollback is best-effort here; the original admission error remains authoritative.
+      }
+    }
+    if (resolvedGeneration === null) return false;
+    try {
+      return Boolean(this.runtime.completeInference(id, resolvedGeneration));
+    } catch (_) {
+      return false;
+    }
+  }
+
   begin({ id, className = 'interactive', requestedTokens = null, abort } = {}) {
-    // RuntimeLifecycle can independently discover that llama.cpp died and clear its
-    // tracked inference set. Reconcile that cleanup before admitting new work so
-    // stale coordinator/governor entries cannot permanently consume admission slots.
     this._reconcileRuntimeCleanup();
 
     if (!id || this.active.has(id)) return { allow: false, reason: 'unique_inference_id_required' };
@@ -83,8 +93,9 @@ class RuntimeInferenceCoordinator {
     const priority = LOW_PRIORITY_CLASSES.has(admission.className) ? 'low'
       : admission.className === 'interactive' ? 'high' : 'normal';
 
+    let runtimeTask = null;
     try {
-      const runtimeTask = this.runtime.registerInference(id, { priority, abort });
+      runtimeTask = this.runtime.registerInference(id, { priority, abort });
       const generation = runtimeTask && runtimeTask.generation;
       if (!Number.isSafeInteger(generation) || generation <= 0) {
         const error = new Error('runtime inference registration returned no valid generation');
@@ -104,16 +115,13 @@ class RuntimeInferenceCoordinator {
       this.active.set(id, record);
       return { allow: true, ...record };
     } catch (error) {
+      this._rollbackRuntimeRegistration(id, runtimeTask && runtimeTask.generation);
       this.governor.complete(id);
       throw error;
     }
   }
 
   complete(id, generation) {
-    // RuntimeLifecycle may have removed this inference independently after an
-    // external llama.cpp death. Reconcile that orphan-cleanup event before deciding
-    // whether the caller's completion is stale, otherwise coordinator/governor state
-    // can retain a consumed admission slot until another begin() happens.
     this._reconcileRuntimeCleanup();
 
     const local = this.active.get(id);
@@ -136,10 +144,6 @@ class RuntimeInferenceCoordinator {
       try {
         governorRemoved = Boolean(this.governor.complete(id));
       } catch (error) {
-        // Runtime-death reconciliation must never strand coordinator admission state
-        // merely because governor cleanup itself is degraded. Remove the local record,
-        // preserve the cleanup error for observability, and continue reconciling the
-        // remaining inference IDs rather than aborting the entire cleanup batch.
         governorError = String(error?.message || error);
       }
       const localRemoved = this.active.delete(id);

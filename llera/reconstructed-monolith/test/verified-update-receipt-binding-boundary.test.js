@@ -23,13 +23,24 @@ function harness(receipt) {
 
 (async () => {
   for (const payloadSha256 of [undefined, '', 'abc', 'g'.repeat(64), 'b'.repeat(63), 'b'.repeat(65)]) {
-    const receipt = { verified: true, payloadSha256 };
+    const receipt = { verified: true, payloadSha256, artifactSha256: 'a'.repeat(64) };
     if (payloadSha256 === undefined) delete receipt.payloadSha256;
     const { coordinator, calls, manifest } = harness(receipt);
     const result = await coordinator.apply({ manifest, signatureBase64: 'signed' });
     assert.equal(result.ok, false);
     assert.equal(result.blocked, true);
     assert.equal(result.reason, 'signed_manifest_receipt_invalid');
+    assert.deepEqual(calls, { verify: 1, watchdog: 0, download: 0, stage: 0, install: 0, stable: 0 });
+  }
+
+  for (const artifactSha256 of [undefined, '', 'abc', 'g'.repeat(64), 'a'.repeat(63), 'a'.repeat(65)]) {
+    const receipt = { verified: true, payloadSha256: 'b'.repeat(64), artifactSha256 };
+    if (artifactSha256 === undefined) delete receipt.artifactSha256;
+    const { coordinator, calls, manifest } = harness(receipt);
+    const result = await coordinator.apply({ manifest, signatureBase64: 'signed' });
+    assert.equal(result.ok, false);
+    assert.equal(result.blocked, true);
+    assert.equal(result.reason, 'signed_manifest_receipt_artifact_invalid');
     assert.deepEqual(calls, { verify: 1, watchdog: 0, download: 0, stage: 0, install: 0, stable: 0 });
   }
 

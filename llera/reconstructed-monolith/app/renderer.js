@@ -108,7 +108,9 @@ function renderMessages() {
   const root = $('transcript'); root.replaceChildren();
   const conversation = state.activeConversation;
   if (!conversation || !(conversation.messages || []).length) { renderEmpty(root); return; }
+  const latestModelBlock = [...conversation.messages].reverse().find(message => message.status === 'blocked' && message.code === 'MODEL_NOT_CONFIGURED')?.id;
   for (const message of conversation.messages) {
+    if (message.status === 'blocked' && message.code === 'MODEL_NOT_CONFIGURED' && message.id !== latestModelBlock) continue;
     const article = node('article', `message ${message.role}${message.status ? ` ${message.status}` : ''}`); article.dataset.messageId = message.id;
     if (message.attachments?.length) {
       const attachments = node('div', 'message-attachments');

@@ -116,7 +116,12 @@ class RuntimeInferenceCoordinator {
       return { allow: true, ...record };
     } catch (error) {
       this._rollbackRuntimeRegistration(id, runtimeTask && runtimeTask.generation);
-      this.governor.complete(id);
+      try {
+        this.governor.complete(id);
+      } catch (cleanupError) {
+        error.governorCleanupError = String(cleanupError?.message || cleanupError);
+        error.cleanupDegraded = true;
+      }
       throw error;
     }
   }

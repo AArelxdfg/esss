@@ -74,14 +74,28 @@ function checkSetSignature(checks) {
   return JSON.stringify(canonical(Array.isArray(checks) ? checks : []));
 }
 
-function semanticKeys(checks) {
-  if (!Array.isArray(checks)) return new Set();
-  return new Set(checks.map((check, index) => {
+function semanticKeyList(checks) {
+  if (!Array.isArray(checks)) return [];
+  return checks.map((check, index) => {
     if (!check || typeof check !== 'object') return `invalid:${index}`;
     const explicit = check.independenceKey ?? check.semanticKey;
     if (explicit !== undefined && String(explicit).trim()) return `explicit:${String(explicit).trim()}`;
     return `implicit:${String(check.name || '').trim()}\u0000${String(check.detail || '').trim()}`;
-  }));
+  });
+}
+
+function semanticKeys(checks) {
+  return new Set(semanticKeyList(checks));
+}
+
+function duplicateSemanticKeys(checks) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const key of semanticKeyList(checks)) {
+    if (seen.has(key)) duplicates.add(key);
+    else seen.add(key);
+  }
+  return [...duplicates];
 }
 
 class StrictEvidenceVerifier {
@@ -266,8 +280,6 @@ class DualVerifier {
     if (!claim) return {ok:false, reason:'claim_required'};
     if (!Array.isArray(evidence) || evidence.length === 0) return {ok:false, reason:'evidence_required'};
 
-    // Validate malformed evidence before deriving mission scope so malformed
-    // records cannot be disguised as a mixed-mission rejection.
     for (const item of evidence) {
       const invalid = typeof this.strictVerifier.validateEvidence === 'function'
         ? this.strictVerifier.validateEvidence(item)
@@ -288,12 +300,27 @@ class DualVerifier {
     const strictSemanticKeys = semanticKeys(strictChecks);
     const adversarialSemanticKeys = semanticKeys(adversarialChecks);
     const semanticOverlap = [...strictSemanticKeys].filter(key => adversarialSemanticKeys.has(key));
-    if (this.requireIndependentChecks && (sameCheckReference || sameCheckSet || semanticOverlap.length > 0)) {
+    const strictDuplicateSemanticKeys = duplicateSemanticKeys(strictChecks);
+    const adversarialDuplicateSemanticKeys = duplicateSemanticKeys(adversarialChecks);
+    if (this.requireIndependentChecks && (
+      sameCheckReference ||
+      sameCheckSet ||
+      semanticOverlap.length > 0 ||
+      strictDuplicateSemanticKeys.length > 0 ||
+      adversarialDuplicateSemanticKeys.length > 0
+    )) {
       return {
         ok:false,
         reason:'verifier_check_independence_reject',
         missionId:missionIds[0],
-        independence:{sameCheckReference,sameCheckSet,semanticOverlap,required:true}
+        independence:{
+          sameCheckReference,
+          sameCheckSet,
+          semanticOverlap,
+          strictDuplicateSemanticKeys,
+          adversarialDuplicateSemanticKeys,
+          required:true
+        }
       };
     }
 
@@ -329,6 +356,8 @@ class DualVerifier {
         sameCheckReference,
         sameCheckSet,
         semanticOverlap,
+        strictDuplicateSemanticKeys,
+        adversarialDuplicateSemanticKeys,
         required:this.requireIndependentChecks
       },
       reason: ok
@@ -345,6 +374,7 @@ module.exports = {
   validateEnrichedEvidence,
   checkSetSignature,
   semanticKeys,
+  duplicateSemanticKeys,
   StrictEvidenceVerifier,
   AdversarialEvidenceVerifier,
   DualVerifier

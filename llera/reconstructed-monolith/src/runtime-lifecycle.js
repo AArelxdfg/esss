@@ -41,7 +41,7 @@ class RuntimeLifecycle {
       activeInference: [...this.activeInference.values()].map(x => ({ id: x.id, priority: x.priority, startedAt: x.startedAt, generation: x.generation })),
       lifecycleOperation: this.lifecycleOperation ? { ...this.lifecycleOperation } : null,
       lastError: this.lastError,
-      lastSwitchFailure: this.lastSwitchFailure,
+      lastSwitchFailure: this.lastSwitchFailure ? { ...this.lastSwitchFailure } : null,
       lastBackendExit: this.lastBackendExit ? { ...this.lastBackendExit } : null,
       lastOrphanedInferenceCleanup: this.lastOrphanedInferenceCleanup ? {
         ...this.lastOrphanedInferenceCleanup,

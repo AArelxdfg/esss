@@ -5,6 +5,12 @@ function isCanonicalVersion(value){
   if (!version || version.length>128 || version!==version.trim()) return false;
   return /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version);
 }
+function sameResolvedPath(a,b){
+  if (!a || !b) return false;
+  const left=path.resolve(String(a));
+  const right=path.resolve(String(b));
+  return process.platform==='win32'?left.toLowerCase()===right.toLowerCase():left===right;
+}
 class VerifiedUpdateInstallCoordinator {
   constructor({ updater, installer, watchdog = null, now = () => new Date().toISOString() } = {}) {
     if (!updater || typeof updater.verifySignedManifest !== 'function' || typeof updater.downloadArtifact !== 'function' || typeof updater.stageArtifact !== 'function') throw new Error('updater verify/download/stage lifecycle is required');
@@ -41,6 +47,10 @@ class VerifiedUpdateInstallCoordinator {
     const downloaded=await this.updater.downloadArtifact(manifest,{resume,verificationReceipt});
     if (!downloaded || !downloaded.path) throw new Error('updater returned no downloaded artifact path');
     if (String(downloaded.sha256||'').trim().toLowerCase()!==expectedSha256) throw new Error('downloaded artifact digest diverges from signed manifest');
+    if (this.updater.paths && this.updater.paths.downloads) {
+      const canonicalDownload=path.resolve(this.updater.paths.downloads,`${expectedVersion}.bin`);
+      if (!sameResolvedPath(downloaded.path,canonicalDownload)) throw new Error('downloaded artifact path diverges from canonical verified download target');
+    }
     const staged=await this.updater.stageArtifact(manifest,downloaded.path,{verificationReceipt});
     if (!staged) throw new Error('updater returned no staged artifact path');
     let installed;
@@ -56,11 +66,11 @@ class VerifiedUpdateInstallCoordinator {
     if (!installedPath) throw new Error('installer returned no installed artifact path');
     if (this.installer.paths && this.installer.paths.app) {
       const canonicalCurrent=path.resolve(this.installer.paths.app,'LLera.exe');
-      if (path.resolve(installedPath)!==canonicalCurrent) throw new Error('installed artifact path diverges from canonical install target');
+      if (!sameResolvedPath(installedPath,canonicalCurrent)) throw new Error('installed artifact path diverges from canonical install target');
     }
     if (this.watchdog) await this.watchdog.markStable();
     const result={ok:true,blocked:false,version:expectedVersion,verified:true,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,installedPath,at:this.now()}; this.history.push(result); return result;
   }
   status(){const latest=this.history.at(-1)||null; return {runs:this.history.length,latest:latest?{...latest}:null};}
 }
-module.exports={VerifiedUpdateInstallCoordinator,isCanonicalVersion};
+module.exports={VerifiedUpdateInstallCoordinator,isCanonicalVersion,sameResolvedPath};

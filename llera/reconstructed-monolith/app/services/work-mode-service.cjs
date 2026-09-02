@@ -107,6 +107,23 @@ class WorkModeService {
     return this.status(missionId);
   }
 
+  async pauseMission(missionId, reason = 'user-pause') {
+    return this._enqueueMissionOperation(missionId, () => this._pauseMission(missionId, reason));
+  }
+
+  async _pauseMission(missionId, reason = 'user-pause') {
+    const mission = this._mission(missionId);
+    if (mission.status !== 'running') {
+      const error = new Error(`cannot pause mission from ${mission.status}`);
+      error.code = 'WORK_MODE_MISSION_NOT_RUNNING';
+      throw error;
+    }
+    await this.missions.pauseMission(missionId, reason);
+    this.runtime.missionTools.restoreMission(missionId);
+    this._emit('mission.paused', { missionId, reason: String(reason || 'user-pause') });
+    return this.status(missionId);
+  }
+
   async invokeTool(request = {}) {
     return this._enqueueMissionOperation(request.missionId, () => this._invokeTool(request));
   }

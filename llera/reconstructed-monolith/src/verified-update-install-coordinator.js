@@ -1,4 +1,5 @@
 'use strict';
+const path=require('path');
 class VerifiedUpdateInstallCoordinator {
   constructor({ updater, installer, watchdog = null, now = () => new Date().toISOString() } = {}) {
     if (!updater || typeof updater.verifySignedManifest !== 'function' || typeof updater.downloadArtifact !== 'function' || typeof updater.stageArtifact !== 'function') throw new Error('updater verify/download/stage lifecycle is required');
@@ -41,8 +42,14 @@ class VerifiedUpdateInstallCoordinator {
     }
     if (!installed || installed.verified!==true) throw new Error('installer did not return verified install state');
     if (String(installed.sha256||'').trim().toLowerCase()!==expectedSha256) throw new Error('installed artifact digest diverges from signed manifest');
+    const installedPath=String(installed.current||'').trim();
+    if (!installedPath) throw new Error('installer returned no installed artifact path');
+    if (this.installer.paths && this.installer.paths.app) {
+      const canonicalCurrent=path.resolve(this.installer.paths.app,'LLera.exe');
+      if (path.resolve(installedPath)!==canonicalCurrent) throw new Error('installed artifact path diverges from canonical install target');
+    }
     if (this.watchdog) await this.watchdog.markStable();
-    const result={ok:true,blocked:false,version:manifest.version,verified:true,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,installedPath:installed.current||null,at:this.now()}; this.history.push(result); return result;
+    const result={ok:true,blocked:false,version:manifest.version,verified:true,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,installedPath,at:this.now()}; this.history.push(result); return result;
   }
   status(){const latest=this.history.at(-1)||null; return {runs:this.history.length,latest:latest?{...latest}:null};}
 }

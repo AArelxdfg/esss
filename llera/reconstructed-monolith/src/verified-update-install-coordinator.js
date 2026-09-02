@@ -1,5 +1,10 @@
 'use strict';
 const path=require('path');
+function isCanonicalVersion(value){
+  const version=String(value||'').trim();
+  if (!version || version.length>128) return false;
+  return /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version);
+}
 class VerifiedUpdateInstallCoordinator {
   constructor({ updater, installer, watchdog = null, now = () => new Date().toISOString() } = {}) {
     if (!updater || typeof updater.verifySignedManifest !== 'function' || typeof updater.downloadArtifact !== 'function' || typeof updater.stageArtifact !== 'function') throw new Error('updater verify/download/stage lifecycle is required');
@@ -14,7 +19,7 @@ class VerifiedUpdateInstallCoordinator {
       const result={ok:false,blocked:true,reason:'signed_manifest_receipt_invalid',version:manifest&&manifest.version||null,manifestPayloadSha256:/^[a-f0-9]{64}$/.test(receiptPayloadSha256)?receiptPayloadSha256:null,at:this.now()}; this.history.push(result); return result;
     }
     const expectedVersion=String(manifest&&manifest.version||'').trim();
-    if (!expectedVersion) {
+    if (!isCanonicalVersion(expectedVersion)) {
       const result={ok:false,blocked:true,reason:'signed_manifest_version_invalid',version:null,manifestPayloadSha256:receiptPayloadSha256,at:this.now()}; this.history.push(result); return result;
     }
     const expectedSha256=String(manifest&&manifest.artifact&&manifest.artifact.sha256||'').trim().toLowerCase();
@@ -58,4 +63,4 @@ class VerifiedUpdateInstallCoordinator {
   }
   status(){const latest=this.history.at(-1)||null; return {runs:this.history.length,latest:latest?{...latest}:null};}
 }
-module.exports={VerifiedUpdateInstallCoordinator};
+module.exports={VerifiedUpdateInstallCoordinator,isCanonicalVersion};

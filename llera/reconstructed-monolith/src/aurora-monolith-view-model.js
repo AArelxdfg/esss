@@ -1,5 +1,7 @@
 'use strict';
 
+const { missionHasVerificationDebt } = require('./mission-verification-debt');
+
 class AuroraMonolithViewModel {
   constructor({ ui, runtime, missionEngine, evidenceLedger, hostguard, activitySource = null } = {}) {
     if (!ui || typeof ui.getNavigationState !== 'function' || typeof ui.getResponsiveLayout !== 'function') throw new Error('Aurora UI contract is required');
@@ -56,7 +58,7 @@ class AuroraMonolithViewModel {
 
 async function readHostguard(hostguard) { if (typeof hostguard.status === 'function') return hostguard.status(); return hostguard.policy(); }
 function normalizeRuntime(value) { const x=value||{}; return { state:String(x.state||x.status||'unknown').toLowerCase(), model:x.model||x.desiredModel||x.activeModel||null, desiredModel:x.desiredModel||x.model||null, generation:Number.isFinite(x.generation)?x.generation:0, endpoint:x.endpoint||x.bind||'127.0.0.1:18191', activeTasks:Array.isArray(x.activeTasks)?x.activeTasks.length:Number(x.activeTaskCount||0) }; }
-function normalizeMissions(value) { return (Array.isArray(value)?value:[]).map(m=>({ id:m.id, title:m.title||m.goal||m.id, status:String(m.status||'unknown').toLowerCase(), currentStepId:m.currentStepId||null, checkpointCount:Array.isArray(m.checkpoints)?m.checkpoints.length:Number(m.checkpointCount||0), toolTraceCount:Array.isArray(m.toolTrace)?m.toolTrace.length:Number(m.toolTraceCount||0), verificationDebtOpen:Boolean(m.verificationDebtOpen||(m.verificationDebt&&typeof m.verificationDebt==='object')) })); }
+function normalizeMissions(value) { return (Array.isArray(value)?value:[]).map(m=>({ id:m.id, title:m.title||m.goal||m.id, status:String(m.status||'unknown').toLowerCase(), currentStepId:m.currentStepId||null, checkpointCount:Array.isArray(m.checkpoints)?m.checkpoints.length:Number(m.checkpointCount||0), toolTraceCount:Array.isArray(m.toolTrace)?m.toolTrace.length:Number(m.toolTraceCount||0), verificationDebtOpen:missionHasVerificationDebt(m) })); }
 function normalizeEvidence(value) { return (Array.isArray(value)?value:[]).map(e=>({ id:e.id||e.evidenceId||null, target:e.target||e.targetScope||null, sha256:e.sha256||e.resultSha256||null, kind:e.kind||null, tool:e.tool||null, bytes:Number(e.bytes||e.byteCount||0) })); }
 function normalizePressure(value) { const x=value||{}, policy=x.policy||x; return { level:String(x.pressure||x.state||policy.pressure||'normal').toLowerCase(), score:Number(x.score||0), downloadWorkers:Number(policy.downloadWorkers||8), allowVisionLoad:policy.allowVisionLoad!==false, runtimePriority:policy.runtimePriority||null }; }
 function normalizeActivity(value) { return (Array.isArray(value)?value:[]).map((a,i)=>({ id:a.id||`activity-${i}`, type:a.type||a.kind||'event', summary:a.summary||a.message||'', at:a.at||a.timestamp||null })); }

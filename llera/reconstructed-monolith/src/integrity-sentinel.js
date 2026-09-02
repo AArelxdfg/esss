@@ -12,6 +12,25 @@ function normalizeManifestPath(value) {
   return String(value || '').replace(/\\/g, '/');
 }
 
+function validateManifestPath(value) {
+  if (typeof value !== 'string') return { ok: false, normalizedPath: '', reason: 'path-string-required' };
+  const normalizedPath = normalizeManifestPath(value);
+  if (!normalizedPath || normalizedPath === '.' || normalizedPath.endsWith('/')) {
+    return { ok: false, normalizedPath, reason: 'invalid-path' };
+  }
+  if (normalizedPath.includes('\0')) {
+    return { ok: false, normalizedPath, reason: 'path-nul-byte' };
+  }
+  if (normalizedPath.startsWith('/') || normalizedPath.startsWith('//') || /^[a-zA-Z]:\//.test(normalizedPath)) {
+    return { ok: false, normalizedPath, reason: 'absolute-path' };
+  }
+  const segments = normalizedPath.split('/');
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    return { ok: false, normalizedPath, reason: 'non-canonical-path' };
+  }
+  return { ok: true, normalizedPath };
+}
+
 function validateManifest(manifest) {
   const failures = [];
   if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.files)) {
@@ -19,6 +38,7 @@ function validateManifest(manifest) {
   }
 
   const seenPaths = new Set();
+  const seenWindowsPaths = new Set();
   for (let index = 0; index < manifest.files.length; index += 1) {
     const entry = manifest.files[index];
     if (!entry || typeof entry !== 'object') {
@@ -26,13 +46,20 @@ function validateManifest(manifest) {
       continue;
     }
 
-    const normalizedPath = normalizeManifestPath(entry.path);
-    if (!normalizedPath || normalizedPath === '.' || normalizedPath.endsWith('/')) {
-      failures.push({ index, path: normalizedPath, reason: 'invalid-path' });
-    } else if (seenPaths.has(normalizedPath)) {
-      failures.push({ index, path: normalizedPath, reason: 'duplicate-path' });
+    const pathValidation = validateManifestPath(entry.path);
+    const normalizedPath = pathValidation.normalizedPath;
+    if (!pathValidation.ok) {
+      failures.push({ index, path: normalizedPath, reason: pathValidation.reason });
     } else {
-      seenPaths.add(normalizedPath);
+      const windowsKey = normalizedPath.toLowerCase();
+      if (seenPaths.has(normalizedPath)) {
+        failures.push({ index, path: normalizedPath, reason: 'duplicate-path' });
+      } else if (seenWindowsPaths.has(windowsKey)) {
+        failures.push({ index, path: normalizedPath, reason: 'windows-path-alias' });
+      } else {
+        seenPaths.add(normalizedPath);
+        seenWindowsPaths.add(windowsKey);
+      }
     }
 
     if (!/^[a-f0-9]{64}$/i.test(String(entry.sha256 || ''))) {
@@ -164,4 +191,4 @@ class IntegritySentinel {
   }
 }
 
-module.exports = { IntegritySentinel, sha256Bytes, canonicalManifestPayload, isPathWithin, validateManifest, normalizeManifestPath };
+module.exports = { IntegritySentinel, sha256Bytes, canonicalManifestPayload, isPathWithin, validateManifest, validateManifestPath, normalizeManifestPath };

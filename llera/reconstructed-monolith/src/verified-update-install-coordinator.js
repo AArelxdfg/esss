@@ -12,8 +12,9 @@ class VerifiedUpdateInstallCoordinator {
       throw new Error('updater did not return a verified manifest receipt');
     }
     const watchdogProfile=this.watchdog ? await this.watchdog.launchProfile() : {mode:'normal'};
-    if (watchdogProfile.mode==='safe') {
-      const result={ok:false,blocked:true,reason:'watchdog_safe_mode',version:manifest&&manifest.version||null,manifestPayloadSha256:verificationReceipt.payloadSha256||null,at:this.now()}; this.history.push(result); return result;
+    if (!watchdogProfile || typeof watchdogProfile !== 'object' || watchdogProfile.mode!=='normal') {
+      const reason=watchdogProfile&&watchdogProfile.mode==='safe'?'watchdog_safe_mode':'watchdog_profile_invalid';
+      const result={ok:false,blocked:true,reason,version:manifest&&manifest.version||null,manifestPayloadSha256:verificationReceipt.payloadSha256||null,at:this.now()}; this.history.push(result); return result;
     }
     const downloaded=await this.updater.downloadArtifact(manifest,{resume,verificationReceipt});
     if (!downloaded || !downloaded.path) throw new Error('updater returned no downloaded artifact path');

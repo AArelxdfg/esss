@@ -52,6 +52,18 @@ assert.strictEqual(accepted[0].bindingSha256, acceptedEntry.bindingSha256);
 assert.strictEqual(accepted[0].kind, 'filesystem.read');
 assert.strictEqual(accepted[0].byteCount, 12);
 
+assert.throws(
+  () => validateEvidenceBindings({
+    evidenceIds: [acceptedEntry.id, acceptedEntry.id],
+    ledger: ledger(acceptedEntry),
+    missionId,
+    stepId,
+    tool
+  }),
+  error => error && error.code === 'MISSION_EVIDENCE_ID_DUPLICATE',
+  'reusing one evidence id as multiple independent bindings must fail closed'
+);
+
 for (const [overrides, code] of [
   [{ target: '' }, 'MISSION_EVIDENCE_TARGET_INVALID'],
   [{ target: '   ' }, 'MISSION_EVIDENCE_TARGET_INVALID'],

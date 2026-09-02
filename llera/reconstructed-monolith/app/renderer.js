@@ -117,7 +117,11 @@ function renderMessages() {
       for (const attachment of message.attachments) attachments.append(renderFilePill(attachment));
       article.append(attachments);
     }
-    const content = node('div', 'message-content'); renderTextContent(content, message.content || message.error || '');
+    const content = node('div', 'message-content');
+    if (message.status === 'blocked' && message.code === 'MODEL_NOT_CONFIGURED') {
+      article.classList.add('model-required');
+      content.append(node('strong', '', 'Yerel model seçilmedi'), node('span', '', 'Sohbete başlamak için alt çubuktan bir GGUF model seçin.'));
+    } else renderTextContent(content, message.content || message.error || '');
     if (message.status === 'streaming') content.append(node('span', 'streaming-caret'));
     article.append(content);
     if (message.role === 'assistant' || message.status === 'failed' || message.status === 'stopped') {

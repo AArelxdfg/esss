@@ -4,12 +4,14 @@ const { MonolithComputerExecutor } = require('./monolith-computer-executor');
 const { MonolithCapabilityBroker } = require('./monolith-capability-broker');
 const { MonolithAgentToolRouter } = require('./agent-tool-router');
 const { GuardedMonolithToolBroker } = require('./guarded-tool-broker');
-const { MissionToolCoordinator } = require('./mission-tool-coordinator');
+const { EvidenceBoundMissionToolCoordinator } = require('./evidence-bound-mission-tool-coordinator');
 
 function createMonolithToolRuntime({
   missionEngine,
   recoverySnapshots = null,
   autoCheckpoint = true,
+  evidenceLedger = null,
+  evidenceLedgerResolver = null,
   workspaceRoot,
   allowOutsideWorkspace = false,
   computerAdapter = null,
@@ -68,11 +70,13 @@ function createMonolithToolRuntime({
     actionAuthorizer
   });
 
-  const missionTools = new MissionToolCoordinator({
+  const missionTools = new EvidenceBoundMissionToolCoordinator({
     missionEngine,
     broker: guardedBroker,
     recoverySnapshots,
-    autoCheckpoint
+    autoCheckpoint,
+    evidenceLedger,
+    evidenceLedgerResolver
   });
 
   const coverage = () => {
@@ -84,6 +88,7 @@ function createMonolithToolRuntime({
       shellAuthorizationPresent: typeof commandAuthorizer === 'function',
       sensitiveActionAuthorizationPresent: typeof actionAuthorizer === 'function',
       privateNetworkOptIn: Boolean(allowPrivateNetwork),
+      evidenceBindingBoundary: true,
       physicalValidationClaimed: false
     };
   };

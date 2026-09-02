@@ -152,11 +152,17 @@ class WorkModeService {
     return clone(result);
   }
 
-  async completeCurrentStep(missionId, result = {}) {
-    return this._enqueueMissionOperation(missionId, () => this._completeCurrentStep(missionId, result));
+  async completeCurrentStep(missionId, expectedStepId = null, result = {}) {
+    // Preserve the internal two-argument service API for older callers, while the
+    // desktop IPC always supplies an expected step id to reject stale UI requests.
+    if (expectedStepId && typeof expectedStepId === 'object' && !Array.isArray(expectedStepId)) {
+      result = expectedStepId;
+      expectedStepId = null;
+    }
+    return this._enqueueMissionOperation(missionId, () => this._completeCurrentStep(missionId, expectedStepId, result));
   }
 
-  async _completeCurrentStep(missionId, result = {}) {
+  async _completeCurrentStep(missionId, expectedStepId = null, result = {}) {
     const mission = this._mission(missionId);
     if (mission.status !== 'running') {
       const error = new Error(`mission is not runnable from ${mission.status}`);
@@ -164,6 +170,11 @@ class WorkModeService {
       throw error;
     }
     if (!mission.currentStepId) throw new Error('mission has no active step');
+    if (expectedStepId != null && expectedStepId !== mission.currentStepId) {
+      const error = new Error(`completion step ${expectedStepId} does not match active mission step ${mission.currentStepId}`);
+      error.code = 'WORK_MODE_STEP_MISMATCH';
+      throw error;
+    }
     this.runtime.missionTools.restoreMission(missionId);
     const execution = this.runtime.missionTools.status(missionId);
     if (execution.verificationDebt || !execution.canFinalize) {

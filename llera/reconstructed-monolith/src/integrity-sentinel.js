@@ -28,6 +28,21 @@ function validateManifestPath(value) {
   if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
     return { ok: false, normalizedPath, reason: 'non-canonical-path' };
   }
+  for (const segment of segments) {
+    if (/[\x01-\x1f<>"|?*]/.test(segment)) {
+      return { ok: false, normalizedPath, reason: 'windows-illegal-char' };
+    }
+    if (segment.includes(':')) {
+      return { ok: false, normalizedPath, reason: 'windows-ads-path' };
+    }
+    if (/[. ]$/.test(segment)) {
+      return { ok: false, normalizedPath, reason: 'windows-trailing-dot-space' };
+    }
+    const deviceBase = segment.split('.')[0].toUpperCase();
+    if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(deviceBase)) {
+      return { ok: false, normalizedPath, reason: 'windows-reserved-name' };
+    }
+  }
   return { ok: true, normalizedPath };
 }
 

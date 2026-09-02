@@ -126,10 +126,36 @@ class LlamaCppProcessBackend {
     return modelPath;
   }
 
+  _liveTrackedChildren() {
+    const live = [];
+    for (const [pid, child] of this.children.entries()) {
+      // Node's ChildProcess.killed only means a signal was sent successfully; it
+      // does NOT prove the process has exited. Keep signalled-but-not-exited
+      // children under ownership so HOSTGUARD cannot race a second llama-server
+      // into existence during shutdown.
+      if (!child || child.exitCode != null || child.signalCode != null) {
+        this.children.delete(pid);
+        continue;
+      }
+      live.push({ pid, child });
+    }
+    return live;
+  }
+
   async start({ model, generation } = {}) {
     const engine = this.resolveEngine();
     const modelPath = this.resolveModel(model);
     const endpointUrl = assertLoopbackEndpoint(this.endpoint);
+
+    const liveChildren = this._liveTrackedChildren();
+    if (liveChildren.length) {
+      const error = new Error(`llama.cpp single-runtime guard blocked start; active pid ${liveChildren[0].pid}`);
+      error.code = 'LLAMA_SINGLE_RUNTIME_VIOLATION';
+      error.pid = liveChildren[0].pid;
+      error.activePids = liveChildren.map(item => item.pid);
+      throw error;
+    }
+
     const port = Number(endpointUrl.port || 18191);
     const args = ['--model', modelPath, '--host', '127.0.0.1', '--port', String(port), ...this.extraArgs];
     const child = this.spawn(engine, args, {
@@ -307,7 +333,13 @@ class LlamaCppProcessBackend {
   async isAlive({ pid } = {}) {
     if (!Number.isSafeInteger(pid) || pid <= 0) return false;
     const child = this.children.get(pid);
-    if (child) return child.exitCode == null && child.killed !== true;
+    if (child) {
+      // ChildProcess.killed means kill() successfully sent a signal, not that the
+      // process has exited. Treat it as alive until Node reports an exit/signal
+      // code; otherwise HOSTGUARD can incorrectly authorize a replacement runtime
+      // while the old llama-server is still shutting down.
+      return child.exitCode == null && child.signalCode == null;
+    }
     try { process.kill(pid, 0); return true; } catch (_) { return false; }
   }
 }

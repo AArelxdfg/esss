@@ -221,13 +221,16 @@ async function addFiles(files) {
 }
 
 function positionPopover(popover, anchor, align = 'left') {
-  const rect = anchor.getBoundingClientRect(); popover.style.top = `${Math.min(innerHeight - 440, rect.bottom + 6)}px`; popover.style.left = align === 'right' ? `${Math.max(8, rect.right - popover.offsetWidth)}px` : `${Math.min(innerWidth - popover.offsetWidth - 8, rect.left)}px`;
+  const rect = anchor.getBoundingClientRect(); const height = popover.offsetHeight || 150;
+  const below = rect.bottom + height + 10 <= innerHeight;
+  popover.style.top = `${Math.max(8, below ? rect.bottom + 8 : rect.top - height - 8)}px`;
+  popover.style.left = `${align === 'right' ? Math.max(8, rect.right - popover.offsetWidth) : Math.min(innerWidth - popover.offsetWidth - 8, rect.left)}px`;
 }
 function closePopovers() { document.querySelectorAll('.popover.open').forEach(item => { item.classList.remove('open'); item.setAttribute('aria-hidden', 'true'); }); }
 
 function openModelPicker() {
   closePopovers(); const menu = $('model-menu'); const list = $('model-list'); list.replaceChildren();
-  if (!state.models?.length) { const empty = node('div', 'popover-head'); empty.append(node('strong', '', 'Yerel model bulunamadı'), node('span', '', 'GGUF model dosyanızı seçerek içe aktarın.')); const add = node('button', 'model-option', 'GGUF model içe aktar'); add.onclick = async () => { state = await window.llera.importModel(); selectedModel = state.settings.defaultModel; renderAll(); openModelPicker(); }; list.append(empty, add); }
+  if (!state.models?.length) { const empty = node('div', 'popover-head'); empty.append(node('strong', '', 'Henüz model eklenmedi'), node('span', '', 'Bilgisayarınızdaki .gguf uzantılı modeli seçin.')); const add = node('button', 'model-import-action', 'GGUF model içe aktar'); add.onclick = async () => { state = await window.llera.importModel(); selectedModel = state.settings.defaultModel; renderAll(); closePopovers(); }; list.append(empty, add); }
   for (const model of state.models || []) {
     const button = node('button', 'model-option'); button.append(node('span', 'status-dot'));
     const copy = node('span', 'model-option-copy'); copy.append(node('strong', '', model.name), node('small', '', `${model.local ? 'Local' : 'Cloud'}${model.vision ? ' · Vision' : ''}${model.context ? ` · ${model.context} context` : ''}`)); button.append(copy);

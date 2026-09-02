@@ -4,6 +4,10 @@ const assert = require('assert');
 const { OutcomeMemory } = require('../src/outcome-memory');
 const { digest, receiptStateKey } = require('../src/verified-mission-finalizer');
 
+const EV_A = `ev_${'a'.repeat(24)}`;
+const EV_B = `ev_${'b'.repeat(24)}`;
+const EV_FOREIGN = `ev_${'f'.repeat(24)}`;
+
 function receiptFor({missionId, claim, evidenceIds}) {
   const strictScore = 0.91;
   const adversarialScore = 0.88;
@@ -37,29 +41,29 @@ function receiptFor({missionId, claim, evidenceIds}) {
       strict:true,
       adversarial:true,
       confidence:0.91,
-      evidenceIds:['ev_source_a','ev_source_b','ev_source_a'],
-      receipt:receiptFor({missionId:'m-good',claim:'download verified',evidenceIds:['ev_source_a','ev_source_b']})
+      evidenceIds:[EV_A,EV_B,EV_A],
+      receipt:receiptFor({missionId:'m-good',claim:'download verified',evidenceIds:[EV_A,EV_B]})
     }
   });
   assert.strictEqual(source.verified, true);
-  assert.deepStrictEqual(source.verification.evidenceIds, ['ev_source_a','ev_source_b']);
+  assert.deepStrictEqual(source.verification.evidenceIds, [EV_A,EV_B]);
 
   const candidate = await memory.proposeSkill({
     missionId:'m-good',
     name:'Verified resumable download',
     description:'Only activate after integrity verification.',
     procedure:['validate metadata','resume','verify sha256','activate'],
-    evidenceIds:['ev_source_b','ev_source_b'],
+    evidenceIds:[EV_B,EV_B],
     verification:{
       strict:true,
       adversarial:true,
       confidence:0.90,
-      evidenceIds:['ev_source_b'],
+      evidenceIds:[EV_B],
       receiptSha256:source.verification.receiptSha256
     }
   });
-  assert.deepStrictEqual(candidate.evidenceIds, ['ev_source_b']);
-  assert.deepStrictEqual(candidate.sourceEvidenceIds, ['ev_source_a','ev_source_b']);
+  assert.deepStrictEqual(candidate.evidenceIds, [EV_B]);
+  assert.deepStrictEqual(candidate.sourceEvidenceIds, [EV_A,EV_B]);
   assert.strictEqual(candidate.executable, false);
   assert.strictEqual(candidate.trust, 'candidate-only');
 
@@ -69,10 +73,22 @@ function receiptFor({missionId, claim, evidenceIds}) {
       name:'Injected provenance skill',
       description:'must reject evidence from another mission',
       procedure:['x'],
-      evidenceIds:['ev_foreign'],
-      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:['ev_foreign'], receiptSha256:source.verification.receiptSha256}
+      evidenceIds:[EV_FOREIGN],
+      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:[EV_FOREIGN], receiptSha256:source.verification.receiptSha256}
     }),
     /not derived from source outcome/
+  );
+
+  await assert.rejects(
+    () => memory.proposeSkill({
+      missionId:'m-good',
+      name:'Malformed provenance skill',
+      description:'must reject noncanonical evidence ids',
+      procedure:['x'],
+      evidenceIds:['ev_source_a'],
+      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:['ev_source_a'], receiptSha256:source.verification.receiptSha256}
+    }),
+    error => error && error.code === 'OUTCOME_EVIDENCE_ID_INVALID'
   );
 
   await assert.rejects(
@@ -81,14 +97,15 @@ function receiptFor({missionId, claim, evidenceIds}) {
       name:'Verifier coverage gap',
       description:'candidate evidence must be covered by verification',
       procedure:['x'],
-      evidenceIds:['ev_source_a','ev_source_b'],
-      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:['ev_source_a'], receiptSha256:source.verification.receiptSha256}
+      evidenceIds:[EV_A,EV_B],
+      verification:{strict:true, adversarial:true, confidence:0.95, evidenceIds:[EV_A], receiptSha256:source.verification.receiptSha256}
     }),
     /not covered by skill verification/
   );
 
   console.log('MONOLITH skill evidence provenance PASS', {
     evidenceRequiredForVerifiedOutcome:true,
+    canonicalEvidenceIdsRequired:true,
     sourceOutcomeBinding:true,
     foreignEvidenceRejected:true,
     verifierCoverageEnforced:true,

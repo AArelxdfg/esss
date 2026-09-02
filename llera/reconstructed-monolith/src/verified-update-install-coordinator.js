@@ -1,8 +1,8 @@
 'use strict';
 const path=require('path');
 function isCanonicalVersion(value){
-  const version=String(value||'').trim();
-  if (!version || version.length>128) return false;
+  const version=String(value||'');
+  if (!version || version.length>128 || version!==version.trim()) return false;
   return /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version);
 }
 class VerifiedUpdateInstallCoordinator {
@@ -18,7 +18,7 @@ class VerifiedUpdateInstallCoordinator {
     if (!verificationReceipt || verificationReceipt.verified !== true || !/^[a-f0-9]{64}$/.test(receiptPayloadSha256)) {
       const result={ok:false,blocked:true,reason:'signed_manifest_receipt_invalid',version:manifest&&manifest.version||null,manifestPayloadSha256:/^[a-f0-9]{64}$/.test(receiptPayloadSha256)?receiptPayloadSha256:null,at:this.now()}; this.history.push(result); return result;
     }
-    const expectedVersion=String(manifest&&manifest.version||'').trim();
+    const expectedVersion=String(manifest&&manifest.version||'');
     if (!isCanonicalVersion(expectedVersion)) {
       const result={ok:false,blocked:true,reason:'signed_manifest_version_invalid',version:null,manifestPayloadSha256:receiptPayloadSha256,at:this.now()}; this.history.push(result); return result;
     }
@@ -50,7 +50,7 @@ class VerifiedUpdateInstallCoordinator {
       const result={ok:false,blocked:false,version:expectedVersion,phase:'install-self-test',rolledBack:/rollback completed/i.test(String(error&&error.message||error)),error:String(error&&error.message||error),manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,at:this.now()}; this.history.push(result); return result;
     }
     if (!installed || installed.verified!==true) throw new Error('installer did not return verified install state');
-    if (String(installed.version||'').trim()!==expectedVersion) throw new Error('installed artifact version diverges from signed manifest');
+    if (String(installed.version||'')!==expectedVersion) throw new Error('installed artifact version diverges from signed manifest');
     if (String(installed.sha256||'').trim().toLowerCase()!==expectedSha256) throw new Error('installed artifact digest diverges from signed manifest');
     const installedPath=String(installed.current||'').trim();
     if (!installedPath) throw new Error('installer returned no installed artifact path');

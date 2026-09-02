@@ -53,6 +53,10 @@ class VerifiedUpdateInstallCoordinator {
     }
     const staged=await this.updater.stageArtifact(manifest,downloaded.path,{verificationReceipt});
     if (!staged) throw new Error('updater returned no staged artifact path');
+    if (this.updater.paths && this.updater.paths.staging) {
+      const canonicalStaged=path.resolve(this.updater.paths.staging,expectedVersion,'LLera-update.bin');
+      if (!sameResolvedPath(staged,canonicalStaged)) throw new Error('staged artifact path diverges from canonical verified staging target');
+    }
     let installed;
     try {
       installed=await this.installer.install({payloadPath:staged,expectedSha256,version:expectedVersion,selfTestTimeoutMs});

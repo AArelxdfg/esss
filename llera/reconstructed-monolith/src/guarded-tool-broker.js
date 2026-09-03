@@ -98,7 +98,7 @@ class GuardedMonolithToolBroker {
         ? await this.capabilityBroker.invoke(tool, args, context)
         : await this.historicalExecutor(tool, args, context);
 
-      const semanticOk = executionSucceeded(tool, result);
+      const semanticOk = executionSucceeded(tool, result, { material:Boolean(decision && decision.material) });
       const trace = this.guard.record(tool, args, {
         ok:semanticOk,
         resultSummary:this.summarizeResult(result)
@@ -161,7 +161,11 @@ class GuardedMonolithToolBroker {
   }
 }
 
-function executionSucceeded(tool, result) {
+function executionSucceeded(tool, result, { material = false } = {}) {
+  // Material actions must leave a structured, inspectable acknowledgement. A bare
+  // primitive cannot carry target/result semantics and must never clear verification debt.
+  if (material && (!result || typeof result !== 'object')) return false;
+
   if (!result || typeof result !== 'object') return true;
   if (result.ok === false || result.success === false || result.blocked === true) return false;
 

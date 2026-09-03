@@ -138,7 +138,21 @@ class VerifiedLearningCoordinator {
     const duplicate = (current.skillCandidates || []).find(c =>
       c && c.missionId === missionId && c.name === proposal.name && c.sourceOutcomeId === outcome.id
     );
-    if (duplicate) return duplicate;
+    if (duplicate) {
+      const duplicateMatchesVerifiedSource =
+        duplicate.sourceReceiptSha256 === receipt.sha256 &&
+        sameStringSet(duplicate.evidenceIds, evidenceIds) &&
+        sameStringSet(duplicate.sourceEvidenceIds, evidenceIds) &&
+        duplicate.trust === 'candidate-only' &&
+        duplicate.executable === false &&
+        duplicate.approvalRequired === true;
+      if (!duplicateMatchesVerifiedSource) {
+        const error = new Error('skill idempotency collision with mismatched verified provenance');
+        error.code = 'VERIFIED_LEARNING_SKILL_COLLISION';
+        throw error;
+      }
+      return duplicate;
+    }
 
     return this.outcomeMemory.proposeSkill({
       missionId,

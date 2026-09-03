@@ -21,6 +21,17 @@ try {
   assert.strictEqual(validTree.manifestValid, true);
   assert.strictEqual(validTree.checked, 1);
 
+  const empty = sentinel.verifyTree({ files: [] });
+  assert.strictEqual(empty.ok, false);
+  assert.strictEqual(empty.manifestValid, false);
+  assert.strictEqual(empty.checked, 0);
+  assert.ok(empty.failures.some((failure) => failure.reason === 'manifest-files-empty'));
+
+  const emptyTrusted = sentinel.assertTrusted({ files: [] });
+  assert.strictEqual(emptyTrusted.trusted, false);
+  assert.strictEqual(emptyTrusted.signature, null);
+  assert.ok(emptyTrusted.tree.failures.some((failure) => failure.reason === 'manifest-files-empty'));
+
   const duplicate = sentinel.verifyTree({ files: [validEntry, { ...validEntry }] });
   assert.strictEqual(duplicate.ok, false);
   assert.strictEqual(duplicate.manifestValid, false);
@@ -50,6 +61,7 @@ try {
 
   console.log('MONOLITH integrity sentinel manifest validation PASS', {
     validManifestAccepted: true,
+    emptyManifestsRejected: true,
     duplicatePathsRejected: true,
     malformedHashesRejected: true,
     unsafeSizesRejected: true,

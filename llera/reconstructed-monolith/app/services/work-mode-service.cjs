@@ -5,8 +5,74 @@ const path = require('node:path');
 const { createMonolithToolRuntime } = require('../../src/monolith-tool-runtime');
 
 const MAX_WORK_RESULT_BYTES = 64 * 1024;
+const RESERVED_JSON_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+
+function invalidWorkResult(message, pathName = 'result') {
+  const error = new Error(`${message} at ${pathName}`);
+  error.code = 'WORK_MODE_RESULT_INVALID';
+  error.path = pathName;
+  return error;
+}
+
+function assertLosslessJsonValue(value, pathName = 'result', seen = new Set()) {
+  if (value === null) return;
+
+  const type = typeof value;
+  if (type === 'string' || type === 'boolean') return;
+  if (type === 'number') {
+    if (!Number.isFinite(value) || Object.is(value, -0)) {
+      throw invalidWorkResult('work step result contains a non-durable number', pathName);
+    }
+    return;
+  }
+  if (type !== 'object') {
+    throw invalidWorkResult(`work step result contains unsupported ${type}`, pathName);
+  }
+
+  if (seen.has(value)) throw invalidWorkResult('work step result contains a cycle', pathName);
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const ownKeys = Reflect.ownKeys(value);
+      for (const key of ownKeys) {
+        if (key === 'length') continue;
+        if (typeof key !== 'string' || !/^(0|[1-9]\d*)$/.test(key)) {
+          throw invalidWorkResult('work step result array contains non-index properties', pathName);
+        }
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) {
+          throw invalidWorkResult('work step result contains a sparse array', `${pathName}[${index}]`);
+        }
+        assertLosslessJsonValue(value[index], `${pathName}[${index}]`, seen);
+      }
+      return;
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw invalidWorkResult('work step result contains a non-plain object', pathName);
+    }
+
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== 'string') {
+        throw invalidWorkResult('work step result contains a symbol key', pathName);
+      }
+      if (RESERVED_JSON_KEYS.has(key)) {
+        throw invalidWorkResult(`work step result contains reserved key ${key}`, `${pathName}.${key}`);
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || descriptor.enumerable !== true || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+        throw invalidWorkResult('work step result contains a non-data property', `${pathName}.${key}`);
+      }
+      assertLosslessJsonValue(descriptor.value, `${pathName}.${key}`, seen);
+    }
+  } finally {
+    seen.delete(value);
+  }
+}
 
 function normalizeWorkResult(value) {
   if (value == null) return {};
@@ -15,6 +81,12 @@ function normalizeWorkResult(value) {
     error.code = 'WORK_MODE_RESULT_INVALID';
     throw error;
   }
+
+  // Mission/checkpoint results are restart-critical durable state. Reject values that
+  // JSON.stringify would silently coerce or discard (undefined/functions, NaN,
+  // sparse arrays, accessors, class instances, dangerous prototype keys, etc.) so
+  // persistence never changes the semantic result behind the caller's back.
+  assertLosslessJsonValue(value);
 
   let encoded;
   try {
@@ -256,4 +328,4 @@ class WorkModeService {
   }
 }
 
-module.exports = { WorkModeService, MAX_WORK_RESULT_BYTES, normalizeWorkResult };
+module.exports = { WorkModeService, MAX_WORK_RESULT_BYTES, normalizeWorkResult, assertLosslessJsonValue };

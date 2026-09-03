@@ -163,10 +163,10 @@ class GuardedMonolithToolBroker {
 
 function executionSucceeded(tool, result) {
   if (!result || typeof result !== 'object') return true;
-  if (result.ok === false || result.success === false) return false;
+  if (result.ok === false || result.success === false || result.blocked === true) return false;
 
   const status = String(result.status || result.state || '').trim().toLowerCase();
-  if (['failed','failure','error','errored','rejected'].includes(status)) return false;
+  if (['failed','failure','error','errored','rejected','blocked','denied'].includes(status)) return false;
 
   if (tool === 'evidence_verify' && result.verified === false) return false;
   return true;

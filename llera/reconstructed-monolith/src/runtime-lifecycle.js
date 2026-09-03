@@ -339,8 +339,14 @@ class RuntimeLifecycle {
     let started = null;
     try {
       started = await this.startBackend({ model, generation: this.generation + 1 });
-      if (!started || !started.pid) throw new Error('runtime start returned no pid');
-      this.pid = started.pid;
+      const startedPid = started && started.pid;
+      if (!Number.isSafeInteger(startedPid) || startedPid <= 0) {
+        const error = new Error('runtime start returned invalid pid');
+        error.code = 'RUNTIME_START_PID_INVALID';
+        error.pid = startedPid ?? null;
+        throw error;
+      }
+      this.pid = startedPid;
       this.model = model;
 
       const ok = await this.healthBackend({ pid: this.pid, model: this.model });
@@ -355,7 +361,8 @@ class RuntimeLifecycle {
       this._transition('ready', reason, owner);
       return this.snapshot();
     } catch (err) {
-      const cleanupPid = started && started.pid ? started.pid : this.pid;
+      const startedPid = started && started.pid;
+      const cleanupPid = Number.isSafeInteger(startedPid) && startedPid > 0 ? startedPid : this.pid;
       const cleanup = await this._cleanupStartedBackend({
         pid: cleanupPid,
         model,

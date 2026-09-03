@@ -63,13 +63,17 @@ function validFailureTimestamp(value) {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+function validBoundIdentity(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function structurallyValidFailure(event) {
   return Boolean(
     event &&
     typeof event === 'object' &&
-    event.missionId &&
-    event.stepId &&
-    event.tool &&
+    validBoundIdentity(event.missionId) &&
+    validBoundIdentity(event.stepId) &&
+    validBoundIdentity(event.tool) &&
     FAILURE_CLASSES.has(event.failureClass) &&
     /^[a-f0-9]{64}$/i.test(String(event.argsFingerprint || '')) &&
     /^[a-f0-9]{64}$/i.test(String(event.fingerprint || '')) &&
@@ -106,7 +110,9 @@ class FailureDoctrine {
   }
 
   recordFailure({ missionId, stepId, tool, args = {}, error, material = false }) {
-    if (!missionId || !stepId || !tool) throw new Error('missionId, stepId and tool are required');
+    if (!validBoundIdentity(missionId) || !validBoundIdentity(stepId) || !validBoundIdentity(tool)) {
+      throw new Error('missionId, stepId and tool must be non-empty strings');
+    }
     const failureClass = this.classify(error);
     const fingerprint = stableFingerprint({ tool, args, failureClass, code: error && error.code, message: error && error.message });
     const at = this.clock();
@@ -160,9 +166,9 @@ class FailureDoctrine {
       }
 
       const restored = {
-        missionId: String(failure.missionId),
-        stepId: String(failure.stepId),
-        tool: String(failure.tool),
+        missionId: failure.missionId,
+        stepId: failure.stepId,
+        tool: failure.tool,
         argsFingerprint: String(failure.argsFingerprint).toLowerCase(),
         failureClass: failure.failureClass,
         fingerprint: String(failure.fingerprint).toLowerCase(),
@@ -201,4 +207,5 @@ module.exports = {
   failureEventIdentity,
   structurallyValidFailure,
   validFailureTimestamp,
+  validBoundIdentity,
 };

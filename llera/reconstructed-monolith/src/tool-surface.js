@@ -149,11 +149,12 @@ class ToolExecutionGuard {
         fingerprint: fp,
         semanticFingerprint: semanticFp,
         ok: persistedOk(raw),
-        // Persisted classification flags are untrusted metadata. The executable
-        // canonical registry is the only authority for material/observation roles.
+        // Persisted classification and scope fields are untrusted metadata. The
+        // executable canonical registry and canonical arguments are the only
+        // authorities for material/observation roles and verification targets.
         material: cls.material,
         observation: cls.observation,
-        scope: raw.scope || verificationScope(raw.tool, rawArgs)
+        scope: verificationScope(raw.tool, rawArgs)
       };
       this.history.push(entry);
       if (entry.material && entry.ok) {

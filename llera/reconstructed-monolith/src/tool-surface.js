@@ -153,12 +153,18 @@ class ToolExecutionGuard {
         fingerprint: fp,
         semanticFingerprint: semanticFp,
         ok: persistedOk(raw),
-        // Persisted classification, identity and scope fields are untrusted metadata.
-        // The executable canonical registry and canonical arguments are the only
-        // authorities for material/observation roles and verification targets.
+        // Persisted classification, identity, scope and verification-binding fields
+        // are untrusted metadata. Verification relationships are reconstructed only
+        // from canonical observation scope. In particular, a forged persisted
+        // verifiesFingerprint must never clear material-action debt after restart.
         material: cls.material,
         observation: cls.observation,
-        scope: verificationScope(raw.tool, rawArgs)
+        scope: verificationScope(raw.tool, rawArgs),
+        verifiesFingerprint: null,
+        verifies: null,
+        verificationOf: null,
+        materialFingerprint: null,
+        verifiedBy: null
       };
       this.history.push(entry);
       if (entry.material && entry.ok) {

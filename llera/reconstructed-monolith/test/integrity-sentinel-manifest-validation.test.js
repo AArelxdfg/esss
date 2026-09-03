@@ -46,6 +46,26 @@ try {
   assert.strictEqual(invalidSize.ok, false);
   assert.ok(invalidSize.failures.some((failure) => failure.reason === 'invalid-size'));
 
+  const coercedSize = sentinel.verifyTree({ files: [{ ...validEntry, size: String(bytes.length) }] });
+  assert.strictEqual(coercedSize.ok, false);
+  assert.strictEqual(coercedSize.manifestValid, false);
+  assert.ok(coercedSize.failures.some((failure) => failure.reason === 'invalid-size'));
+
+  const coercibleSha = {
+    toString() {
+      return validEntry.sha256;
+    },
+  };
+  const coercedSha = sentinel.verifyTree({ files: [{ ...validEntry, sha256: coercibleSha }] });
+  assert.strictEqual(coercedSha.ok, false);
+  assert.strictEqual(coercedSha.manifestValid, false);
+  assert.ok(coercedSha.failures.some((failure) => failure.reason === 'invalid-sha256'));
+
+  const arrayEntry = sentinel.verifyTree({ files: [[validEntry.path, validEntry.sha256, validEntry.size]] });
+  assert.strictEqual(arrayEntry.ok, false);
+  assert.strictEqual(arrayEntry.manifestValid, false);
+  assert.ok(arrayEntry.failures.some((failure) => failure.reason === 'entry-object-required'));
+
   const malformed = sentinel.verifyTree({ files: [null] });
   assert.strictEqual(malformed.ok, false);
   assert.strictEqual(malformed.manifestValid, false);
@@ -65,6 +85,8 @@ try {
     duplicatePathsRejected: true,
     malformedHashesRejected: true,
     unsafeSizesRejected: true,
+    typeCoercionRejected: true,
+    arrayEntriesRejected: true,
     malformedEntriesFailClosed: true,
   });
 } finally {

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { createMonolithToolRuntime } = require('../../src/monolith-tool-runtime');
 
 const MAX_WORK_RESULT_BYTES = 64 * 1024;
+const MAX_WORK_RESULT_DEPTH = 64;
 const RESERVED_JSON_KEYS = new Set(['__proto__']);
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
@@ -16,7 +17,10 @@ function invalidWorkResult(message, pathName = 'result') {
   return error;
 }
 
-function assertLosslessJsonValue(value, pathName = 'result', seen = new Set()) {
+function assertLosslessJsonValue(value, pathName = 'result', seen = new Set(), depth = 0) {
+  if (depth > MAX_WORK_RESULT_DEPTH) {
+    throw invalidWorkResult(`work step result exceeds maximum nesting depth ${MAX_WORK_RESULT_DEPTH}`, pathName);
+  }
   if (value === null) return;
 
   const type = typeof value;
@@ -46,7 +50,7 @@ function assertLosslessJsonValue(value, pathName = 'result', seen = new Set()) {
         if (!Object.prototype.hasOwnProperty.call(value, index)) {
           throw invalidWorkResult('work step result contains a sparse array', `${pathName}[${index}]`);
         }
-        assertLosslessJsonValue(value[index], `${pathName}[${index}]`, seen);
+        assertLosslessJsonValue(value[index], `${pathName}[${index}]`, seen, depth + 1);
       }
       return;
     }
@@ -67,7 +71,7 @@ function assertLosslessJsonValue(value, pathName = 'result', seen = new Set()) {
       if (!descriptor || descriptor.enumerable !== true || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
         throw invalidWorkResult('work step result contains a non-data property', `${pathName}.${key}`);
       }
-      assertLosslessJsonValue(descriptor.value, `${pathName}.${key}`, seen);
+      assertLosslessJsonValue(descriptor.value, `${pathName}.${key}`, seen, depth + 1);
     }
   } finally {
     seen.delete(value);
@@ -85,7 +89,9 @@ function normalizeWorkResult(value) {
   // Mission/checkpoint results are restart-critical durable state. Reject values that
   // JSON.stringify would silently coerce or discard (undefined/functions, NaN,
   // sparse arrays, accessors, class instances, dangerous prototype keys, etc.) so
-  // persistence never changes the semantic result behind the caller's back.
+  // persistence never changes the semantic result behind the caller's back. Bound
+  // nesting as well so hostile renderer/planner payloads fail deterministically
+  // instead of exhausting the JS call stack before checkpoint admission.
   assertLosslessJsonValue(value);
 
   let encoded;
@@ -174,42 +180,26 @@ class WorkModeService {
 
   status(missionId) {
     const mission = this._mission(missionId);
-    // The guarded tool broker is intentionally a single shared execution boundary.
-    // Never restore it with another mission's trace while an async operation owns it;
-    // doing so could cross-contaminate anti-loop/failure/verification-debt state.
     if (this.activeOperationMissionId && this.activeOperationMissionId !== missionId) {
       const error = new Error(`Work Mode is executing mission ${this.activeOperationMissionId}; status restore for ${missionId} is temporarily blocked`);
       error.code = 'WORK_MODE_CROSS_MISSION_OPERATION_BUSY';
       throw error;
     }
     if (!this.activeOperationMissionId) this.runtime.missionTools.restoreMission(missionId);
-    return clone({
-      mission,
-      execution: this.runtime.missionTools.status(missionId),
-      coverage: this.runtime.coverage()
-    });
+    return clone({ mission, execution: this.runtime.missionTools.status(missionId), coverage: this.runtime.coverage() });
   }
 
-  async startMission(missionId) {
-    return this._enqueueMissionOperation(missionId, () => this._startMission(missionId));
-  }
-
+  async startMission(missionId) { return this._enqueueMissionOperation(missionId, () => this._startMission(missionId)); }
   async _startMission(missionId) {
     let mission = this._mission(missionId);
-    if (['pending', 'paused', 'interrupted'].includes(mission.status)) {
-      mission = await this.missions.startMission(missionId);
-    } else if (mission.status !== 'running') {
-      throw new Error(`cannot start mission from ${mission.status}`);
-    }
+    if (['pending', 'paused', 'interrupted'].includes(mission.status)) mission = await this.missions.startMission(missionId);
+    else if (mission.status !== 'running') throw new Error(`cannot start mission from ${mission.status}`);
     this.runtime.missionTools.restoreMission(missionId);
     this._emit('mission.started', { missionId });
     return this.status(missionId);
   }
 
-  async beginNextStep(missionId) {
-    return this._enqueueMissionOperation(missionId, () => this._beginNextStep(missionId));
-  }
-
+  async beginNextStep(missionId) { return this._enqueueMissionOperation(missionId, () => this._beginNextStep(missionId)); }
   async _beginNextStep(missionId) {
     let mission = this._mission(missionId);
     if (['pending', 'paused', 'interrupted'].includes(mission.status)) await this._startMission(missionId);
@@ -223,10 +213,7 @@ class WorkModeService {
     return this.status(missionId);
   }
 
-  async pauseMission(missionId, reason = 'user-pause') {
-    return this._enqueueMissionOperation(missionId, () => this._pauseMission(missionId, reason));
-  }
-
+  async pauseMission(missionId, reason = 'user-pause') { return this._enqueueMissionOperation(missionId, () => this._pauseMission(missionId, reason)); }
   async _pauseMission(missionId, reason = 'user-pause') {
     const mission = this._mission(missionId);
     if (mission.status !== 'running') {
@@ -240,10 +227,7 @@ class WorkModeService {
     return this.status(missionId);
   }
 
-  async invokeTool(request = {}) {
-    return this._enqueueMissionOperation(request.missionId, () => this._invokeTool(request));
-  }
-
+  async invokeTool(request = {}) { return this._enqueueMissionOperation(request.missionId, () => this._invokeTool(request)); }
   async _invokeTool({ missionId, stepId = null, tool, args = {}, materialAuthorization = false } = {}) {
     const mission = this._mission(missionId);
     if (mission.status !== 'running') {
@@ -258,43 +242,14 @@ class WorkModeService {
       error.code = 'WORK_MODE_STEP_MISMATCH';
       throw error;
     }
-    // Rebind the shared guard immediately before every tool operation. The global
-    // operation queue guarantees no second mission can replace this trace until the
-    // real tool result, durable trace and checkpoint have all been persisted.
     this.runtime.missionTools.restoreMission(missionId);
-    const result = await this.runtime.missionTools.invoke({
-      missionId,
-      stepId: activeStepId,
-      tool,
-      args,
-      context: {
-        source: 'desktop-work-mode',
-        materialAuthorization: materialAuthorization === true
-      }
-    });
-    this._emit(result.blocked ? 'mission.tool.blocked' : 'mission.tool.executed', {
-      missionId,
-      stepId: activeStepId,
-      tool,
-      ok: Boolean(result.ok),
-      blocked: Boolean(result.blocked),
-      reason: result.reason || null,
-      traceId: result.persistedTrace?.id || null,
-      checkpointId: result.checkpoint?.id || null
-    });
+    const result = await this.runtime.missionTools.invoke({ missionId, stepId: activeStepId, tool, args, context: { source: 'desktop-work-mode', materialAuthorization: materialAuthorization === true } });
+    this._emit(result.blocked ? 'mission.tool.blocked' : 'mission.tool.executed', { missionId, stepId: activeStepId, tool, ok: Boolean(result.ok), blocked: Boolean(result.blocked), reason: result.reason || null, traceId: result.persistedTrace?.id || null, checkpointId: result.checkpoint?.id || null });
     return clone(result);
   }
 
   async completeCurrentStep(missionId, expectedStepId = null, result = {}) {
-    // Preserve the internal two-argument service API for older callers, while the
-    // desktop IPC always supplies an expected step id to reject stale UI requests.
-    if (expectedStepId && typeof expectedStepId === 'object' && !Array.isArray(expectedStepId)) {
-      result = expectedStepId;
-      expectedStepId = null;
-    }
-    // Checkpoint payloads are durable product state. Bound and normalize renderer- or
-    // planner-provided completion results before they enter the mission mutation queue
-    // so malformed/cyclic/oversized payloads cannot poison mission persistence.
+    if (expectedStepId && typeof expectedStepId === 'object' && !Array.isArray(expectedStepId)) { result = expectedStepId; expectedStepId = null; }
     const normalizedResult = normalizeWorkResult(result);
     return this._enqueueMissionOperation(missionId, () => this._completeCurrentStep(missionId, expectedStepId, normalizedResult));
   }
@@ -314,13 +269,7 @@ class WorkModeService {
     }
     this.runtime.missionTools.restoreMission(missionId);
     const execution = this.runtime.missionTools.status(missionId);
-    if (execution.verificationDebt || !execution.canFinalize) {
-      return clone({
-        blocked: true,
-        reason: execution.recoverySnapshotDebt ? 'recovery_snapshot_debt_open' : 'verification_debt_open',
-        status: this.status(missionId)
-      });
-    }
+    if (execution.verificationDebt || !execution.canFinalize) return clone({ blocked: true, reason: execution.recoverySnapshotDebt ? 'recovery_snapshot_debt_open' : 'verification_debt_open', status: this.status(missionId) });
     const stepId = mission.currentStepId;
     await this.missions.completeStep(missionId, stepId, result);
     this._emit('mission.step.completed', { missionId, stepId });
@@ -328,4 +277,4 @@ class WorkModeService {
   }
 }
 
-module.exports = { WorkModeService, MAX_WORK_RESULT_BYTES, normalizeWorkResult, assertLosslessJsonValue };
+module.exports = { WorkModeService, MAX_WORK_RESULT_BYTES, MAX_WORK_RESULT_DEPTH, normalizeWorkResult, assertLosslessJsonValue };

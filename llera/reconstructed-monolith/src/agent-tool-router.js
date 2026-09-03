@@ -6,6 +6,24 @@ const { CAPABILITY_TOOL_BINDINGS } = require('./monolith-capability-broker');
 const SPECIALIZED_TOOLS = new Set(Object.keys(CAPABILITY_TOOL_BINDINGS));
 const RESTORED_TOOL_SET = new Set(RESTORED_MONOLITH_TOOLS);
 
+function toStringSet(value) {
+  if (!Array.isArray(value)) return new Set();
+  return new Set(value.filter(item => typeof item === 'string' && item.trim()).map(String));
+}
+
+function capabilityAttestation(coverage, tool) {
+  const available = toStringSet(coverage && coverage.available);
+  const supported = toStringSet(coverage && coverage.supported);
+  return available.has(tool) && supported.has(tool);
+}
+
+function computerAttestation(coverage, tool) {
+  const available = toStringSet(coverage && coverage.available);
+  const portable = toStringSet(coverage && coverage.portable);
+  const adapterBacked = toStringSet(coverage && coverage.adapterBacked);
+  return available.has(tool) && (portable.has(tool) || adapterBacked.has(tool));
+}
+
 function assertToolSurfaceIntegrity() {
   if (!Array.isArray(RESTORED_MONOLITH_TOOLS) || RESTORED_MONOLITH_TOOLS.length === 0) {
     throw new Error('MONOLITH tool surface must be a non-empty array');
@@ -47,24 +65,25 @@ class MonolithAgentToolRouter {
 
   coverage() {
     const capability = this.capabilityBroker.coverage();
-    const capabilityAvailable = new Set(Array.isArray(capability && capability.available) ? capability.available.map(String) : []);
     const computer = this.computerExecutor.coverage();
-    const computerAvailable = new Set(Array.isArray(computer && computer.available) ? computer.available.map(String) : []);
     const available = [];
     const unavailable = [];
     const routes = {};
+    const unattested = [];
 
     for (const tool of RESTORED_MONOLITH_TOOLS) {
       if (SPECIALIZED_TOOLS.has(tool)) {
-        const ok = capabilityAvailable.has(tool);
+        const ok = capabilityAttestation(capability, tool);
         routes[tool] = ok ? 'specialized' : 'unavailable-specialized';
         (ok ? available : unavailable).push(tool);
+        if (!ok) unattested.push(tool);
         continue;
       }
 
-      const ok = computerAvailable.has(tool);
+      const ok = computerAttestation(computer, tool);
       routes[tool] = ok ? 'computer' : 'unavailable-computer';
       (ok ? available : unavailable).push(tool);
+      if (!ok) unattested.push(tool);
     }
 
     return {
@@ -74,8 +93,11 @@ class MonolithAgentToolRouter {
       genericComputerCount: TOOL_SURFACE_INTEGRITY.genericComputerCount,
       availableCount: available.length,
       unavailableCount: unavailable.length,
+      attestedCount: available.length,
+      unattestedCount: unattested.length,
       available,
       unavailable,
+      unattested,
       routes,
       specializedCoverage: capability || null,
       computerCoverage: computer || null,
@@ -91,17 +113,15 @@ class MonolithAgentToolRouter {
 
     if (SPECIALIZED_TOOLS.has(tool)) {
       const coverage = this.capabilityBroker.coverage();
-      const available = Array.isArray(coverage && coverage.available) ? coverage.available : [];
-      if (!available.includes(tool)) {
-        throw new Error(`specialized MONOLITH capability unavailable: ${tool}`);
+      if (!capabilityAttestation(coverage, tool)) {
+        throw new Error(`specialized MONOLITH capability unavailable or unattested: ${tool}`);
       }
       return this.capabilityBroker.invoke(tool, args, context);
     }
 
     const computerCoverage = this.computerExecutor.coverage();
-    const available = Array.isArray(computerCoverage && computerCoverage.available) ? computerCoverage.available : [];
-    if (!available.includes(tool)) {
-      throw new Error(`computer MONOLITH capability unavailable: ${tool}`);
+    if (!computerAttestation(computerCoverage, tool)) {
+      throw new Error(`computer MONOLITH capability unavailable or unattested: ${tool}`);
     }
     return this.computerExecutor.invoke(tool, args, context);
   }
@@ -117,5 +137,7 @@ module.exports = {
   SPECIALIZED_TOOLS,
   RESTORED_TOOL_SET,
   TOOL_SURFACE_INTEGRITY,
-  assertToolSurfaceIntegrity
+  assertToolSurfaceIntegrity,
+  capabilityAttestation,
+  computerAttestation
 };

@@ -8,6 +8,7 @@ const SPECIAL_CAPABILITIES = new Set(Object.keys(CAPABILITY_TOOL_BINDINGS));
 // Backwards-compatible export name, but the authorization boundary is now exactly
 // the material-action boundary declared by tool-surface.js.
 const SENSITIVE_ACTION_TOOLS = new Set(MATERIAL_TOOLS);
+const PATH_BOUND_MATERIAL_TOOLS = new Set(['write_file','apply_patch','make_dir','delete_path']);
 
 class GuardedMonolithToolBroker {
   constructor({ historicalExecutor, capabilityBroker, guard = new ToolExecutionGuard(), failureDoctrine = new FailureDoctrine(), summarizeResult, actionAuthorizer = null } = {}) {
@@ -98,7 +99,7 @@ class GuardedMonolithToolBroker {
         ? await this.capabilityBroker.invoke(tool, args, context)
         : await this.historicalExecutor(tool, args, context);
 
-      const semanticOk = executionSucceeded(tool, result, { material:Boolean(decision && decision.material) });
+      const semanticOk = executionSucceeded(tool, result, { material:Boolean(decision && decision.material), args });
       const trace = this.guard.record(tool, args, {
         ok:semanticOk,
         resultSummary:this.summarizeResult(result)
@@ -161,7 +162,22 @@ class GuardedMonolithToolBroker {
   }
 }
 
-function executionSucceeded(tool, result, { material = false } = {}) {
+function normalizeMaterialPath(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return value.trim().replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '').toLowerCase();
+}
+
+function requestedMaterialPath(tool, args = {}) {
+  if (!PATH_BOUND_MATERIAL_TOOLS.has(tool)) return null;
+  return normalizeMaterialPath(args.path ?? args.file ?? args.filePath ?? args.targetPath ?? null);
+}
+
+function acknowledgedMaterialPath(result) {
+  if (!result || typeof result !== 'object') return null;
+  return normalizeMaterialPath(result.target ?? result.path ?? result.filePath ?? result.destination ?? result.outputPath ?? null);
+}
+
+function executionSucceeded(tool, result, { material = false, args = {} } = {}) {
   // Material actions must leave a structured, inspectable acknowledgement. A bare
   // primitive or ambiguous object cannot carry trustworthy target/result semantics
   // and must never clear verification debt.
@@ -180,6 +196,15 @@ function executionSucceeded(tool, result, { material = false } = {}) {
     const target = result.target ?? result.path ?? result.filePath ?? result.destination ?? result.outputPath ?? null;
     if (!explicitSuccess) return false;
     if (typeof target !== 'string' || !target.trim()) return false;
+
+    // For path-bound file mutations, an acknowledgement for a different target is
+    // not evidence that the requested action succeeded. Bind the backend result to
+    // the requested path before allowing verification debt to be opened/cleared.
+    const requestedPath = requestedMaterialPath(tool, args);
+    if (requestedPath) {
+      const acknowledgedPath = acknowledgedMaterialPath(result);
+      if (!acknowledgedPath || acknowledgedPath !== requestedPath) return false;
+    }
   }
 
   if (tool === 'evidence_verify' && result.verified === false) return false;

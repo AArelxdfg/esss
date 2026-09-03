@@ -59,6 +59,10 @@ function failureEventIdentity(event) {
   })}`;
 }
 
+function validFailureTimestamp(value) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
 function structurallyValidFailure(event) {
   return Boolean(
     event &&
@@ -69,14 +73,22 @@ function structurallyValidFailure(event) {
     FAILURE_CLASSES.has(event.failureClass) &&
     /^[a-f0-9]{64}$/i.test(String(event.argsFingerprint || '')) &&
     /^[a-f0-9]{64}$/i.test(String(event.fingerprint || '')) &&
-    Number.isFinite(Number(event.at))
+    validFailureTimestamp(event.at)
   );
+}
+
+function normalizePositiveRetryBudget(value, name) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
+  return value;
 }
 
 class FailureDoctrine {
   constructor({ maxSameFailure = 2, maxTransientRetries = 3, clock = () => Date.now() } = {}) {
-    this.maxSameFailure = maxSameFailure;
-    this.maxTransientRetries = maxTransientRetries;
+    this.maxSameFailure = normalizePositiveRetryBudget(maxSameFailure, 'maxSameFailure');
+    this.maxTransientRetries = normalizePositiveRetryBudget(maxTransientRetries, 'maxTransientRetries');
+    if (typeof clock !== 'function') throw new TypeError('clock must be a function');
     this.clock = clock;
     this.history = [];
     this.restoreDiagnostics = { restored: 0, legacyUnsealed: 0, rejected: 0 };
@@ -97,9 +109,11 @@ class FailureDoctrine {
     if (!missionId || !stepId || !tool) throw new Error('missionId, stepId and tool are required');
     const failureClass = this.classify(error);
     const fingerprint = stableFingerprint({ tool, args, failureClass, code: error && error.code, message: error && error.message });
+    const at = this.clock();
+    if (!validFailureTimestamp(at)) throw new Error('FAILURE_DOCTRINE_CLOCK_INVALID');
     const event = {
       missionId, stepId, tool, argsFingerprint: stableFingerprint(args), failureClass, fingerprint,
-      material: Boolean(material), message: String(error && error.message || error || ''), at: this.clock(),
+      material: Boolean(material), message: String(error && error.message || error || ''), at,
     };
     event.eventSeal = failureEventSeal(event);
     this.history.push(event);
@@ -154,7 +168,7 @@ class FailureDoctrine {
         fingerprint: String(failure.fingerprint).toLowerCase(),
         material: Boolean(failure.material),
         message: String(failure.message || ''),
-        at: Number(failure.at),
+        at: failure.at,
         eventSeal: failure.eventSeal ? String(failure.eventSeal).toLowerCase() : null,
       };
 
@@ -186,4 +200,5 @@ module.exports = {
   failureEventSeal,
   failureEventIdentity,
   structurallyValidFailure,
+  validFailureTimestamp,
 };

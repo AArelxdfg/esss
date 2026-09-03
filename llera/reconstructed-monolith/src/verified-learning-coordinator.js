@@ -23,9 +23,7 @@ class VerifiedLearningCoordinator {
     if (this.loaded) return this.snapshot();
     const persisted = await this.loadState();
     if (persisted) {
-      if (persisted.schema !== 1 || !persisted.receipts || typeof persisted.receipts !== 'object') {
-        throw new Error('corrupt verified learning state');
-      }
+      validatePersistedLearningState(persisted);
       this.state = JSON.parse(JSON.stringify(persisted));
     }
     this.loaded = true;
@@ -165,6 +163,46 @@ class VerifiedLearningCoordinator {
   }
 }
 
+function validatePersistedLearningState(persisted) {
+  if (!isPlainRecord(persisted) || persisted.schema !== 1 || !isPlainRecord(persisted.receipts)) {
+    throw corruptLearningState('invalid_root');
+  }
+  for (const [receiptSha256, receiptState] of Object.entries(persisted.receipts)) {
+    if (!isSha256(receiptSha256)) throw corruptLearningState('invalid_receipt_key');
+    if (!isPlainRecord(receiptState)) throw corruptLearningState('invalid_receipt_record');
+    if (receiptState.status !== 'applying' && receiptState.status !== 'committed') {
+      throw corruptLearningState('invalid_receipt_status');
+    }
+    if (!isNonEmptyString(receiptState.missionId)) throw corruptLearningState('invalid_receipt_mission');
+    if (receiptState.status === 'committed') {
+      if (!isNullableId(receiptState.outcomeId)) throw corruptLearningState('invalid_outcome_id');
+      if (!isNullableId(receiptState.skillCandidateId)) throw corruptLearningState('invalid_skill_candidate_id');
+    }
+  }
+  return true;
+}
+
+function corruptLearningState(reason) {
+  const error = new Error(`corrupt verified learning state: ${reason}`);
+  error.code = 'VERIFIED_LEARNING_STATE_CORRUPT';
+  error.reason = reason;
+  return error;
+}
+
+function isPlainRecord(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isNullableId(value) {
+  return value == null || isNonEmptyString(value);
+}
+
 function findOutcomeByReceipt(snapshot, tag) {
   return ((snapshot && snapshot.outcomes) || []).find(o => o && Array.isArray(o.tags) && o.tags.includes(tag)) || null;
 }
@@ -177,4 +215,4 @@ function sameStringSet(a, b) {
   return aa.length === bb.length && aa.every((value, index) => value === bb[index]);
 }
 function isSha256(value) { return /^[a-f0-9]{64}$/i.test(String(value || '')); }
-module.exports = { VerifiedLearningCoordinator, findOutcomeByReceipt };
+module.exports = { VerifiedLearningCoordinator, findOutcomeByReceipt, validatePersistedLearningState };

@@ -141,16 +141,20 @@ class ToolExecutionGuard {
       if (!raw || !raw.tool) continue;
       const cls = this.classify(raw.tool);
       const rawArgs = raw.args || raw.arguments || {};
-      const fp = raw.fingerprint || raw.argumentsHash || fingerprint(raw.tool, rawArgs);
-      const semanticFp = raw.semanticFingerprint || semanticFingerprint(raw.tool, rawArgs);
+      // Persisted identity fields are untrusted. Recompute both exact and semantic
+      // identities from the executable tool name + canonical persisted arguments.
+      // Otherwise a tampered trace could alias a different material action and
+      // incorrectly clear/redirect anti-loop or verification debt after restart.
+      const fp = fingerprint(raw.tool, rawArgs);
+      const semanticFp = semanticFingerprint(raw.tool, rawArgs);
       const entry = {
         ...raw,
         args: rawArgs,
         fingerprint: fp,
         semanticFingerprint: semanticFp,
         ok: persistedOk(raw),
-        // Persisted classification and scope fields are untrusted metadata. The
-        // executable canonical registry and canonical arguments are the only
+        // Persisted classification, identity and scope fields are untrusted metadata.
+        // The executable canonical registry and canonical arguments are the only
         // authorities for material/observation roles and verification targets.
         material: cls.material,
         observation: cls.observation,

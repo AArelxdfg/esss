@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 
 const DEFAULT_MAX_BYTES = 32 * 1024 * 1024;
+const ALLOWED_PRESSURES = new Set(['normal', 'elevated', 'critical']);
 
 class VisionPipeline {
   constructor({ now = () => new Date().toISOString(), maxBytes = DEFAULT_MAX_BYTES } = {}) {
@@ -51,11 +52,13 @@ class VisionPipeline {
 
   async analyze(input, { pressure = 'normal', visionModel, ocr } = {}) {
     const n = this.normalizeInput(input);
-    if (pressure === 'critical') {
+    const normalizedPressure = normalizePressure(pressure);
+    if (normalizedPressure === 'critical') {
       return {
         ok: false,
         blocked: true,
         reason: 'host-critical-pressure',
+        pressure: normalizedPressure,
         inputId: n.inputId,
         sha256: n.sha256,
         byteCount: n.byteCount
@@ -69,7 +72,8 @@ class VisionPipeline {
       sha256: n.sha256,
       byteCount: n.byteCount,
       inputId: n.inputId,
-      kind: n.kind
+      kind: n.kind,
+      pressure: normalizedPressure
     };
     this.active = task;
 
@@ -122,6 +126,7 @@ class VisionPipeline {
         backend: backends.join('+'),
         kind: n.kind,
         source: n.source,
+        pressure: normalizedPressure,
         sha256: n.sha256,
         byteCount: n.byteCount,
         inputId: n.inputId,
@@ -135,6 +140,7 @@ class VisionPipeline {
         backend: result.backend,
         degraded: result.degraded,
         warnings: warnings.map((w) => ({ ...w })),
+        pressure: normalizedPressure,
         sha256: n.sha256,
         byteCount: n.byteCount,
         inputId: n.inputId,
@@ -147,8 +153,23 @@ class VisionPipeline {
   }
 }
 
+function normalizePressure(value) {
+  if (typeof value !== 'string') {
+    const error = new TypeError('vision pressure must be a string');
+    error.code = 'VISION_PRESSURE_INVALID';
+    throw error;
+  }
+  const pressure = value.toLowerCase();
+  if (!ALLOWED_PRESSURES.has(pressure)) {
+    const error = new Error('unsupported vision pressure');
+    error.code = 'VISION_PRESSURE_INVALID';
+    throw error;
+  }
+  return pressure;
+}
+
 function cloneInput(input) {
   return {...input, bytes:Buffer.from(input.bytes)};
 }
 
-module.exports = { VisionPipeline, cloneInput, DEFAULT_MAX_BYTES };
+module.exports = { VisionPipeline, cloneInput, DEFAULT_MAX_BYTES, normalizePressure };

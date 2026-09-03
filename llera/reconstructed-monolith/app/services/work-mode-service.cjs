@@ -6,7 +6,7 @@ const { createMonolithToolRuntime } = require('../../src/monolith-tool-runtime')
 
 const MAX_WORK_RESULT_BYTES = 64 * 1024;
 const MAX_WORK_RESULT_DEPTH = 64;
-const RESERVED_JSON_KEYS = new Set(['__proto__']);
+const RESERVED_JSON_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 

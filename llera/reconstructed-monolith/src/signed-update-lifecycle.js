@@ -5,12 +5,28 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 
-function stableStringify(value) {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+function stableStringify(value, seen = new Set()) {
+  if (value === null) return 'null';
+  const type = typeof value;
+  if (type === 'string' || type === 'boolean') return JSON.stringify(value);
+  if (type === 'number') {
+    if (!Number.isFinite(value)) throw new Error('manifest contains non-finite number');
+    return JSON.stringify(value);
   }
-  return JSON.stringify(value);
+  if (type === 'undefined' || type === 'function' || type === 'symbol' || type === 'bigint') {
+    throw new Error(`manifest contains unsupported ${type}`);
+  }
+  if (type !== 'object') throw new Error('manifest contains unsupported value');
+  if (seen.has(value)) throw new Error('manifest contains cyclic value');
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return `[${value.map(item => stableStringify(item, seen)).join(',')}]`;
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) throw new Error('manifest contains non-plain object');
+    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stableStringify(value[k], seen)}`).join(',')}}`;
+  } finally {
+    seen.delete(value);
+  }
 }
 function sha256Buffer(buf) { return crypto.createHash('sha256').update(buf).digest('hex'); }
 async function sha256File(file) {

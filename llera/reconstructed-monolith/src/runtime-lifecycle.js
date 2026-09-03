@@ -107,8 +107,16 @@ class RuntimeLifecycle {
   async _probeAlive({ pid, model, reason = 'pid-probe' }) {
     if (!pid || !this.isAliveBackend) return null;
     try {
-      return Boolean(await this.isAliveBackend({ pid, model, reason }));
+      const alive = await this.isAliveBackend({ pid, model, reason });
+      if (alive !== true && alive !== false) {
+        const error = new Error(`runtime pid probe returned non-boolean result for ${pid}`);
+        error.code = 'RUNTIME_PID_PROBE_INVALID';
+        error.pid = pid;
+        throw error;
+      }
+      return alive;
     } catch (err) {
+      if (err?.code === 'RUNTIME_PID_PROBE_INVALID') throw err;
       const error = new Error(`runtime pid probe failed for ${pid}: ${String(err?.message || err)}`);
       error.code = 'RUNTIME_PID_PROBE_FAILED';
       error.pid = pid;
@@ -336,7 +344,11 @@ class RuntimeLifecycle {
       this.model = model;
 
       const ok = await this.healthBackend({ pid: this.pid, model: this.model });
-      if (!ok) throw new Error('runtime health check failed');
+      if (ok !== true) {
+        const error = new Error('runtime health check failed');
+        error.code = ok === false ? 'RUNTIME_HEALTH_CHECK_FAILED' : 'RUNTIME_HEALTH_RESULT_INVALID';
+        throw error;
+      }
 
       this.generation += 1;
       this.lastError = null;

@@ -1,8 +1,20 @@
 'use strict';
 const crypto = require('crypto');
 
+const DEFAULT_MAX_BYTES = 32 * 1024 * 1024;
+
 class VisionPipeline {
-  constructor({ now = () => new Date().toISOString(), maxBytes = 32 * 1024 * 1024 } = {}) {
+  constructor({ now = () => new Date().toISOString(), maxBytes = DEFAULT_MAX_BYTES } = {}) {
+    if (typeof now !== 'function') {
+      const error = new TypeError('vision clock must be a function');
+      error.code = 'VISION_CLOCK_INVALID';
+      throw error;
+    }
+    if (typeof maxBytes !== 'number' || !Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+      const error = new RangeError('vision maxBytes must be a positive safe integer');
+      error.code = 'VISION_MAX_BYTES_INVALID';
+      throw error;
+    }
     this.now = now;
     this.maxBytes = maxBytes;
     this.active = null;
@@ -10,13 +22,18 @@ class VisionPipeline {
   }
 
   normalizeInput(input) {
-    if (!input || !Buffer.isBuffer(input.bytes)) throw new Error('vision input bytes required');
+    if (!input || typeof input !== 'object' || Array.isArray(input) || !Buffer.isBuffer(input.bytes)) {
+      throw new Error('vision input bytes required');
+    }
     if (!input.bytes.length) throw new Error('empty vision input');
     if (input.bytes.length > this.maxBytes) throw new Error('vision input exceeds size limit');
-    const kind = String(input.kind || '').toLowerCase();
+    if (typeof input.kind !== 'string') throw new Error('vision input kind must be a string');
+    const kind = input.kind.toLowerCase();
     if (!['image', 'file', 'screen'].includes(kind)) throw new Error('unsupported vision input kind');
-    const mime = String(input.mime || 'application/octet-stream').toLowerCase();
-    const source = String(input.source || kind);
+    if (input.mime !== undefined && typeof input.mime !== 'string') throw new Error('vision input mime must be a string');
+    const mime = (input.mime || 'application/octet-stream').toLowerCase();
+    if (input.source !== undefined && typeof input.source !== 'string') throw new Error('vision input source must be a string');
+    const source = input.source || kind;
     if (!source.trim() || /[\r\n\0]/.test(source)) throw new Error('unsafe vision input source');
     const bytes = Buffer.from(input.bytes);
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
@@ -68,7 +85,13 @@ class VisionPipeline {
 
       if (shouldOcr && canOcr) {
         try {
-          text = String(await ocr(cloneInput(n)) || '');
+          const ocrResult = await ocr(cloneInput(n));
+          if (typeof ocrResult !== 'string') {
+            const error = new TypeError('OCR backend must return a string');
+            error.code = 'VISION_OCR_RESULT_INVALID';
+            throw error;
+          }
+          text = ocrResult;
           backends.push('windows-ocr');
         } catch (error) {
           warnings.push({ backend: 'windows-ocr', reason: String(error && error.message || error) });
@@ -116,4 +139,4 @@ function cloneInput(input) {
   return {...input, bytes:Buffer.from(input.bytes)};
 }
 
-module.exports = { VisionPipeline, cloneInput };
+module.exports = { VisionPipeline, cloneInput, DEFAULT_MAX_BYTES };

@@ -59,7 +59,7 @@ function validateManifest(manifest) {
   const seenWindowsPaths = new Set();
   for (let index = 0; index < manifest.files.length; index += 1) {
     const entry = manifest.files[index];
-    if (!entry || typeof entry !== 'object') {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       failures.push({ index, reason: 'entry-object-required' });
       continue;
     }
@@ -80,12 +80,11 @@ function validateManifest(manifest) {
       }
     }
 
-    if (!/^[a-f0-9]{64}$/i.test(String(entry.sha256 || ''))) {
+    if (typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(entry.sha256)) {
       failures.push({ index, path: normalizedPath, reason: 'invalid-sha256' });
     }
 
-    const size = Number(entry.size);
-    if (!Number.isSafeInteger(size) || size < 0) {
+    if (typeof entry.size !== 'number' || !Number.isSafeInteger(entry.size) || entry.size < 0) {
       failures.push({ index, path: normalizedPath, reason: 'invalid-size' });
     }
   }
@@ -95,7 +94,7 @@ function validateManifest(manifest) {
 
 function canonicalManifestPayload(manifest) {
   const files = [...(manifest.files || [])]
-    .map((x) => ({ path: normalizeManifestPath(x.path), sha256: String(x.sha256).toLowerCase(), size: Number(x.size) }))
+    .map((x) => ({ path: normalizeManifestPath(x.path), sha256: x.sha256.toLowerCase(), size: x.size }))
     .sort((a, b) => a.path.localeCompare(b.path));
   return JSON.stringify({ schema: manifest.schema || 1, product: manifest.product || 'LLera', version: manifest.version || '', files });
 }
@@ -159,11 +158,11 @@ class IntegritySentinel {
 
     const bytes = fs.readFileSync(resolved.realTarget);
     const actual = sha256Bytes(bytes);
-    if (Number(entry.size) !== bytes.length) {
-      return { ok: false, path: entry.path, reason: 'size-mismatch', expectedSize: Number(entry.size), actualSize: bytes.length, actualSha256: actual };
+    if (entry.size !== bytes.length) {
+      return { ok: false, path: entry.path, reason: 'size-mismatch', expectedSize: entry.size, actualSize: bytes.length, actualSha256: actual };
     }
-    if (actual !== String(entry.sha256).toLowerCase()) {
-      return { ok: false, path: entry.path, reason: 'sha256-mismatch', expectedSha256: String(entry.sha256).toLowerCase(), actualSha256: actual };
+    if (actual !== entry.sha256.toLowerCase()) {
+      return { ok: false, path: entry.path, reason: 'sha256-mismatch', expectedSha256: entry.sha256.toLowerCase(), actualSha256: actual };
     }
     return { ok: true, path: entry.path, sha256: actual, size: bytes.length };
   }

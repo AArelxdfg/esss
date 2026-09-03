@@ -133,9 +133,11 @@ class VerifiedLearningCoordinator {
     if (!proposal) return null;
 
     const current = this.outcomeMemory.snapshot();
-    const duplicate = (current.skillCandidates || []).find(c =>
-      c && c.missionId === missionId && c.name === proposal.name && c.sourceOutcomeId === outcome.id
-    );
+    const duplicate = findSkillCandidateBySource(current, {
+      missionId,
+      name: proposal.name,
+      sourceOutcomeId: outcome.id
+    });
     if (duplicate) {
       const duplicateMatchesVerifiedSource =
         duplicate.sourceReceiptSha256 === receipt.sha256 &&
@@ -195,6 +197,17 @@ function corruptLearningState(reason) {
   return error;
 }
 
+function duplicateLearningState(kind) {
+  const error = new Error(`ambiguous verified learning state: duplicate ${kind}`);
+  error.code = kind === 'receipt outcome'
+    ? 'VERIFIED_LEARNING_RECEIPT_DUPLICATE'
+    : 'VERIFIED_LEARNING_SKILL_DUPLICATE';
+  error.reason = kind === 'receipt outcome'
+    ? 'duplicate_receipt_outcome'
+    : 'duplicate_skill_candidate';
+  return error;
+}
+
 function isPlainRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const proto = Object.getPrototypeOf(value);
@@ -215,8 +228,19 @@ function hasExactKeys(record, expected) {
 }
 
 function findOutcomeByReceipt(snapshot, tag) {
-  return ((snapshot && snapshot.outcomes) || []).find(o => o && Array.isArray(o.tags) && o.tags.includes(tag)) || null;
+  const matches = ((snapshot && snapshot.outcomes) || []).filter(o => o && Array.isArray(o.tags) && o.tags.includes(tag));
+  if (matches.length > 1) throw duplicateLearningState('receipt outcome');
+  return matches[0] || null;
 }
+
+function findSkillCandidateBySource(snapshot, { missionId, name, sourceOutcomeId } = {}) {
+  const matches = ((snapshot && snapshot.skillCandidates) || []).filter(c =>
+    c && c.missionId === missionId && c.name === name && c.sourceOutcomeId === sourceOutcomeId
+  );
+  if (matches.length > 1) throw duplicateLearningState('skill candidate');
+  return matches[0] || null;
+}
+
 function normalizeStringSet(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(value => String(value)))].sort();
 }
@@ -226,4 +250,9 @@ function sameStringSet(a, b) {
   return aa.length === bb.length && aa.every((value, index) => value === bb[index]);
 }
 function isSha256(value) { return /^[a-f0-9]{64}$/i.test(String(value || '')); }
-module.exports = { VerifiedLearningCoordinator, findOutcomeByReceipt, validatePersistedLearningState };
+module.exports = {
+  VerifiedLearningCoordinator,
+  findOutcomeByReceipt,
+  findSkillCandidateBySource,
+  validatePersistedLearningState
+};

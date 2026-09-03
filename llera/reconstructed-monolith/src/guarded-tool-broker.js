@@ -163,7 +163,8 @@ class GuardedMonolithToolBroker {
 
 function executionSucceeded(tool, result, { material = false } = {}) {
   // Material actions must leave a structured, inspectable acknowledgement. A bare
-  // primitive cannot carry target/result semantics and must never clear verification debt.
+  // primitive or ambiguous object cannot carry trustworthy target/result semantics
+  // and must never clear verification debt.
   if (material && (!result || typeof result !== 'object')) return false;
 
   if (!result || typeof result !== 'object') return true;
@@ -171,6 +172,15 @@ function executionSucceeded(tool, result, { material = false } = {}) {
 
   const status = String(result.status || result.state || '').trim().toLowerCase();
   if (['failed','failure','error','errored','rejected','blocked','denied'].includes(status)) return false;
+
+  if (material) {
+    const explicitSuccess = result.ok === true
+      || result.success === true
+      || ['ok','success','succeeded','complete','completed','created','updated','deleted','written'].includes(status);
+    const target = result.target ?? result.path ?? result.filePath ?? result.destination ?? result.outputPath ?? null;
+    if (!explicitSuccess) return false;
+    if (typeof target !== 'string' || !target.trim()) return false;
+  }
 
   if (tool === 'evidence_verify' && result.verified === false) return false;
   return true;

@@ -6,6 +6,7 @@ const { createMonolithToolRuntime } = require('../../src/monolith-tool-runtime')
 
 const MAX_WORK_RESULT_BYTES = 64 * 1024;
 const MAX_WORK_RESULT_DEPTH = 64;
+const MAX_WORK_RESULT_NODES = 4096;
 const RESERVED_JSON_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
@@ -17,7 +18,11 @@ function invalidWorkResult(message, pathName = 'result') {
   return error;
 }
 
-function assertLosslessJsonValue(value, pathName = 'result', seen = new Set(), depth = 0) {
+function assertLosslessJsonValue(value, pathName = 'result', seen = new Set(), depth = 0, traversal = { nodes: 0 }) {
+  traversal.nodes += 1;
+  if (traversal.nodes > MAX_WORK_RESULT_NODES) {
+    throw invalidWorkResult(`work step result exceeds maximum node count ${MAX_WORK_RESULT_NODES}`, pathName);
+  }
   if (depth > MAX_WORK_RESULT_DEPTH) {
     throw invalidWorkResult(`work step result exceeds maximum nesting depth ${MAX_WORK_RESULT_DEPTH}`, pathName);
   }
@@ -50,7 +55,7 @@ function assertLosslessJsonValue(value, pathName = 'result', seen = new Set(), d
         if (!Object.prototype.hasOwnProperty.call(value, index)) {
           throw invalidWorkResult('work step result contains a sparse array', `${pathName}[${index}]`);
         }
-        assertLosslessJsonValue(value[index], `${pathName}[${index}]`, seen, depth + 1);
+        assertLosslessJsonValue(value[index], `${pathName}[${index}]`, seen, depth + 1, traversal);
       }
       return;
     }
@@ -71,7 +76,7 @@ function assertLosslessJsonValue(value, pathName = 'result', seen = new Set(), d
       if (!descriptor || descriptor.enumerable !== true || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
         throw invalidWorkResult('work step result contains a non-data property', `${pathName}.${key}`);
       }
-      assertLosslessJsonValue(descriptor.value, `${pathName}.${key}`, seen, depth + 1);
+      assertLosslessJsonValue(descriptor.value, `${pathName}.${key}`, seen, depth + 1, traversal);
     }
   } finally {
     seen.delete(value);
@@ -90,8 +95,9 @@ function normalizeWorkResult(value) {
   // JSON.stringify would silently coerce or discard (undefined/functions, NaN,
   // sparse arrays, accessors, class instances, dangerous prototype keys, etc.) so
   // persistence never changes the semantic result behind the caller's back. Bound
-  // nesting as well so hostile renderer/planner payloads fail deterministically
-  // instead of exhausting the JS call stack before checkpoint admission.
+  // nesting and total traversal as well so hostile renderer/planner payloads fail
+  // deterministically before checkpoint admission or JSON encoding can consume
+  // unbounded stack/CPU on a very deep or very wide object graph.
   assertLosslessJsonValue(value);
 
   let encoded;
@@ -277,4 +283,4 @@ class WorkModeService {
   }
 }
 
-module.exports = { WorkModeService, MAX_WORK_RESULT_BYTES, MAX_WORK_RESULT_DEPTH, normalizeWorkResult, assertLosslessJsonValue };
+module.exports = { WorkModeService, MAX_WORK_RESULT_BYTES, MAX_WORK_RESULT_DEPTH, MAX_WORK_RESULT_NODES, normalizeWorkResult, assertLosslessJsonValue };

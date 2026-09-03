@@ -11,6 +11,13 @@ function sameResolvedPath(a,b){
   const right=path.resolve(String(b));
   return process.platform==='win32'?left.toLowerCase()===right.toLowerCase():left===right;
 }
+function canonicalHttpsUrl(value){
+  try {
+    const parsed=new URL(String(value||''));
+    if (parsed.protocol!=='https:') return null;
+    return parsed.toString();
+  } catch { return null; }
+}
 class VerifiedUpdateInstallCoordinator {
   constructor({ updater, installer, watchdog = null, now = () => new Date().toISOString() } = {}) {
     if (!updater || typeof updater.verifySignedManifest !== 'function' || typeof updater.downloadArtifact !== 'function' || typeof updater.stageArtifact !== 'function') throw new Error('updater verify/download/stage lifecycle is required');
@@ -45,8 +52,19 @@ class VerifiedUpdateInstallCoordinator {
     }
     const manifestArtifactSize=manifest&&manifest.artifact&&manifest.artifact.size;
     const receiptArtifactSize=verificationReceipt.artifactSize;
-    if (receiptArtifactSize != null && manifestArtifactSize != null && receiptArtifactSize !== manifestArtifactSize) {
-      const result={ok:false,blocked:true,reason:'signed_manifest_receipt_artifact_size_mismatch',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,artifactSize:manifestArtifactSize,receiptArtifactSize,at:this.now()}; this.history.push(result); return result;
+    if (!Number.isSafeInteger(manifestArtifactSize) || manifestArtifactSize < 1) {
+      const result={ok:false,blocked:true,reason:'signed_manifest_artifact_size_invalid',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,at:this.now()}; this.history.push(result); return result;
+    }
+    if (!Number.isSafeInteger(receiptArtifactSize) || receiptArtifactSize !== manifestArtifactSize) {
+      const result={ok:false,blocked:true,reason:'signed_manifest_receipt_artifact_size_mismatch',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,artifactSize:manifestArtifactSize,receiptArtifactSize:Number.isSafeInteger(receiptArtifactSize)?receiptArtifactSize:null,at:this.now()}; this.history.push(result); return result;
+    }
+    const manifestArtifactUrl=canonicalHttpsUrl(manifest&&manifest.artifact&&manifest.artifact.url);
+    const receiptArtifactUrl=canonicalHttpsUrl(verificationReceipt.artifactUrl);
+    if (!manifestArtifactUrl) {
+      const result={ok:false,blocked:true,reason:'signed_manifest_artifact_url_invalid',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,at:this.now()}; this.history.push(result); return result;
+    }
+    if (!receiptArtifactUrl || receiptArtifactUrl!==manifestArtifactUrl) {
+      const result={ok:false,blocked:true,reason:'signed_manifest_receipt_artifact_url_mismatch',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,artifactUrl:manifestArtifactUrl,receiptArtifactUrl:receiptArtifactUrl||null,at:this.now()}; this.history.push(result); return result;
     }
     const watchdogProfile=this.watchdog ? await this.watchdog.launchProfile() : {mode:'normal'};
     if (!watchdogProfile || typeof watchdogProfile !== 'object' || watchdogProfile.mode!=='normal') {
@@ -56,6 +74,7 @@ class VerifiedUpdateInstallCoordinator {
     const downloaded=await this.updater.downloadArtifact(manifest,{resume,verificationReceipt});
     if (!downloaded || !downloaded.path) throw new Error('updater returned no downloaded artifact path');
     if (String(downloaded.sha256||'').trim().toLowerCase()!==expectedSha256) throw new Error('downloaded artifact digest diverges from signed manifest');
+    if (!Number.isSafeInteger(downloaded.size) || downloaded.size!==manifestArtifactSize) throw new Error('downloaded artifact size diverges from signed manifest');
     if (this.updater.paths && this.updater.paths.downloads) {
       const canonicalDownload=path.resolve(this.updater.paths.downloads,`${expectedVersion}.bin`);
       if (!sameResolvedPath(downloaded.path,canonicalDownload)) throw new Error('downloaded artifact path diverges from canonical verified download target');
@@ -86,4 +105,4 @@ class VerifiedUpdateInstallCoordinator {
   }
   status(){const latest=this.history.at(-1)||null; return {runs:this.history.length,latest:latest?{...latest}:null};}
 }
-module.exports={VerifiedUpdateInstallCoordinator,isCanonicalVersion,sameResolvedPath};
+module.exports={VerifiedUpdateInstallCoordinator,isCanonicalVersion,sameResolvedPath,canonicalHttpsUrl};

@@ -163,6 +163,9 @@ class VerifiedLearningCoordinator {
   }
 }
 
+const APPLYING_RECEIPT_KEYS = new Set(['status', 'missionId']);
+const COMMITTED_RECEIPT_KEYS = new Set(['status', 'missionId', 'outcomeId', 'skillCandidateId']);
+
 function validatePersistedLearningState(persisted) {
   if (!isPlainRecord(persisted) || persisted.schema !== 1 || !isPlainRecord(persisted.receipts)) {
     throw corruptLearningState('invalid_root');
@@ -174,10 +177,13 @@ function validatePersistedLearningState(persisted) {
       throw corruptLearningState('invalid_receipt_status');
     }
     if (!isNonEmptyString(receiptState.missionId)) throw corruptLearningState('invalid_receipt_mission');
-    if (receiptState.status === 'committed') {
-      if (!isNullableId(receiptState.outcomeId)) throw corruptLearningState('invalid_outcome_id');
-      if (!isNullableId(receiptState.skillCandidateId)) throw corruptLearningState('invalid_skill_candidate_id');
+    if (receiptState.status === 'applying') {
+      if (!hasExactKeys(receiptState, APPLYING_RECEIPT_KEYS)) throw corruptLearningState('invalid_applying_shape');
+      continue;
     }
+    if (!hasExactKeys(receiptState, COMMITTED_RECEIPT_KEYS)) throw corruptLearningState('invalid_committed_shape');
+    if (!isNullableId(receiptState.outcomeId)) throw corruptLearningState('invalid_outcome_id');
+    if (!isNullableId(receiptState.skillCandidateId)) throw corruptLearningState('invalid_skill_candidate_id');
   }
   return true;
 }
@@ -201,6 +207,11 @@ function isNonEmptyString(value) {
 
 function isNullableId(value) {
   return value == null || isNonEmptyString(value);
+}
+
+function hasExactKeys(record, expected) {
+  const keys = Object.keys(record);
+  return keys.length === expected.size && keys.every(key => expected.has(key));
 }
 
 function findOutcomeByReceipt(snapshot, tag) {

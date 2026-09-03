@@ -85,6 +85,14 @@ class VerifiedUpdateInstallCoordinator {
       const canonicalStaged=path.resolve(this.updater.paths.staging,expectedVersion,'LLera-update.bin');
       if (!sameResolvedPath(staged,canonicalStaged)) throw new Error('staged artifact path diverges from canonical verified staging target');
     }
+    // Download and staging can take long enough for watchdog/recovery state to change.
+    // Re-observe immediately before the irreversible install boundary so an update
+    // admitted in normal mode cannot cross into activation after safe mode engages.
+    const installWatchdogProfile=this.watchdog ? await this.watchdog.launchProfile() : {mode:'normal'};
+    if (!installWatchdogProfile || typeof installWatchdogProfile !== 'object' || installWatchdogProfile.mode!=='normal') {
+      const reason=installWatchdogProfile&&installWatchdogProfile.mode==='safe'?'watchdog_safe_mode_before_install':'watchdog_profile_invalid_before_install';
+      const result={ok:false,blocked:true,reason,phase:'pre-install',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,at:this.now()}; this.history.push(result); return result;
+    }
     let installed;
     try {
       installed=await this.installer.install({payloadPath:staged,expectedSha256,version:expectedVersion,selfTestTimeoutMs});

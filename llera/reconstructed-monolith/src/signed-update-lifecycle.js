@@ -42,6 +42,14 @@ function sameResolvedPath(a, b) {
   const right = path.resolve(String(b));
   return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
 }
+async function lstatOrNull(file) {
+  try { return await fsp.lstat(file); }
+  catch (err) { if (err && err.code === 'ENOENT') return null; throw err; }
+}
+function requireRegularBoundStat(stat, label) {
+  if (!stat || !stat.isFile() || stat.isSymbolicLink()) throw new Error(`${label} must be a regular bound file`);
+  return stat;
+}
 
 class SignedUpdateLifecycle {
   constructor({ rootDir, publicKey, fetchImpl = globalThis.fetch, onProgress = () => {} } = {}) {
@@ -116,10 +124,12 @@ class SignedUpdateLifecycle {
     const finalPath = path.join(this.paths.downloads, `${version}.bin`);
     const partPath = `${finalPath}.part`;
     let offset = 0;
+    const partStat = await lstatOrNull(partPath);
+    if (partStat) requireRegularBoundStat(partStat,'download partial artifact');
     if (resume) {
-      try { offset = (await fsp.stat(partPath)).size; } catch { offset = 0; }
+      offset = partStat ? partStat.size : 0;
       if (offset > artifact.size) { await fsp.rm(partPath,{force:true}); offset = 0; }
-    } else await fsp.rm(partPath,{force:true});
+    } else if (partStat) await fsp.rm(partPath,{force:true});
     const headers = offset ? { Range: `bytes=${offset}-` } : {};
     const response = await this.fetchImpl(artifact.url,{headers});
     if (!response || !response.ok) throw new Error(`download failed: ${response && response.status}`);
@@ -131,9 +141,11 @@ class SignedUpdateLifecycle {
         throw new Error('resume content-range mismatch');
       }
     }
-    const handle = await fsp.open(partPath,offset?'a':'w');
+    const openFlags = fs.constants.O_WRONLY | fs.constants.O_CREAT | (offset ? fs.constants.O_APPEND : fs.constants.O_TRUNC) | (fs.constants.O_NOFOLLOW || 0);
+    const handle = await fsp.open(partPath,openFlags,0o600);
     let received = offset;
     try {
+      requireRegularBoundStat(await handle.stat(),'opened download partial artifact');
       for await (const chunk of response.body) {
         const buf = Buffer.from(chunk);
         if (received + buf.length > artifact.size) throw new Error('artifact download exceeded signed size');
@@ -141,10 +153,13 @@ class SignedUpdateLifecycle {
         this.onProgress({phase:'download',received,total:artifact.size,percent:Math.min(100,received/artifact.size*100)});
       }
     } finally { await handle.close(); }
-    const st = await fsp.stat(partPath);
+    const st = requireRegularBoundStat(await fsp.lstat(partPath),'download partial artifact');
     if (st.size !== artifact.size) throw new Error(`artifact size mismatch: ${st.size} != ${artifact.size}`);
     const digest = await sha256File(partPath);
     if (digest.toLowerCase() !== artifact.sha256.toLowerCase()) throw new Error('artifact sha256 mismatch');
+    const existingFinal = await lstatOrNull(finalPath);
+    if (existingFinal && (!existingFinal.isFile() || existingFinal.isSymbolicLink())) throw new Error('download final artifact must be a regular bound file');
+    if (existingFinal) await fsp.rm(finalPath,{force:true});
     await fsp.rename(partPath,finalPath);
     this.onProgress({phase:'verified',received:st.size,total:artifact.size,percent:100});
     return {path:finalPath,sha256:digest,size:st.size};
@@ -152,9 +167,17 @@ class SignedUpdateLifecycle {
   async stageArtifact(manifest, downloadedPath, { verificationReceipt = null } = {}) {
     this._requireVerifiedManifest(manifest,verificationReceipt);
     const version = safeVersionSegment(manifest.version);
+    const expectedDownload = path.join(this.paths.downloads,`${version}.bin`);
+    if (!sameResolvedPath(downloadedPath,expectedDownload)) throw new Error('staging downloaded path binding mismatch');
+    const downloadedStat = requireRegularBoundStat(await lstatOrNull(expectedDownload),'staging downloaded artifact');
+    if (downloadedStat.size !== manifest.artifact.size) throw new Error('staging downloaded artifact size mismatch');
+    const sourceDigest = await sha256File(expectedDownload);
+    if (sourceDigest.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) throw new Error('staging downloaded artifact integrity mismatch');
     const stageDir = path.join(this.paths.staging,version);
     await fsp.rm(stageDir,{recursive:true,force:true}); await fsp.mkdir(stageDir,{recursive:true});
-    const staged = path.join(stageDir,'LLera-update.bin'); await fsp.copyFile(downloadedPath,staged);
+    const staged = path.join(stageDir,'LLera-update.bin'); await fsp.copyFile(expectedDownload,staged);
+    const stagedStat = requireRegularBoundStat(await fsp.lstat(staged),'staged artifact');
+    if (stagedStat.size !== manifest.artifact.size) throw new Error('staged artifact size mismatch');
     const digest = await sha256File(staged);
     if (digest.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) throw new Error('staged artifact integrity mismatch');
     await this._writeJournal({state:'staged',version,staged,sha256:digest,manifestPayloadSha256:this._manifestPayload(manifest).payloadSha256}); return staged;

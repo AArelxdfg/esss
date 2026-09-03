@@ -57,6 +57,7 @@ Module._load = originalLoad;
   const capabilityBroker = {
     coverage() {
       return {
+        supported: Object.keys(capabilityBindings),
         available: Object.keys(capabilityBindings),
         unavailable: [],
         availableCount: 14,
@@ -73,6 +74,8 @@ Module._load = originalLoad;
       return {
         available:[...genericTools],
         unavailable:[],
+        portable:[...genericTools],
+        adapterBacked:[],
         availableCount:genericTools.length,
         unavailableCount:0
       };
@@ -91,6 +94,8 @@ Module._load = originalLoad;
   assert.strictEqual(coverage.genericComputerCount, 48);
   assert.strictEqual(coverage.availableCount, 62);
   assert.strictEqual(coverage.unavailableCount, 0);
+  assert.strictEqual(coverage.attestedCount, 62);
+  assert.strictEqual(coverage.unattestedCount, 0);
   assert.strictEqual(coverage.fullExecutionSurfaceAvailable, true);
 
   for (const tool of Object.keys(capabilityBindings)) {
@@ -111,18 +116,31 @@ Module._load = originalLoad;
   assert.strictEqual(genericCalls.length, 1);
 
   const partialBroker = {
-    coverage() { return { available:['evidence_record'], unavailable:['evidence_verify'] }; },
+    coverage() {
+      return {
+        supported:Object.keys(capabilityBindings),
+        available:['evidence_record'],
+        unavailable:['evidence_verify']
+      };
+    },
     async invoke() { throw new Error('must not be invoked for unavailable specialized tool'); }
   };
   const failClosed = new MonolithAgentToolRouter({ capabilityBroker:partialBroker, computerExecutor });
   await assert.rejects(
     () => failClosed.invoke('evidence_verify', {id:'ev2'}),
-    /specialized MONOLITH capability unavailable/
+    /specialized MONOLITH capability unavailable or unattested/
   );
   assert.strictEqual(genericCalls.length, 1, 'generic executor must not bypass specialized capability gate');
 
   const partialComputerExecutor = {
-    coverage() { return {available:['read_file'],unavailable:genericTools.filter(t=>t!=='read_file')}; },
+    coverage() {
+      return {
+        available:['read_file'],
+        unavailable:genericTools.filter(t=>t!=='read_file'),
+        portable:['read_file'],
+        adapterBacked:[]
+      };
+    },
     async invoke(tool,args,context) { return {route:'computer',tool,args,context}; }
   };
   const genericFailClosed = new MonolithAgentToolRouter({capabilityBroker,computerExecutor:partialComputerExecutor});
@@ -132,7 +150,33 @@ Module._load = originalLoad;
   assert.strictEqual(partialCoverage.routes.write_file,'unavailable-computer');
   await assert.rejects(
     () => genericFailClosed.invoke('write_file',{path:'x',content:'x'}),
-    /computer MONOLITH capability unavailable/
+    /computer MONOLITH capability unavailable or unattested/
+  );
+
+  const spoofedSpecialized = {
+    coverage() {
+      return {supported:['evidence_record'],available:['evidence_verify']};
+    },
+    async invoke() { throw new Error('coverage spoof must not reach invoke'); }
+  };
+  const specializedSpoofGuard = new MonolithAgentToolRouter({capabilityBroker:spoofedSpecialized,computerExecutor});
+  assert.strictEqual(specializedSpoofGuard.coverage().routes.evidence_verify,'unavailable-specialized');
+  await assert.rejects(
+    () => specializedSpoofGuard.invoke('evidence_verify',{}),
+    /unavailable or unattested/
+  );
+
+  const spoofedComputer = {
+    coverage() {
+      return {available:['read_file'],portable:[],adapterBacked:[]};
+    },
+    async invoke() { throw new Error('coverage spoof must not reach invoke'); }
+  };
+  const computerSpoofGuard = new MonolithAgentToolRouter({capabilityBroker,computerExecutor:spoofedComputer});
+  assert.strictEqual(computerSpoofGuard.coverage().routes.read_file,'unavailable-computer');
+  await assert.rejects(
+    () => computerSpoofGuard.invoke('read_file',{}),
+    /unavailable or unattested/
   );
 
   await assert.rejects(
@@ -145,6 +189,9 @@ Module._load = originalLoad;
     specializedExecutors:14,
     computerExecutorRoutes:48,
     fullSurfaceRoutableWhenDependenciesPresent:true,
+    executableCoverageAttestationRequired:true,
+    specializedCoverageSpoofBlocked:true,
+    computerCoverageSpoofBlocked:true,
     specializedFallbackBypassBlocked:true,
     genericAvailabilityMustBeDeclared:true,
     genericUnavailableFailsClosed:true,

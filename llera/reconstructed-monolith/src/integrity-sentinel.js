@@ -51,6 +51,9 @@ function validateManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.files)) {
     return { ok: false, failures: [{ reason: 'manifest-files-required' }] };
   }
+  if (manifest.files.length === 0) {
+    return { ok: false, failures: [{ reason: 'manifest-files-empty' }] };
+  }
 
   const seenPaths = new Set();
   const seenWindowsPaths = new Set();

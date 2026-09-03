@@ -55,7 +55,11 @@ function assertLosslessJsonValue(value, pathName = 'result', seen = new Set(), d
         if (!Object.prototype.hasOwnProperty.call(value, index)) {
           throw invalidWorkResult('work step result contains a sparse array', `${pathName}[${index}]`);
         }
-        assertLosslessJsonValue(value[index], `${pathName}[${index}]`, seen, depth + 1, traversal);
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+          throw invalidWorkResult('work step result array contains an accessor index', `${pathName}[${index}]`);
+        }
+        assertLosslessJsonValue(descriptor.value, `${pathName}[${index}]`, seen, depth + 1, traversal);
       }
       return;
     }

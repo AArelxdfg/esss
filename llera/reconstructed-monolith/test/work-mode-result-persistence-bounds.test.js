@@ -46,3 +46,81 @@ test('Work Mode rejects non-object completion result roots', () => {
     );
   }
 });
+
+test('Work Mode rejects nested values that JSON would silently erase or coerce', () => {
+  const cases = [
+    { value: { nested: { missing: undefined } }, path: 'result.nested.missing' },
+    { value: { nested: { callback() {} } }, path: 'result.nested.callback' },
+    { value: { metric: Number.NaN }, path: 'result.metric' },
+    { value: { metric: Number.POSITIVE_INFINITY }, path: 'result.metric' },
+    { value: { metric: -0 }, path: 'result.metric' },
+  ];
+
+  for (const entry of cases) {
+    assert.throws(
+      () => normalizeWorkResult(entry.value),
+      error => error && error.code === 'WORK_MODE_RESULT_INVALID' && error.path === entry.path
+    );
+  }
+});
+
+test('Work Mode rejects sparse arrays and non-index array properties', () => {
+  const sparse = [];
+  sparse[1] = 'persisted';
+  assert.throws(
+    () => normalizeWorkResult({ values: sparse }),
+    error => error && error.code === 'WORK_MODE_RESULT_INVALID' && error.path === 'result.values[0]'
+  );
+
+  const decorated = ['persisted'];
+  decorated.meta = 'would be dropped';
+  assert.throws(
+    () => normalizeWorkResult({ values: decorated }),
+    error => error && error.code === 'WORK_MODE_RESULT_INVALID' && error.path === 'result.values'
+  );
+});
+
+test('Work Mode rejects non-plain objects instead of persisting a changed representation', () => {
+  class CompletionReceipt {
+    constructor() { this.status = 'verified'; }
+  }
+
+  for (const value of [new Date('2026-09-03T00:00:00Z'), new Map([['status', 'verified']]), new CompletionReceipt()]) {
+    assert.throws(
+      () => normalizeWorkResult({ value }),
+      error => error && error.code === 'WORK_MODE_RESULT_INVALID' && error.path === 'result.value'
+    );
+  }
+});
+
+test('Work Mode rejects accessors without invoking renderer-owned getters', () => {
+  let getterCalls = 0;
+  const payload = {};
+  Object.defineProperty(payload, 'computed', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('getter must never execute');
+    },
+  });
+
+  assert.throws(
+    () => normalizeWorkResult(payload),
+    error => error && error.code === 'WORK_MODE_RESULT_INVALID' && error.path === 'result.computed'
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('Work Mode rejects prototype-sensitive keys and still accepts null-prototype JSON records', () => {
+  const dangerous = JSON.parse('{"__proto__":{"polluted":true}}');
+  assert.throws(
+    () => normalizeWorkResult(dangerous),
+    error => error && error.code === 'WORK_MODE_RESULT_INVALID' && error.path === 'result.__proto__'
+  );
+  assert.equal({}.polluted, undefined);
+
+  const safe = Object.create(null);
+  safe.summary = 'verified';
+  safe.count = 2;
+  assert.deepEqual(normalizeWorkResult(safe), { summary: 'verified', count: 2 });
+});

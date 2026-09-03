@@ -4,7 +4,51 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createMonolithToolRuntime } = require('../../src/monolith-tool-runtime');
 
+const MAX_WORK_RESULT_BYTES = 64 * 1024;
+
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+
+function normalizeWorkResult(value) {
+  if (value == null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    const error = new Error('work step result must be a JSON object');
+    error.code = 'WORK_MODE_RESULT_INVALID';
+    throw error;
+  }
+
+  let encoded;
+  try {
+    encoded = JSON.stringify(value);
+  } catch (cause) {
+    const error = new Error('work step result must be JSON-serializable');
+    error.code = 'WORK_MODE_RESULT_INVALID';
+    error.cause = cause;
+    throw error;
+  }
+
+  if (encoded == null) {
+    const error = new Error('work step result must be JSON-serializable');
+    error.code = 'WORK_MODE_RESULT_INVALID';
+    throw error;
+  }
+
+  const byteLength = Buffer.byteLength(encoded, 'utf8');
+  if (byteLength > MAX_WORK_RESULT_BYTES) {
+    const error = new Error(`work step result exceeds ${MAX_WORK_RESULT_BYTES} bytes`);
+    error.code = 'WORK_MODE_RESULT_TOO_LARGE';
+    error.byteLength = byteLength;
+    error.maxBytes = MAX_WORK_RESULT_BYTES;
+    throw error;
+  }
+
+  const normalized = JSON.parse(encoded);
+  if (!normalized || typeof normalized !== 'object' || Array.isArray(normalized)) {
+    const error = new Error('work step result must normalize to a JSON object');
+    error.code = 'WORK_MODE_RESULT_INVALID';
+    throw error;
+  }
+  return normalized;
+}
 
 class WorkModeService {
   constructor({ missionEngine, userData, onEvent = () => {} } = {}) {
@@ -176,7 +220,11 @@ class WorkModeService {
       result = expectedStepId;
       expectedStepId = null;
     }
-    return this._enqueueMissionOperation(missionId, () => this._completeCurrentStep(missionId, expectedStepId, result));
+    // Checkpoint payloads are durable product state. Bound and normalize renderer- or
+    // planner-provided completion results before they enter the mission mutation queue
+    // so malformed/cyclic/oversized payloads cannot poison mission persistence.
+    const normalizedResult = normalizeWorkResult(result);
+    return this._enqueueMissionOperation(missionId, () => this._completeCurrentStep(missionId, expectedStepId, normalizedResult));
   }
 
   async _completeCurrentStep(missionId, expectedStepId = null, result = {}) {
@@ -208,4 +256,4 @@ class WorkModeService {
   }
 }
 
-module.exports = { WorkModeService };
+module.exports = { WorkModeService, MAX_WORK_RESULT_BYTES, normalizeWorkResult };

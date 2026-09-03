@@ -61,7 +61,8 @@ function validateFinalizationReceipt(receipt, { missionId, evidenceIds = [] } = 
   }
   const strictScore = Number(receipt.strictScore || 0);
   const adversarialScore = Number(receipt.adversarialScore || 0);
-  if (!Number.isFinite(strictScore) || !Number.isFinite(adversarialScore) || strictScore < 0.62 || adversarialScore < 0.62) {
+  if (!Number.isFinite(strictScore) || !Number.isFinite(adversarialScore) ||
+      strictScore < 0.62 || strictScore > 1 || adversarialScore < 0.62 || adversarialScore > 1) {
     return {ok:false, reason:'finalization_receipt_score_reject'};
   }
   const expected = receiptStateKey({

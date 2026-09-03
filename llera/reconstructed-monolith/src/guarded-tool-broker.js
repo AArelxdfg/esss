@@ -1,5 +1,6 @@
 'use strict';
 
+const path = require('node:path');
 const { RESTORED_MONOLITH_TOOLS, MATERIAL_TOOLS, ToolExecutionGuard } = require('./tool-surface');
 const { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS } = require('./monolith-capability-broker');
 const { FailureDoctrine } = require('./failure-doctrine');
@@ -164,7 +165,17 @@ class GuardedMonolithToolBroker {
 
 function normalizeMaterialPath(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
-  return value.trim().replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '').toLowerCase();
+  const raw = value.trim().replace(/\//g, '\\');
+  // Product execution is Windows-first. Canonicalize dot segments, duplicate
+  // separators and path case using win32 rules so a backend acknowledgement cannot
+  // satisfy a material action merely by presenting a syntactically different path.
+  let normalized;
+  try { normalized = path.win32.normalize(raw); }
+  catch (_) { return null; }
+  if (!normalized || normalized === '.') return null;
+  normalized = normalized.replace(/[\\/]+$/, '');
+  if (!normalized) return null;
+  return normalized.toLowerCase();
 }
 
 function requestedMaterialPath(tool, args = {}) {
@@ -199,7 +210,8 @@ function executionSucceeded(tool, result, { material = false, args = {} } = {}) 
 
     // For path-bound file mutations, an acknowledgement for a different target is
     // not evidence that the requested action succeeded. Bind the backend result to
-    // the requested path before allowing verification debt to be opened/cleared.
+    // the canonical requested path before allowing verification debt to be
+    // opened/cleared.
     const requestedPath = requestedMaterialPath(tool, args);
     if (requestedPath) {
       const acknowledgedPath = acknowledgedMaterialPath(result);

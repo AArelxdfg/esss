@@ -36,6 +36,29 @@ test('verified learning init rejects malformed durable receipt state fail-closed
   await expectCorrupt({ schema: 1, receipts: { [sha]: { status: 'committed', missionId: 'm1', outcomeId: 'o1', skillCandidateId: {} } } }, 'invalid_skill_candidate_id');
 });
 
+test('verified learning init rejects ambiguous status-specific durable receipt shapes', async () => {
+  await expectCorrupt(
+    { schema: 1, receipts: { [sha]: { status: 'applying', missionId: 'm1', outcomeId: 'unexpected' } } },
+    'invalid_applying_shape'
+  );
+  await expectCorrupt(
+    { schema: 1, receipts: { [sha]: { status: 'applying', missionId: 'm1', unknown: true } } },
+    'invalid_applying_shape'
+  );
+  await expectCorrupt(
+    { schema: 1, receipts: { [sha]: { status: 'committed', missionId: 'm1', skillCandidateId: null } } },
+    'invalid_committed_shape'
+  );
+  await expectCorrupt(
+    { schema: 1, receipts: { [sha]: { status: 'committed', missionId: 'm1', outcomeId: 'o1' } } },
+    'invalid_committed_shape'
+  );
+  await expectCorrupt(
+    { schema: 1, receipts: { [sha]: { status: 'committed', missionId: 'm1', outcomeId: 'o1', skillCandidateId: null, extra: 'forged' } } },
+    'invalid_committed_shape'
+  );
+});
+
 test('verified learning init preserves bounded applying and committed restart state', async () => {
   const applying = { schema: 1, receipts: { [sha]: { status: 'applying', missionId: 'mission-applying' } } };
   const applyingCoordinator = makeCoordinator(applying);

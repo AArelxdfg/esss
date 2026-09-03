@@ -36,21 +36,30 @@ class VisionPipeline {
     const source = input.source || kind;
     if (!source.trim() || /[\r\n\0]/.test(source)) throw new Error('unsafe vision input source');
     const bytes = Buffer.from(input.bytes);
+    const byteCount = bytes.length;
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
     return {
       kind,
       mime,
       bytes,
+      byteCount,
       sha256: digest,
       source,
-      inputId: `vision_${crypto.createHash('sha256').update(JSON.stringify({kind,mime,source,sha256:digest})).digest('hex').slice(0, 24)}`
+      inputId: `vision_${crypto.createHash('sha256').update(JSON.stringify({kind,mime,source,sha256:digest,byteCount})).digest('hex').slice(0, 24)}`
     };
   }
 
   async analyze(input, { pressure = 'normal', visionModel, ocr } = {}) {
     const n = this.normalizeInput(input);
     if (pressure === 'critical') {
-      return { ok: false, blocked: true, reason: 'host-critical-pressure', sha256: n.sha256 };
+      return {
+        ok: false,
+        blocked: true,
+        reason: 'host-critical-pressure',
+        inputId: n.inputId,
+        sha256: n.sha256,
+        byteCount: n.byteCount
+      };
     }
     if (this.active) throw new Error('vision single-flight violation');
 
@@ -58,6 +67,7 @@ class VisionPipeline {
       id: crypto.randomUUID(),
       startedAt: this.now(),
       sha256: n.sha256,
+      byteCount: n.byteCount,
       inputId: n.inputId,
       kind: n.kind
     };
@@ -113,6 +123,7 @@ class VisionPipeline {
         kind: n.kind,
         source: n.source,
         sha256: n.sha256,
+        byteCount: n.byteCount,
         inputId: n.inputId,
         text,
         vision,
@@ -125,6 +136,7 @@ class VisionPipeline {
         degraded: result.degraded,
         warnings: warnings.map((w) => ({ ...w })),
         sha256: n.sha256,
+        byteCount: n.byteCount,
         inputId: n.inputId,
         completedAt: result.completedAt
       });

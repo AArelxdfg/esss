@@ -18,6 +18,15 @@ function jaccard(a, b) {
 function stableId(prefix, seed) {
   return `${prefix}_${crypto.createHash('sha256').update(String(seed)).digest('hex').slice(0, 20)}`;
 }
+function normalizeUnitConfidence(value, { defaultValue = 0, context = 'verification confidence' } = {}) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    const error = new Error(`${context} must be a finite number between 0 and 1`);
+    error.code = 'OUTCOME_VERIFICATION_CONFIDENCE_INVALID';
+    throw error;
+  }
+  return value;
+}
 function inspectEvidenceIds(values) {
   if (values == null) return { ok: true, ids: [] };
   if (!Array.isArray(values)) return { ok: false, ids: [], reason: 'evidence_ids_array_required' };
@@ -111,11 +120,12 @@ class OutcomeMemory {
     if (!['completed', 'failed', 'partial'].includes(status)) throw new Error('invalid outcome status');
 
     const suppliedEvidenceIds = requireEvidenceIds(verification.evidenceIds, { context: 'outcome verification' });
+    const unverifiedConfidence = normalizeUnitConfidence(verification.confidence, { context: 'outcome verification confidence' });
     const receiptValidation = status === 'completed'
       ? validateFinalizationReceipt(verification.receipt, { missionId, evidenceIds:suppliedEvidenceIds })
       : {ok:false, reason:'non_completed_outcome'};
     const attemptedVerifiedCompletion = status === 'completed' && (
-      verification.strict === true || verification.adversarial === true || Number(verification.confidence || 0) >= 0.62 || suppliedEvidenceIds.length > 0 || verification.receipt
+      verification.strict === true || verification.adversarial === true || unverifiedConfidence >= 0.62 || suppliedEvidenceIds.length > 0 || verification.receipt
     );
     if (attemptedVerifiedCompletion && !receiptValidation.ok) {
       const error = new Error(`verified completed outcome rejected: ${receiptValidation.reason}`);
@@ -128,7 +138,7 @@ class OutcomeMemory {
     const verificationEvidenceIds = verified ? receiptValidation.evidenceIds : suppliedEvidenceIds;
     const strict = verified ? true : verification.strict === true;
     const adversarial = verified ? true : verification.adversarial === true;
-    const confidence = verified ? receiptValidation.confidence : Number(verification.confidence || 0);
+    const confidence = verified ? receiptValidation.confidence : unverifiedConfidence;
 
     const at = this.now();
     const record = {
@@ -203,10 +213,11 @@ class OutcomeMemory {
     if (!sourceReceiptSha256 || verification.receiptSha256 !== sourceReceiptSha256) {
       throw new Error('skill candidate requires the source verified finalization receipt');
     }
+    const verificationConfidence = normalizeUnitConfidence(verification.confidence, { context: 'skill verification confidence' });
     const verified =
       verification.strict === true &&
       verification.adversarial === true &&
-      Number(verification.confidence || 0) >= 0.62;
+      verificationConfidence >= 0.62;
     if (!verified) {
       throw new Error('skill candidate requires strict + adversarial verification at >=0.62 confidence');
     }
@@ -243,7 +254,7 @@ class OutcomeMemory {
       trust: 'candidate-only',
       executable: false,
       approvalRequired: true,
-      verificationConfidence: Number(verification.confidence),
+      verificationConfidence,
       at
     };
     this.state.skillCandidates.push(candidate);
@@ -269,4 +280,4 @@ class OutcomeMemory {
   }
 }
 
-module.exports = { OutcomeMemory, validateFinalizationReceipt, inspectEvidenceIds };
+module.exports = { OutcomeMemory, validateFinalizationReceipt, inspectEvidenceIds, normalizeUnitConfidence };

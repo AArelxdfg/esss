@@ -10,9 +10,17 @@ class HostPressureHysteresis {
     recoveryDwellMs = 5000,
     now = () => Date.now()
   } = {}) {
-    if (!(0 <= elevatedExit && elevatedExit < elevatedEnter && elevatedEnter < criticalEnter && criticalExit < criticalEnter)) {
+    const thresholds = [elevatedExit, elevatedEnter, criticalExit, criticalEnter];
+    if (
+      thresholds.some(value => !Number.isFinite(value) || value < 0 || value > 1) ||
+      !(elevatedExit < elevatedEnter && elevatedEnter < criticalExit && criticalExit < criticalEnter)
+    ) {
       throw new Error('invalid hysteresis thresholds');
     }
+    if (!Number.isFinite(dwellMs) || dwellMs < 0 || !Number.isFinite(recoveryDwellMs) || recoveryDwellMs < 0) {
+      throw new Error('invalid hysteresis dwell');
+    }
+    if (typeof now !== 'function') throw new Error('now must be a function');
     this.thresholds = { elevatedEnter, elevatedExit, criticalEnter, criticalExit };
     this.dwellMs = dwellMs;
     this.recoveryDwellMs = recoveryDwellMs;

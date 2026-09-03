@@ -28,6 +28,10 @@ class VerifiedUpdateInstallCoordinator {
     if (!isCanonicalVersion(expectedVersion)) {
       const result={ok:false,blocked:true,reason:'signed_manifest_version_invalid',version:null,manifestPayloadSha256:receiptPayloadSha256,at:this.now()}; this.history.push(result); return result;
     }
+    const receiptVersion=verificationReceipt.version == null ? null : String(verificationReceipt.version);
+    if (receiptVersion != null && receiptVersion !== expectedVersion) {
+      const result={ok:false,blocked:true,reason:'signed_manifest_receipt_version_mismatch',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,receiptVersion,at:this.now()}; this.history.push(result); return result;
+    }
     const expectedSha256=String(manifest&&manifest.artifact&&manifest.artifact.sha256||'').trim().toLowerCase();
     if (!/^[a-f0-9]{64}$/.test(expectedSha256)) {
       const result={ok:false,blocked:true,reason:'signed_manifest_artifact_sha256_invalid',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,at:this.now()}; this.history.push(result); return result;
@@ -38,6 +42,11 @@ class VerifiedUpdateInstallCoordinator {
     }
     if (receiptArtifactSha256!==expectedSha256) {
       const result={ok:false,blocked:true,reason:'signed_manifest_receipt_artifact_mismatch',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,at:this.now()}; this.history.push(result); return result;
+    }
+    const manifestArtifactSize=manifest&&manifest.artifact&&manifest.artifact.size;
+    const receiptArtifactSize=verificationReceipt.artifactSize;
+    if (receiptArtifactSize != null && manifestArtifactSize != null && receiptArtifactSize !== manifestArtifactSize) {
+      const result={ok:false,blocked:true,reason:'signed_manifest_receipt_artifact_size_mismatch',version:expectedVersion,manifestPayloadSha256:receiptPayloadSha256,artifactSha256:expectedSha256,artifactSize:manifestArtifactSize,receiptArtifactSize,at:this.now()}; this.history.push(result); return result;
     }
     const watchdogProfile=this.watchdog ? await this.watchdog.launchProfile() : {mode:'normal'};
     if (!watchdogProfile || typeof watchdogProfile !== 'object' || watchdogProfile.mode!=='normal') {

@@ -302,6 +302,8 @@ class MissionEngine {
                c.payload &&
                c.payload.type === 'step-complete' &&
                c.payload.stepId === step.id &&
+               Array.isArray(c.completedStepIds) &&
+               c.completedStepIds.includes(step.id) &&
                c.stepAttempt === step.attempts &&
                c.stepStartedAt === step.startedAt
              );
@@ -407,6 +409,15 @@ class MissionEngine {
         if (checkpoint.currentStepId != null && !stepIdSet.has(checkpoint.currentStepId)) throw new Error(`invalid checkpoint current step in mission ${id}`);
         if (checkpoint.completedStepIds !== undefined && (!Array.isArray(checkpoint.completedStepIds) || checkpoint.completedStepIds.some(stepId => !stepIdSet.has(stepId)))) {
           throw new Error(`invalid checkpoint completed step ids in mission ${id}`);
+        }
+        if (checkpoint.payload.type === 'step-complete') {
+          const completedStepId = checkpoint.payload.stepId;
+          if (!stepIdSet.has(completedStepId) || !Array.isArray(checkpoint.completedStepIds) || !checkpoint.completedStepIds.includes(completedStepId)) {
+            throw new Error(`invalid step-complete checkpoint binding in mission ${id}`);
+          }
+          if (!Number.isSafeInteger(checkpoint.stepAttempt) || checkpoint.stepAttempt < 1 || checkpoint.stepAttempt > mission.budget.maxAttemptsPerStep || !Number.isFinite(checkpoint.stepStartedAt)) {
+            throw new Error(`invalid step-complete checkpoint runtime binding in mission ${id}`);
+          }
         }
         if (checkpoint.previousCheckpointId !== undefined) {
           const expectedPrevious = index === 0 ? null : mission.checkpoints[index - 1].id;

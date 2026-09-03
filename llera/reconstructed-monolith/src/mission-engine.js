@@ -2,12 +2,21 @@
 
 const crypto = require('crypto');
 
+const MISSION_STATUSES = new Set(['pending', 'running', 'paused', 'interrupted', 'completed', 'failed']);
+const STEP_STATUSES = new Set(['pending', 'running', 'completed', 'failed']);
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
 function stableId(prefix, seed) {
   return `${prefix}_${crypto.createHash('sha256').update(String(seed)).digest('hex').slice(0, 16)}`;
+}
+
+function positiveSafeInteger(value, fallback) {
+  if (value == null) return fallback;
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error('mission budget values must be positive safe integers');
+  return value;
 }
 
 class MissionEngine {
@@ -111,8 +120,8 @@ class MissionEngine {
         currentStepId: null,
         resumeCount: 0,
         budget: {
-          maxSteps: Number.isFinite(budget.maxSteps) ? budget.maxSteps : normalizedSteps.length,
-          maxAttemptsPerStep: Number.isFinite(budget.maxAttemptsPerStep) ? budget.maxAttemptsPerStep : 3
+          maxSteps: positiveSafeInteger(budget.maxSteps, normalizedSteps.length),
+          maxAttemptsPerStep: positiveSafeInteger(budget.maxAttemptsPerStep, 3)
         },
         steps: normalizedSteps,
         checkpoints: [],
@@ -362,12 +371,27 @@ class MissionEngine {
       if (!mission || mission.id !== id || !Array.isArray(mission.steps) || !Array.isArray(mission.checkpoints) || !Array.isArray(mission.toolTrace)) {
         throw new Error(`corrupt mission record ${id}`);
       }
+      if (!['conversation', 'work'].includes(mission.mode) || !MISSION_STATUSES.has(mission.status)) {
+        throw new Error(`invalid mission mode/status in ${id}`);
+      }
+      if (!Number.isSafeInteger(mission.resumeCount) || mission.resumeCount < 0) {
+        throw new Error(`invalid resume count in mission ${id}`);
+      }
+      if (!mission.budget || !Number.isSafeInteger(mission.budget.maxSteps) || mission.budget.maxSteps < mission.steps.length || !Number.isSafeInteger(mission.budget.maxAttemptsPerStep) || mission.budget.maxAttemptsPerStep < 1) {
+        throw new Error(`invalid mission budget in ${id}`);
+      }
       const stepIds = mission.steps.map(step => step && step.id);
       if (stepIds.some(stepId => typeof stepId !== 'string' || !stepId) || new Set(stepIds).size !== stepIds.length) {
         throw new Error(`duplicate or invalid step id in mission ${id}`);
       }
       const stepIdSet = new Set(stepIds);
+      if (mission.currentStepId != null && !stepIdSet.has(mission.currentStepId)) {
+        throw new Error(`invalid current step id in mission ${id}`);
+      }
       for (const step of mission.steps) {
+        if (!STEP_STATUSES.has(step.status) || !Number.isSafeInteger(step.attempts) || step.attempts < 0 || step.attempts > mission.budget.maxAttemptsPerStep) {
+          throw new Error(`invalid step runtime state in mission ${id}`);
+        }
         if (!Array.isArray(step.dependencies) || step.dependencies.some(dep => !stepIdSet.has(dep))) {
           throw new Error(`invalid step dependency in mission ${id}`);
         }
@@ -379,7 +403,11 @@ class MissionEngine {
       }
       for (let index = 0; index < mission.checkpoints.length; index += 1) {
         const checkpoint = mission.checkpoints[index];
-        if (!checkpoint.payload || typeof checkpoint.payload !== 'object') throw new Error(`invalid checkpoint payload in mission ${id}`);
+        if (!checkpoint.payload || typeof checkpoint.payload !== 'object' || Array.isArray(checkpoint.payload)) throw new Error(`invalid checkpoint payload in mission ${id}`);
+        if (checkpoint.currentStepId != null && !stepIdSet.has(checkpoint.currentStepId)) throw new Error(`invalid checkpoint current step in mission ${id}`);
+        if (checkpoint.completedStepIds !== undefined && (!Array.isArray(checkpoint.completedStepIds) || checkpoint.completedStepIds.some(stepId => !stepIdSet.has(stepId)))) {
+          throw new Error(`invalid checkpoint completed step ids in mission ${id}`);
+        }
         if (checkpoint.previousCheckpointId !== undefined) {
           const expectedPrevious = index === 0 ? null : mission.checkpoints[index - 1].id;
           if (checkpoint.previousCheckpointId !== expectedPrevious) throw new Error(`checkpoint chain mismatch in mission ${id}`);

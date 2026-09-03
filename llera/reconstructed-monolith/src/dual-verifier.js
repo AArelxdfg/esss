@@ -9,6 +9,7 @@ const EVIDENCE_BINDING_REASONS = Object.freeze([
   'invalid_evidence_tool',
   'invalid_evidence_byte_count',
   'invalid_evidence_binding_sha256',
+  'invalid_evidence_timestamp',
   'evidence_id_binding_mismatch',
   'evidence_binding_seal_mismatch',
   'evidence_summary_too_long'
@@ -23,6 +24,9 @@ function validateEnrichedEvidence(item) {
   if (!Number.isSafeInteger(item.byteCount) || item.byteCount < 0) return {ok:false, reason:'invalid_evidence_byte_count'};
   if (typeof item.bindingSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.bindingSha256)) {
     return {ok:false, reason:'invalid_evidence_binding_sha256'};
+  }
+  if (typeof item.observedAt !== 'string' || !Number.isFinite(Date.parse(item.observedAt))) {
+    return {ok:false, reason:'invalid_evidence_timestamp'};
   }
   if (item.summary !== undefined && String(item.summary).length > SUMMARY_MAX_CHARS) {
     return {ok:false, reason:'evidence_summary_too_long'};
@@ -124,7 +128,7 @@ class StrictEvidenceVerifier {
       const unknownEvidenceIds = refs.filter(id => !knownIds.has(id));
       const missingEvidenceRefs = this.requireEvidenceRefs && refs.length === 0;
       const bindingOk = !missingEvidenceRefs && unknownEvidenceIds.length === 0;
-      const declaredOk = Boolean(raw && raw.ok);
+      const declaredOk = Boolean(raw) && raw.ok === true;
       return {
         name: raw && raw.name ? String(raw.name) : `strict_check_${index + 1}`,
         ok: declaredOk && bindingOk,
@@ -191,7 +195,7 @@ class AdversarialEvidenceVerifier {
       const unknownEvidenceIds = refs.filter(id => !knownIds.has(id));
       const missingEvidenceRefs = this.requireEvidenceRefs && refs.length === 0;
       const bindingOk = !missingEvidenceRefs && unknownEvidenceIds.length === 0;
-      const declaredOk = Boolean(raw && raw.ok);
+      const declaredOk = Boolean(raw) && raw.ok === true;
       const severity = ['critical','high','normal'].includes(String(raw && raw.severity || '').toLowerCase())
         ? String(raw.severity).toLowerCase()
         : 'normal';

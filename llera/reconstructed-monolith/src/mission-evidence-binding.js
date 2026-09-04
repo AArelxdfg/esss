@@ -71,8 +71,7 @@ function ledgerEntries(ledger) {
   return entries;
 }
 
-function resolveEntry(ledger, id) {
-  const entries = ledgerEntries(ledger);
+function resolveEntry(entries, id) {
   const matches = entries.filter(candidate => candidate && candidate.id === id);
   if (matches.length === 0) {
     throw evidenceBindingError('MISSION_EVIDENCE_NOT_FOUND', `evidence not found: ${id}`);
@@ -168,8 +167,14 @@ function validateEvidenceBindings({ evidenceIds, ledger, missionId, stepId, tool
     );
   }
 
+  // Resolve one immutable validation view for the entire binding operation. Calling
+  // ledger.snapshot() separately for every ID lets a mutable/adversarial ledger
+  // present mutually inconsistent generations and creates a TOCTOU window across a
+  // single verifier decision.
+  const entries = ledgerEntries(ledger);
+
   return ids.map(id => {
-    const entry = resolveEntry(ledger, id);
+    const entry = resolveEntry(entries, id);
     // Validate the untrusted ledger record before comparing it with trusted mission
     // context so malformed identifier shapes receive a stable integrity failure.
     validateEntryIntegrity(entry, id);

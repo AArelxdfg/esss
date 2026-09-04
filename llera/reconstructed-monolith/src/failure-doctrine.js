@@ -12,6 +12,7 @@ const FAILURE_CLASS = Object.freeze({
 });
 
 const FAILURE_CLASSES = new Set(Object.values(FAILURE_CLASS));
+const MAX_RESTORE_TRACE_ITEMS = 4096;
 
 function stableFingerprint(value) {
   const stack = new WeakSet();
@@ -153,6 +154,17 @@ class FailureDoctrine {
 
   restore(toolTrace = []) {
     const diagnostics = { restored: 0, legacyUnsealed: 0, rejected: 0 };
+    if (!Array.isArray(toolTrace)) {
+      diagnostics.rejected = 1;
+      this.restoreDiagnostics = diagnostics;
+      return { ...diagnostics };
+    }
+    if (toolTrace.length > MAX_RESTORE_TRACE_ITEMS) {
+      diagnostics.rejected = toolTrace.length;
+      this.restoreDiagnostics = diagnostics;
+      return { ...diagnostics };
+    }
+
     const known = new Set(this.history.map(failureEventIdentity));
 
     for (const item of toolTrace) {
@@ -210,6 +222,7 @@ class FailureDoctrine {
 module.exports = {
   FailureDoctrine,
   FAILURE_CLASS,
+  MAX_RESTORE_TRACE_ITEMS,
   stableFingerprint,
   failureEventSeal,
   failureEventIdentity,

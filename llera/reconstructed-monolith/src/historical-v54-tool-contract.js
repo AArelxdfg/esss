@@ -20,15 +20,27 @@ const HISTORICAL_V54_AGENT_TOOLS = Object.freeze([
   'mission_status','system_info'
 ]);
 
+function validatedCandidateTools(candidate) {
+  if (!Array.isArray(candidate)) return [];
+  for (const tool of candidate) {
+    // Tool identities cross a parity/security boundary. Never coerce arbitrary
+    // objects here: Array#sort/String coercion can execute attacker-controlled
+    // valueOf/toString hooks while merely checking the advertised tool surface.
+    if (typeof tool !== 'string') throw new TypeError('tool identity must be a string');
+  }
+  return candidate;
+}
+
 function compareToolSurface(candidate = []) {
+  const candidateTools = validatedCandidateTools(candidate);
   const historical = new Set(HISTORICAL_V54_AGENT_TOOLS);
-  const current = new Set(Array.isArray(candidate) ? candidate : []);
+  const current = new Set(candidateTools);
   const missingHistorical = HISTORICAL_V54_AGENT_TOOLS.filter(tool => !current.has(tool));
   const nonHistorical = [...current].filter(tool => !historical.has(tool)).sort();
-  const duplicateCount = Array.isArray(candidate) ? candidate.length - current.size : 0;
+  const duplicateCount = candidateTools.length - current.size;
   return {
     historicalCount: HISTORICAL_V54_AGENT_TOOLS.length,
-    candidateCount: Array.isArray(candidate) ? candidate.length : 0,
+    candidateCount: candidateTools.length,
     uniqueCandidateCount: current.size,
     duplicateCount,
     missingHistorical,

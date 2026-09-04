@@ -1,9 +1,14 @@
 'use strict';
 
 const { RESTORED_MONOLITH_TOOLS } = require('./tool-surface');
-const { CAPABILITY_TOOL_BINDINGS } = require('./monolith-capability-broker');
+const {
+  CAPABILITY_TOOL_BINDINGS,
+  HISTORICAL_V54_CAPABILITY_ALIASES,
+  normalizeCapabilityTool
+} = require('./monolith-capability-broker');
 
 const SPECIALIZED_TOOLS = new Set(Object.keys(CAPABILITY_TOOL_BINDINGS));
+const HISTORICAL_ALIAS_TOOLS = new Set(Object.keys(HISTORICAL_V54_CAPABILITY_ALIASES));
 const RESTORED_TOOL_SET = new Set(RESTORED_MONOLITH_TOOLS);
 
 function toStringSet(value) {
@@ -12,9 +17,10 @@ function toStringSet(value) {
 }
 
 function capabilityAttestation(coverage, tool) {
+  const normalizedTool = normalizeCapabilityTool(tool);
   const available = toStringSet(coverage && coverage.available);
   const supported = toStringSet(coverage && coverage.supported);
-  return available.has(tool) && supported.has(tool);
+  return available.has(normalizedTool) && supported.has(normalizedTool);
 }
 
 function computerAttestation(coverage, tool) {
@@ -41,10 +47,16 @@ function assertToolSurfaceIntegrity() {
       throw new Error(`specialized MONOLITH binding is outside declared tool surface: ${tool}`);
     }
   }
+  for (const [historical, reconstructed] of Object.entries(HISTORICAL_V54_CAPABILITY_ALIASES)) {
+    if (!SPECIALIZED_TOOLS.has(reconstructed)) {
+      throw new Error(`historical V5.4 alias has no specialized target: ${historical} -> ${reconstructed}`);
+    }
+  }
   return {
     declaredCount: RESTORED_MONOLITH_TOOLS.length,
     uniqueCount: RESTORED_TOOL_SET.size,
     specializedCount: SPECIALIZED_TOOLS.size,
+    historicalAliasCount: HISTORICAL_ALIAS_TOOLS.size,
     genericComputerCount: RESTORED_TOOL_SET.size - SPECIALIZED_TOOLS.size
   };
 }
@@ -86,10 +98,18 @@ class MonolithAgentToolRouter {
       if (!ok) unattested.push(tool);
     }
 
+    const historicalCompatibility = Object.keys(HISTORICAL_V54_CAPABILITY_ALIASES).map(tool => ({
+      tool,
+      target: normalizeCapabilityTool(tool),
+      route: 'specialized-compat',
+      available: capabilityAttestation(capability, tool)
+    }));
+
     return {
       declaredCount: TOOL_SURFACE_INTEGRITY.declaredCount,
       uniqueDeclaredCount: TOOL_SURFACE_INTEGRITY.uniqueCount,
       specializedCount: TOOL_SURFACE_INTEGRITY.specializedCount,
+      historicalAliasCount: TOOL_SURFACE_INTEGRITY.historicalAliasCount,
       genericComputerCount: TOOL_SURFACE_INTEGRITY.genericComputerCount,
       availableCount: available.length,
       unavailableCount: unavailable.length,
@@ -99,6 +119,8 @@ class MonolithAgentToolRouter {
       unavailable,
       unattested,
       routes,
+      historicalCompatibility,
+      historicalCompatibilityAvailableCount: historicalCompatibility.filter(item => item.available).length,
       specializedCoverage: capability || null,
       computerCoverage: computer || null,
       toolSurfaceIntegrity: TOOL_SURFACE_INTEGRITY,
@@ -107,11 +129,14 @@ class MonolithAgentToolRouter {
   }
 
   async invoke(tool, args = {}, context = {}) {
-    if (!RESTORED_TOOL_SET.has(tool)) {
+    const isHistoricalAlias = HISTORICAL_ALIAS_TOOLS.has(tool);
+    const normalizedTool = normalizeCapabilityTool(tool);
+
+    if (!RESTORED_TOOL_SET.has(tool) && !isHistoricalAlias) {
       throw new Error(`unknown MONOLITH tool: ${tool}`);
     }
 
-    if (SPECIALIZED_TOOLS.has(tool)) {
+    if (SPECIALIZED_TOOLS.has(normalizedTool)) {
       const coverage = this.capabilityBroker.coverage();
       if (!capabilityAttestation(coverage, tool)) {
         throw new Error(`specialized MONOLITH capability unavailable or unattested: ${tool}`);
@@ -127,6 +152,7 @@ class MonolithAgentToolRouter {
   }
 
   routeFor(tool) {
+    if (HISTORICAL_ALIAS_TOOLS.has(tool)) return 'specialized-compat';
     if (!RESTORED_TOOL_SET.has(tool)) return 'unknown';
     return SPECIALIZED_TOOLS.has(tool) ? 'specialized' : 'computer';
   }
@@ -135,6 +161,7 @@ class MonolithAgentToolRouter {
 module.exports = {
   MonolithAgentToolRouter,
   SPECIALIZED_TOOLS,
+  HISTORICAL_ALIAS_TOOLS,
   RESTORED_TOOL_SET,
   TOOL_SURFACE_INTEGRITY,
   assertToolSurfaceIntegrity,

@@ -46,13 +46,29 @@ function validateManifestPath(value) {
   return { ok: true, normalizedPath };
 }
 
+function validateManifestIdentity(manifest) {
+  const failures = [];
+  if (manifest.schema !== undefined && (!Number.isSafeInteger(manifest.schema) || manifest.schema <= 0)) {
+    failures.push({ reason: 'invalid-schema' });
+  }
+  if (manifest.product !== undefined && (typeof manifest.product !== 'string' || !manifest.product.trim())) {
+    failures.push({ reason: 'invalid-product' });
+  }
+  if (manifest.version !== undefined && typeof manifest.version !== 'string') {
+    failures.push({ reason: 'invalid-version' });
+  }
+  return failures;
+}
+
 function validateManifest(manifest) {
   const failures = [];
-  if (!manifest || typeof manifest !== 'object' || !Array.isArray(manifest.files)) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest) || !Array.isArray(manifest.files)) {
     return { ok: false, failures: [{ reason: 'manifest-files-required' }] };
   }
+  failures.push(...validateManifestIdentity(manifest));
   if (manifest.files.length === 0) {
-    return { ok: false, failures: [{ reason: 'manifest-files-empty' }] };
+    failures.push({ reason: 'manifest-files-empty' });
+    return { ok: false, failures };
   }
 
   const seenPaths = new Set();
@@ -93,10 +109,22 @@ function validateManifest(manifest) {
 }
 
 function canonicalManifestPayload(manifest) {
-  const files = [...(manifest.files || [])]
+  const validation = validateManifest(manifest);
+  if (!validation.ok) {
+    const error = new Error('invalid integrity manifest');
+    error.code = 'INTEGRITY_MANIFEST_INVALID';
+    error.failures = validation.failures;
+    throw error;
+  }
+  const files = [...manifest.files]
     .map((x) => ({ path: normalizeManifestPath(x.path), sha256: x.sha256.toLowerCase(), size: x.size }))
     .sort((a, b) => a.path.localeCompare(b.path));
-  return JSON.stringify({ schema: manifest.schema || 1, product: manifest.product || 'LLera', version: manifest.version || '', files });
+  return JSON.stringify({
+    schema: manifest.schema === undefined ? 1 : manifest.schema,
+    product: manifest.product === undefined ? 'LLera' : manifest.product,
+    version: manifest.version === undefined ? '' : manifest.version,
+    files,
+  });
 }
 
 function isPathWithin(root, target) {
@@ -208,4 +236,13 @@ class IntegritySentinel {
   }
 }
 
-module.exports = { IntegritySentinel, sha256Bytes, canonicalManifestPayload, isPathWithin, validateManifest, validateManifestPath, normalizeManifestPath };
+module.exports = {
+  IntegritySentinel,
+  sha256Bytes,
+  canonicalManifestPayload,
+  isPathWithin,
+  validateManifest,
+  validateManifestIdentity,
+  validateManifestPath,
+  normalizeManifestPath,
+};

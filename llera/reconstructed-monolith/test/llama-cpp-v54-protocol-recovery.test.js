@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { installV54ProtocolRecovery } = require('../src/llama-cpp-v54-protocol-recovery');
+const { installV54ProtocolRecovery, isDegenerate } = require('../src/llama-cpp-v54-protocol-recovery');
 
 function response(status, body) {
   return { ok: status >= 200 && status < 300, status, async json() { return body; } };
@@ -50,6 +50,7 @@ test('V5.4 compatibility falls through to llama.cpp raw /completion', async () =
   assert.ok(calls[1].body.prompt.includes('Sistem: system'));
   assert.ok(calls[1].body.prompt.includes('Kullanıcı: hello'));
   assert.equal(calls[1].body.stream, false);
+  assert.deepEqual(calls[1].body.stop, ['\nKullanıcı:', '\nSistem:', '\nAraç:', '\nLLera:']);
 });
 
 test('caller abort never triggers a recovery or raw retry', async () => {
@@ -63,4 +64,26 @@ test('caller abort never triggers a recovery or raw retry', async () => {
   const backend = new AbortBackend(async () => { fetchCalls += 1; return response(200, {}); });
   await assert.rejects(() => backend.chatCompletion({ messages: [{ role: 'user', content: 'x' }] }), error => error.code === 'LLAMA_INFERENCE_ABORTED');
   assert.equal(fetchCalls, 0);
+});
+
+test('unterminated reasoning blocks are never accepted as user-visible recovery output', async () => {
+  assert.equal(isDegenerate('<think>private chain that never closes'), true);
+  assert.equal(isDegenerate('<analysis>private analysis that never closes'), true);
+
+  const calls = [];
+  const backend = new FakeBackend(async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    if (url.endsWith('/v1/chat/completions')) {
+      return response(200, { choices: [{ message: { content: '<think>unfinished hidden reasoning' }, finish_reason: 'stop' }] });
+    }
+    if (url.endsWith('/completion')) {
+      return response(200, { content: 'VISIBLE RECOVERY ONLY' });
+    }
+    throw new Error(`unexpected ${url}`);
+  });
+
+  const result = await backend.chatCompletion({ messages: [{ role: 'user', content: 'status' }] });
+  assert.equal(result.content, 'VISIBLE RECOVERY ONLY');
+  assert.equal(result.protocol, 'raw');
+  assert.equal(calls.length, 2);
 });

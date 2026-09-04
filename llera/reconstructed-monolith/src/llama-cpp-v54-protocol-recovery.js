@@ -2,9 +2,17 @@
 
 const INSTALL_MARK = Symbol.for('llera.v54.protocolRecoveryInstalled');
 
+function stripReasoning(text) {
+  return String(text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
+    .replace(/<think>[\s\S]*$/gi, '')
+    .replace(/<analysis>[\s\S]*$/gi, '');
+}
+
 function isDegenerate(text) {
   if (typeof text !== 'string') return true;
-  const value = text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<analysis>[\s\S]*?<\/analysis>/gi, '').trim();
+  const value = stripReasoning(text).trim();
   if (!value) return true;
   if (/^(?:\.{2,}|…+|[-_*#`~|:;!?]+)$/u.test(value)) return true;
   const letters = value.match(/[\p{L}\p{N}]/gu) || [];
@@ -12,9 +20,7 @@ function isDegenerate(text) {
 }
 
 function cleanReply(text) {
-  return String(text || '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<analysis>[\s\S]*?<\/analysis>/gi, '')
+  return stripReasoning(text)
     .replace(/^assistant\s*[:：]\s*/i, '')
     .trim();
 }
@@ -136,7 +142,7 @@ async function rawCompletion(instance, { messages, maxTokens, temperature, signa
         temperature: normalizeTemperature(temperature),
         top_p: 0.92,
         stream: false,
-        stop: ['\nKullanıcı:', '\nSistem:'],
+        stop: ['\nKullanıcı:', '\nSistem:', '\nAraç:', '\nLLera:'],
       }),
       signal: abortSignal,
     });

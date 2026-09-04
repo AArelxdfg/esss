@@ -2,6 +2,9 @@
 
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { LlamaCppProcessBackend } = require('../src/llama-cpp-process-backend');
+const { installV54ProtocolRecovery } = require('../src/llama-cpp-v54-protocol-recovery');
+installV54ProtocolRecovery(LlamaCppProcessBackend);
 const { MonolithService, MAX_ATTACHMENT_BYTES } = require('./services/monolith-service.cjs');
 const { WorkModeService } = require('./services/work-mode-service.cjs');
 

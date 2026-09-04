@@ -6,7 +6,7 @@ const { LlamaCppProcessBackend } = require('../src/llama-cpp-process-backend');
 const { installV54ProtocolRecovery } = require('../src/llama-cpp-v54-protocol-recovery');
 installV54ProtocolRecovery(LlamaCppProcessBackend);
 const { MonolithService, MAX_ATTACHMENT_BYTES } = require('./services/monolith-service.cjs');
-const { WorkModeService } = require('./services/work-mode-service.cjs');
+const { EvidenceBoundWorkModeService } = require('./services/evidence-bound-work-mode-service.cjs');
 
 let windowRef = null;
 let monolith = null;
@@ -54,6 +54,14 @@ function validateText(value, limit, label) { if (typeof value !== 'string') thro
 function validateMessage(value) { if (!value || typeof value !== 'object') throw new Error('message payload is required'); return { content: typeof value.content === 'string' ? value.content.slice(0, 20000) : '', attachmentIds: Array.isArray(value.attachmentIds) ? value.attachmentIds.map(item => validateId(item, 'attachment')).slice(0, 8) : [], model: value.model == null ? null : validateText(value.model, 100, 'model') }; }
 function validateAttachment(value) { if (!value || typeof value !== 'object' || typeof value.name !== 'string' || typeof value.type !== 'string' || !value.bytes) throw new Error('attachment payload is invalid'); if (value.bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('attachment is too large'); return { name: value.name.slice(0, 180), type: value.type.slice(0, 100), bytes: value.bytes }; }
 function validateMission(value) { if (!value || typeof value !== 'object') throw new Error('mission payload is invalid'); return { title: typeof value.title === 'string' ? value.title.slice(0, 120) : '', goal: typeof value.goal === 'string' ? value.goal.slice(0, 2000) : '' }; }
+function validateEvidenceIds(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > 32) throw new Error('evidenceIds are invalid');
+  return value.map(item => {
+    if (typeof item !== 'string' || !/^ev_[a-f0-9]{24}$/.test(item)) throw new Error('evidence id is invalid');
+    return item;
+  });
+}
 function validateWorkTool(value) {
   if (!value || typeof value !== 'object') throw new Error('work tool payload is invalid');
   const tool = validateText(value.tool || '', 80, 'tool');
@@ -64,6 +72,7 @@ function validateWorkTool(value) {
     stepId: value.stepId == null ? null : validateId(value.stepId, 'step'),
     tool,
     args,
+    evidenceIds: validateEvidenceIds(value.evidenceIds),
     materialAuthorization: value.materialAuthorization === true
   };
 }
@@ -100,7 +109,7 @@ ipcMain.handle('llera:window', (_event, action) => { const win = BrowserWindow.f
 app.whenReady().then(async () => {
   monolith = new MonolithService({ userData: app.getPath('userData'), onEvent: publish });
   await monolith.init();
-  workMode = new WorkModeService({ missionEngine: monolith.missions, userData: app.getPath('userData'), onEvent: publish });
+  workMode = new EvidenceBoundWorkModeService({ missionEngine: monolith.missions, userData: app.getPath('userData'), onEvent: publish });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

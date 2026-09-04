@@ -56,7 +56,8 @@ class HostInferenceGovernor {
   }
 
   admit({ id, className = PRIORITY_CLASS.INTERACTIVE, requestedTokens = null } = {}) {
-    if (!id || this.active.has(id)) return { allow: false, reason: 'unique_inference_id_required' };
+    const inferenceId = normalizeInferenceId(id);
+    if (!inferenceId || this.active.has(inferenceId)) return { allow: false, reason: 'unique_inference_id_required' };
     const cls = normalizeClass(className);
     const profile = PRESSURE_PROFILES[this.pressure];
     const cap = profile.classConcurrency[cls];
@@ -70,19 +71,20 @@ class HostInferenceGovernor {
     const maxTokens = Math.max(1, Math.min(tokenCap, Math.floor(finiteRequested)));
     const admission = {
       allow: true,
-      id,
+      id: inferenceId,
       className: cls,
       pressure: this.pressure,
       maxTokens,
       reasoning: profile.reasoning[cls],
       startedAt: this.now()
     };
-    this.active.set(id, admission);
+    this.active.set(inferenceId, admission);
     return { ...admission };
   }
 
   complete(id) {
-    return this.active.delete(id);
+    const inferenceId = normalizeInferenceId(id);
+    return inferenceId ? this.active.delete(inferenceId) : false;
   }
 
   preemptionCandidates() {
@@ -100,6 +102,13 @@ class HostInferenceGovernor {
       preemptionCandidates: this.preemptionCandidates().map(x => x.id)
     };
   }
+}
+
+function normalizeInferenceId(value) {
+  if (typeof value !== 'string') return null;
+  const id = value.trim();
+  if (!id || id.length > 256 || /[\u0000-\u001f\u007f]/.test(id)) return null;
+  return id;
 }
 
 function normalizePressure(value) {

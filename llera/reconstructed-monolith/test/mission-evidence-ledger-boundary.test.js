@@ -27,5 +27,15 @@ const { validateEvidenceBindings } = require('../src/mission-evidence-binding');
     error => error && error.code === 'MISSION_EVIDENCE_LEDGER_INVALID'
   );
 
+  assert.throws(
+    () => validateEvidenceBindings({ ...context, ledger: [{ id }, { id }] }),
+    error => error && error.code === 'MISSION_EVIDENCE_DUPLICATE'
+  );
+
+  assert.throws(
+    () => validateEvidenceBindings({ ...context, ledger: { snapshot: () => [{ id }, { id }] } }),
+    error => error && error.code === 'MISSION_EVIDENCE_DUPLICATE'
+  );
+
   console.log('MONOLITH mission evidence malformed-ledger boundary regression PASS');
 })();

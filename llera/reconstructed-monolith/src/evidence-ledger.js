@@ -18,9 +18,17 @@ function canonical(value) {
     return Object.keys(value).sort().reduce((out, key) => {
       out[key] = canonical(value[key]);
       return out;
-    }, {});
+    }, Object.create(null));
   }
   return value;
+}
+
+function isNonEmptyPrimitiveString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isSha256(value) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
 }
 
 function evidenceId({missionId, stepId, tool, kind, target, sha256: digest, byteCount, observedAt, summary}) {
@@ -62,7 +70,7 @@ function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
 class EvidenceLedger {
   constructor({missionId, storagePath = null}) {
-    if (!missionId) throw new Error('missionId required');
+    if (!isNonEmptyPrimitiveString(missionId)) throw new Error('missionId required');
     this.missionId = missionId;
     this.storagePath = storagePath ? path.resolve(storagePath) : null;
     this.entries = [];
@@ -70,13 +78,16 @@ class EvidenceLedger {
   }
 
   add({stepId, tool, kind, target, bytes, digest, metadata = {}, summary = null, observedAt = new Date().toISOString()}) {
-    if (!stepId || !tool || !kind || !target) throw new Error('stepId, tool, kind and target required');
-    const normalizedTool = String(tool).trim();
-    if (!normalizedTool) throw new Error('tool required');
+    if (!isNonEmptyPrimitiveString(stepId) || !isNonEmptyPrimitiveString(tool) ||
+        !isNonEmptyPrimitiveString(kind) || !isNonEmptyPrimitiveString(target)) {
+      throw new Error('stepId, tool, kind and target required');
+    }
+    const normalizedTool = tool.trim();
     if (typeof observedAt !== 'string' || !Number.isFinite(Date.parse(observedAt))) throw new Error('valid evidence timestamp required');
     const computed = bytes === undefined ? null : sha256(bytes);
+    if (digest !== undefined && digest !== null && !isSha256(digest)) throw new Error('valid sha256 required');
     const boundDigest = digest || computed;
-    if (!boundDigest || !/^[a-f0-9]{64}$/i.test(boundDigest)) throw new Error('valid sha256 required');
+    if (!isSha256(boundDigest)) throw new Error('valid sha256 required');
     if (computed && digest && computed.toLowerCase() !== digest.toLowerCase()) throw new Error('evidence digest mismatch');
 
     const normalizedMetadata = canonical(metadata || {});
@@ -127,15 +138,16 @@ class EvidenceLedger {
   }
 
   verifyBinding(id, {target, tool, bytes, digest} = {}) {
+    if (!isNonEmptyPrimitiveString(id)) return {ok:false, reason:'evidence_id_required'};
     const entry = this.entries.find(x => x.id === id);
     if (!entry) return {ok:false, reason:'evidence_not_found'};
-    if (!target) return {ok:false, reason:'target_required'};
+    if (!isNonEmptyPrimitiveString(target)) return {ok:false, reason:'target_required'};
     if (target !== entry.target) return {ok:false, reason:'target_mismatch'};
-    if (entry.bindingSha256 && !tool) return {ok:false, reason:'tool_required'};
+    if (entry.bindingSha256 && !isNonEmptyPrimitiveString(tool)) return {ok:false, reason:'tool_required'};
     if (entry.bindingSha256 && tool !== entry.tool) return {ok:false, reason:'tool_mismatch'};
     if (bytes === undefined) return {ok:false, reason:digest ? 'digest_only_rejected' : 'bytes_required'};
     const actual = sha256(bytes);
-    if (digest && (!/^[a-f0-9]{64}$/i.test(String(digest)) || String(digest).toLowerCase() !== actual)) {
+    if (digest !== undefined && digest !== null && (!isSha256(digest) || digest.toLowerCase() !== actual)) {
       return {ok:false, reason:'digest_mismatch'};
     }
     if (actual !== entry.sha256) return {ok:false, reason:'sha256_mismatch'};
@@ -188,13 +200,13 @@ class EvidenceLedger {
   }
 
   #assertState(parsed) {
-    if (!parsed || parsed.schema !== LEDGER_SCHEMA || parsed.missionId !== this.missionId || !Array.isArray(parsed.entries) || !/^[a-f0-9]{64}$/i.test(parsed.stateSha256 || '')) {
+    if (!parsed || parsed.schema !== LEDGER_SCHEMA || parsed.missionId !== this.missionId || !Array.isArray(parsed.entries) || !isSha256(parsed.stateSha256)) {
       const error = new Error('evidence ledger store schema/mission invalid');
       error.code = 'EVIDENCE_LEDGER_STORE_INVALID';
       throw error;
     }
     const expectedSeal = ledgerSeal(parsed);
-    if (expectedSeal !== String(parsed.stateSha256).toLowerCase()) {
+    if (expectedSeal !== parsed.stateSha256.toLowerCase()) {
       const error = new Error('evidence ledger store integrity mismatch');
       error.code = 'EVIDENCE_LEDGER_STORE_TAMPERED';
       throw error;
@@ -212,11 +224,13 @@ class EvidenceLedger {
   }
 
   #assertEntry(entry) {
-    if (!entry || entry.missionId !== this.missionId || !entry.stepId || !entry.tool || !entry.kind || !entry.target ||
+    if (!entry || !isNonEmptyPrimitiveString(entry.id) || entry.missionId !== this.missionId ||
+        !isNonEmptyPrimitiveString(entry.stepId) || !isNonEmptyPrimitiveString(entry.tool) ||
+        !isNonEmptyPrimitiveString(entry.kind) || !isNonEmptyPrimitiveString(entry.target) ||
         !Number.isSafeInteger(entry.byteCount) || entry.byteCount < 0 ||
         typeof entry.observedAt !== 'string' || !Number.isFinite(Date.parse(entry.observedAt)) ||
         typeof entry.summary !== 'string' || !entry.summary.trim() ||
-        !/^[a-f0-9]{64}$/i.test(entry.sha256 || '')) {
+        !isSha256(entry.sha256)) {
       const error = new Error('persisted evidence binding invalid');
       error.code = 'EVIDENCE_LEDGER_ENTRY_INVALID';
       throw error;
@@ -226,7 +240,7 @@ class EvidenceLedger {
       stepId:entry.stepId,
       tool:entry.tool,
       target:entry.target,
-      sha256:String(entry.sha256).toLowerCase(),
+      sha256:entry.sha256.toLowerCase(),
       kind:entry.kind,
       byteCount:entry.byteCount,
       observedAt:entry.observedAt,
@@ -238,18 +252,18 @@ class EvidenceLedger {
       throw error;
     }
 
-    if (!/^[a-f0-9]{64}$/i.test(entry.bindingSha256 || '')) {
+    if (!isSha256(entry.bindingSha256)) {
       const error = new Error('persisted enriched evidence binding invalid');
       error.code = 'EVIDENCE_LEDGER_ENTRY_INVALID';
       throw error;
     }
-    if (String(entry.summary).length > SUMMARY_MAX_CHARS) {
+    if (entry.summary.length > SUMMARY_MAX_CHARS) {
       const error = new Error('persisted evidence summary exceeds bound');
       error.code = 'EVIDENCE_LEDGER_ENTRY_INVALID';
       throw error;
     }
     const expectedBinding = evidenceBindingSeal(entry);
-    if (expectedBinding !== String(entry.bindingSha256).toLowerCase()) {
+    if (expectedBinding !== entry.bindingSha256.toLowerCase()) {
       const error = new Error('persisted evidence field binding mismatch');
       error.code = 'EVIDENCE_LEDGER_ENTRY_TAMPERED';
       throw error;

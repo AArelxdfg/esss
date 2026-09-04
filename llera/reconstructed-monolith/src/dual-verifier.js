@@ -2,6 +2,10 @@
 
 const { evidenceId, evidenceBindingSeal, SUMMARY_MAX_CHARS } = require('./evidence-ledger');
 
+const MAX_VERIFIER_EVIDENCE = 256;
+const MAX_VERIFIER_CHECKS = 256;
+const MAX_CHECK_EVIDENCE_REFS = 64;
+
 const EVIDENCE_BINDING_REASONS = Object.freeze([
   'invalid_evidence_binding',
   'invalid_evidence_id',
@@ -71,13 +75,23 @@ function validateEnrichedEvidence(item) {
   return {ok:true};
 }
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
+function canonical(value, seen = new WeakSet()) {
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return '[Circular]';
+    seen.add(value);
+    const out = value.map(item => canonical(item, seen));
+    seen.delete(value);
+    return out;
+  }
   if (value && typeof value === 'object') {
-    return Object.keys(value).sort().reduce((out, key) => {
-      out[key] = canonical(value[key]);
-      return out;
+    if (seen.has(value)) return '[Circular]';
+    seen.add(value);
+    const out = Object.keys(value).sort().reduce((acc, key) => {
+      acc[key] = canonical(value[key], seen);
+      return acc;
     }, {});
+    seen.delete(value);
+    return out;
   }
   return value;
 }
@@ -116,12 +130,21 @@ function duplicateSemanticKeys(checks) {
 
 function normalizeEvidenceRefs(raw) {
   if (!Array.isArray(raw)) return [];
+  if (raw.length > MAX_CHECK_EVIDENCE_REFS) return null;
   const refs = [];
   for (const id of raw) {
     if (typeof id !== 'string' || !/^ev_[a-f0-9]{24}$/i.test(id)) return null;
     if (!refs.includes(id)) refs.push(id);
   }
   return refs;
+}
+
+function listBoundary(evidence, checks, prefix) {
+  if (!Array.isArray(evidence)) return {ok:false, reason:`${prefix}_invalid_evidence_list`};
+  if (evidence.length > MAX_VERIFIER_EVIDENCE) return {ok:false, reason:`${prefix}_evidence_limit_reject`};
+  if (!Array.isArray(checks)) return {ok:false, reason:`${prefix}_invalid_check_list`};
+  if (checks.length > MAX_VERIFIER_CHECKS) return {ok:false, reason:`${prefix}_check_limit_reject`};
+  return {ok:true};
 }
 
 class StrictEvidenceVerifier {
@@ -133,13 +156,16 @@ class StrictEvidenceVerifier {
   }
 
   verify({ evidence = [], checks = [] } = {}) {
+    const boundary = listBoundary(evidence, checks, 'strict');
+    if (!boundary.ok) return {ok:false, reason:boundary.reason, score:0, coverage:0, checks:[]};
+
     const knownIds = new Set(evidence.map(e => e && e.id));
     for (const item of evidence) {
       const invalid = this.validateEvidence(item);
       if (!invalid.ok) return { ok:false, reason:invalid.reason, score:0, coverage:0, checks:[] };
     }
 
-    if (!Array.isArray(checks) || checks.length === 0) {
+    if (checks.length === 0) {
       return { ok:false, reason:'strict_no_checks', score:0, coverage:0, passed:0, total:0, failures:['no_checks'], checks:[] };
     }
 
@@ -201,13 +227,16 @@ class AdversarialEvidenceVerifier {
   }
 
   verify({ evidence = [], checks = [] } = {}) {
+    const boundary = listBoundary(evidence, checks, 'adversarial');
+    if (!boundary.ok) return {ok:false, reason:boundary.reason, score:0, coverage:0, checks:[]};
+
     const knownIds = new Set(evidence.map(e => e && e.id));
     for (const item of evidence) {
       const invalid = this.validateEvidence(item);
       if (!invalid.ok) return { ok:false, reason:invalid.reason, score:0, coverage:0, checks:[] };
     }
 
-    if (!Array.isArray(checks) || checks.length === 0) {
+    if (checks.length === 0) {
       return { ok:false, reason:'adversarial_no_checks', score:0, coverage:0, passed:0, total:0, failures:['no_checks'], checks:[] };
     }
 
@@ -306,6 +335,11 @@ class DualVerifier {
   verify({claim, evidence = [], strictChecks = [], adversarialChecks = []}) {
     if (typeof claim !== 'string' || !claim.trim()) return {ok:false, reason:'claim_required'};
     if (!Array.isArray(evidence) || evidence.length === 0) return {ok:false, reason:'evidence_required'};
+    if (evidence.length > MAX_VERIFIER_EVIDENCE) return {ok:false, reason:'verifier_evidence_limit_reject'};
+    if (!Array.isArray(strictChecks) || !Array.isArray(adversarialChecks)) return {ok:false, reason:'verifier_check_list_required'};
+    if (strictChecks.length > MAX_VERIFIER_CHECKS || adversarialChecks.length > MAX_VERIFIER_CHECKS) {
+      return {ok:false, reason:'verifier_check_limit_reject'};
+    }
 
     for (const item of evidence) {
       const invalid = typeof this.strictVerifier.validateEvidence === 'function'
@@ -397,6 +431,9 @@ class DualVerifier {
 }
 
 module.exports = {
+  MAX_VERIFIER_EVIDENCE,
+  MAX_VERIFIER_CHECKS,
+  MAX_CHECK_EVIDENCE_REFS,
   EVIDENCE_BINDING_REASONS,
   TEXTUAL_EVIDENCE_FIELDS,
   validateEnrichedEvidence,

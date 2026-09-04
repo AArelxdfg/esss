@@ -11,6 +11,7 @@ const execFileAsync = promisify(nodeExecFile);
 const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_INPUT_BYTES = 64 * 1024 * 1024;
+const DEFAULT_MAX_PIXELS = 40_000_000;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/bmp', 'image/gif', 'image/tiff']);
 
 class WindowsOcrAdapter {
@@ -21,6 +22,7 @@ class WindowsOcrAdapter {
     timeoutMs = DEFAULT_TIMEOUT_MS,
     maxOutputBytes = DEFAULT_MAX_OUTPUT_BYTES,
     maxInputBytes = DEFAULT_MAX_INPUT_BYTES,
+    maxPixels = DEFAULT_MAX_PIXELS,
     fsPromises = fs.promises
   } = {}) {
     if (typeof platform !== 'string') throw new TypeError('OCR platform must be a string');
@@ -29,6 +31,7 @@ class WindowsOcrAdapter {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new RangeError('OCR timeout must be a positive safe integer');
     if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes <= 0) throw new RangeError('OCR maxOutputBytes must be a positive safe integer');
     if (!Number.isSafeInteger(maxInputBytes) || maxInputBytes <= 0) throw new RangeError('OCR maxInputBytes must be a positive safe integer');
+    if (!Number.isSafeInteger(maxPixels) || maxPixels <= 0) throw new RangeError('OCR maxPixels must be a positive safe integer');
     if (!fsPromises || typeof fsPromises.writeFile !== 'function' || typeof fsPromises.unlink !== 'function') throw new TypeError('OCR fsPromises adapter invalid');
     this.platform = platform;
     this.execFile = execFile;
@@ -36,6 +39,7 @@ class WindowsOcrAdapter {
     this.timeoutMs = timeoutMs;
     this.maxOutputBytes = maxOutputBytes;
     this.maxInputBytes = maxInputBytes;
+    this.maxPixels = maxPixels;
     this.fsPromises = fsPromises;
   }
 
@@ -52,7 +56,7 @@ class WindowsOcrAdapter {
     await this.fsPromises.writeFile(tempPath, normalized.bytes, { mode: 0o600, flag: 'wx' });
 
     try {
-      const script = windowsOcrScript(tempPath);
+      const script = windowsOcrScript(tempPath, this.maxPixels);
       const encoded = Buffer.from(script, 'utf16le').toString('base64');
       let execution;
       try {
@@ -70,8 +74,10 @@ class WindowsOcrAdapter {
           shell: false
         });
       } catch (cause) {
-        const error = new Error(`Windows OCR execution failed: ${String(cause && cause.message || cause)}`);
-        error.code = 'WINDOWS_OCR_EXECUTION_FAILED';
+        const detail = String(cause && (cause.stderr || cause.message) || cause);
+        const pixelLimit = detail.includes('WINDOWS_OCR_PIXEL_LIMIT');
+        const error = new Error(pixelLimit ? 'Windows OCR decoded image exceeds pixel limit' : `Windows OCR execution failed: ${detail}`);
+        error.code = pixelLimit ? 'WINDOWS_OCR_PIXEL_LIMIT' : 'WINDOWS_OCR_EXECUTION_FAILED';
         error.cause = cause;
         throw error;
       }
@@ -148,7 +154,8 @@ function extensionForMime(mime) {
   }
 }
 
-function windowsOcrScript(filePath) {
+function windowsOcrScript(filePath, maxPixels = DEFAULT_MAX_PIXELS) {
+  if (!Number.isSafeInteger(maxPixels) || maxPixels <= 0) throw new RangeError('OCR maxPixels must be a positive safe integer');
   const pathB64 = Buffer.from(filePath, 'utf8').toString('base64');
   return [
     "$ErrorActionPreference='Stop'",
@@ -161,6 +168,7 @@ function windowsOcrScript(filePath) {
     '$f=Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($p)) ([Windows.Storage.StorageFile])',
     '$st=Await ($f.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])',
     '$d=Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($st)) ([Windows.Graphics.Imaging.BitmapDecoder])',
+    `$w=[uint64]$d.PixelWidth;$h=[uint64]$d.PixelHeight;if($w -eq 0 -or $h -eq 0 -or ($w*$h) -gt ${maxPixels}){throw 'WINDOWS_OCR_PIXEL_LIMIT'}`,
     '$bm=Await ($d.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])',
     "$eng=[Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages();if($null -eq $eng){throw 'Windows OCR engine unavailable'}",
     '$r=Await ($eng.RecognizeAsync($bm)) ([Windows.Media.Ocr.OcrResult])',
@@ -180,5 +188,6 @@ module.exports = {
   normalizeInput,
   DEFAULT_TIMEOUT_MS,
   DEFAULT_MAX_OUTPUT_BYTES,
-  DEFAULT_MAX_INPUT_BYTES
+  DEFAULT_MAX_INPUT_BYTES,
+  DEFAULT_MAX_PIXELS
 };

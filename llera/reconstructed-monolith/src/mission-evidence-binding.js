@@ -4,6 +4,7 @@ const { evidenceId, evidenceBindingSeal, SUMMARY_MAX_CHARS } = require('./eviden
 
 const EVIDENCE_ID_PATTERN = /^ev_[a-f0-9]{24}$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const MAX_EVIDENCE_IDS = 32;
 
 function evidenceBindingError(code, message) {
   const error = new Error(message);
@@ -15,6 +16,15 @@ function normalizeEvidenceIds(evidenceIds) {
   if (evidenceIds == null) return [];
   if (!Array.isArray(evidenceIds)) {
     throw evidenceBindingError('MISSION_EVIDENCE_IDS_INVALID', 'evidenceIds must be an array');
+  }
+  // Bound the caller-controlled raw list before duplicate canonicalization. Without
+  // this guard, a direct/core caller could submit an arbitrarily large replay list
+  // that collapses to one unique ID and bypasses the desktop IPC budget.
+  if (evidenceIds.length > MAX_EVIDENCE_IDS) {
+    throw evidenceBindingError(
+      'MISSION_EVIDENCE_IDS_LIMIT',
+      `evidenceIds exceeds maximum of ${MAX_EVIDENCE_IDS}`
+    );
   }
 
   const normalized = [];
@@ -151,6 +161,7 @@ function validateEvidenceBindings({ evidenceIds, ledger, missionId, stepId, tool
 module.exports = {
   EVIDENCE_ID_PATTERN,
   SHA256_PATTERN,
+  MAX_EVIDENCE_IDS,
   normalizeEvidenceIds,
   validateEvidenceBindings
 };

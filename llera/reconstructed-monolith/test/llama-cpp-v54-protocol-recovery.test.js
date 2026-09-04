@@ -24,7 +24,7 @@ test('V5.4 compatibility retries recovery chat before raw completion', async () 
   const calls = [];
   const backend = new FakeBackend(async (url, options) => {
     calls.push({ url, body: JSON.parse(options.body) });
-    if (url.endsWith('/v1/chat/completions')) return response(200, { choices: [{ message: { content: '', reasoning_content: 'MONOLITH ONLINE' }, finish_reason: 'stop' }] });
+    if (url.endsWith('/v1/chat/completions')) return response(200, { choices: [{ message: { content: 'MONOLITH ONLINE', reasoning_content: 'PRIVATE REASONING' }, finish_reason: 'stop' }] });
     throw new Error(`unexpected ${url}`);
   });
   const result = await backend.chatCompletion({ messages: [{ role: 'user', content: 'status' }], maxTokens: 64, temperature: 0 });
@@ -33,6 +33,24 @@ test('V5.4 compatibility retries recovery chat before raw completion', async () 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].body.reasoning_effort, 'none');
   assert.equal(calls[0].body.chat_template_kwargs.enable_thinking, false);
+});
+
+test('reasoning_content is never surfaced when recovery chat lacks safe visible content', async () => {
+  const calls = [];
+  const backend = new FakeBackend(async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    if (url.endsWith('/v1/chat/completions')) {
+      return response(200, { choices: [{ message: { content: '', reasoning_content: 'PRIVATE CHAIN MUST NOT LEAK' }, finish_reason: 'stop' }] });
+    }
+    if (url.endsWith('/completion')) return response(200, { content: 'SAFE RAW FALLBACK' });
+    throw new Error(`unexpected ${url}`);
+  });
+
+  const result = await backend.chatCompletion({ messages: [{ role: 'user', content: 'status' }] });
+  assert.equal(result.content, 'SAFE RAW FALLBACK');
+  assert.equal(result.protocol, 'raw');
+  assert.equal(calls.length, 2);
+  assert.ok(!result.content.includes('PRIVATE CHAIN'));
 });
 
 test('V5.4 compatibility falls through to llama.cpp raw /completion', async () => {

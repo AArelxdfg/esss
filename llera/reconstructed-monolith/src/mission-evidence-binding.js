@@ -23,9 +23,11 @@ function normalizeEvidenceIds(evidenceIds) {
     if (typeof value !== 'string' || !EVIDENCE_ID_PATTERN.test(value)) {
       throw evidenceBindingError('MISSION_EVIDENCE_ID_INVALID', `invalid evidence id: ${String(value)}`);
     }
-    if (seen.has(value)) {
-      throw evidenceBindingError('MISSION_EVIDENCE_ID_DUPLICATE', `duplicate evidence id: ${value}`);
-    }
+    // Evidence references are set-like bindings. Desktop/UI retries can replay the
+    // same already-validated evidence ID, so canonicalize duplicates instead of
+    // turning an idempotent retry into a mission failure. Integrity/context checks
+    // still run once for every unique evidence record below.
+    if (seen.has(value)) continue;
     seen.add(value);
     normalized.push(value);
   }

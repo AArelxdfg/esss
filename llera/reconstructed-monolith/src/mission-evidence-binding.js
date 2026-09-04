@@ -44,23 +44,35 @@ function normalizeEvidenceIds(evidenceIds) {
   return normalized;
 }
 
-function resolveEntry(ledger, id) {
+function ledgerEntries(ledger) {
   if (!ledger) {
     throw evidenceBindingError('MISSION_EVIDENCE_LEDGER_REQUIRED', 'evidence ledger required for evidence binding');
   }
 
-  const entries = typeof ledger.snapshot === 'function'
-    ? ledger.snapshot()
-    : Array.isArray(ledger.entries)
-      ? ledger.entries
-      : Array.isArray(ledger)
-        ? ledger
-        : null;
-
-  if (!entries) {
-    throw evidenceBindingError('MISSION_EVIDENCE_LEDGER_INVALID', 'evidence ledger does not expose entries');
+  let entries;
+  try {
+    entries = typeof ledger.snapshot === 'function'
+      ? ledger.snapshot()
+      : Array.isArray(ledger.entries)
+        ? ledger.entries
+        : Array.isArray(ledger)
+          ? ledger
+          : null;
+  } catch (_) {
+    throw evidenceBindingError('MISSION_EVIDENCE_LEDGER_INVALID', 'evidence ledger snapshot failed');
   }
 
+  // Treat the ledger boundary as untrusted. A malformed snapshot must fail with a
+  // stable fail-closed contract instead of falling through to an incidental
+  // TypeError while resolving evidence IDs.
+  if (!Array.isArray(entries)) {
+    throw evidenceBindingError('MISSION_EVIDENCE_LEDGER_INVALID', 'evidence ledger does not expose an entry array');
+  }
+  return entries;
+}
+
+function resolveEntry(ledger, id) {
+  const entries = ledgerEntries(ledger);
   const entry = entries.find(candidate => candidate && candidate.id === id);
   if (!entry) {
     throw evidenceBindingError('MISSION_EVIDENCE_NOT_FOUND', `evidence not found: ${id}`);

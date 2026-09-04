@@ -86,7 +86,24 @@ function resolveEntry(ledger, id) {
   return matches[0];
 }
 
+function validBindingIdentifier(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function validateEntryIntegrity(entry, id) {
+  // Mission/step/tool are part of both the deterministic evidence ID and the
+  // binding seal. Keep them as strict textual identifiers at the trust boundary;
+  // accepting arrays/objects here would allow non-product caller shapes to enter
+  // canonical hashing and make verifier context semantics ambiguous.
+  if (!validBindingIdentifier(entry.missionId)) {
+    throw evidenceBindingError('MISSION_EVIDENCE_MISSION_INVALID', `evidence ${id} has no valid mission binding`);
+  }
+  if (!validBindingIdentifier(entry.stepId)) {
+    throw evidenceBindingError('MISSION_EVIDENCE_STEP_INVALID', `evidence ${id} has no valid step binding`);
+  }
+  if (!validBindingIdentifier(entry.tool)) {
+    throw evidenceBindingError('MISSION_EVIDENCE_TOOL_INVALID', `evidence ${id} has no valid tool binding`);
+  }
   if (typeof entry.target !== 'string' || entry.target.trim().length === 0) {
     throw evidenceBindingError('MISSION_EVIDENCE_TARGET_INVALID', `evidence ${id} has no valid target binding`);
   }
@@ -144,12 +161,18 @@ function validateEntryIntegrity(entry, id) {
 function validateEvidenceBindings({ evidenceIds, ledger, missionId, stepId, tool } = {}) {
   const ids = normalizeEvidenceIds(evidenceIds);
   if (ids.length === 0) return [];
-  if (!missionId || !stepId || !tool) {
-    throw evidenceBindingError('MISSION_EVIDENCE_CONTEXT_REQUIRED', 'missionId, stepId and tool are required for evidence binding');
+  if (!validBindingIdentifier(missionId) || !validBindingIdentifier(stepId) || !validBindingIdentifier(tool)) {
+    throw evidenceBindingError(
+      'MISSION_EVIDENCE_CONTEXT_REQUIRED',
+      'missionId, stepId and tool must be non-empty string identifiers for evidence binding'
+    );
   }
 
   return ids.map(id => {
     const entry = resolveEntry(ledger, id);
+    // Validate the untrusted ledger record before comparing it with trusted mission
+    // context so malformed identifier shapes receive a stable integrity failure.
+    validateEntryIntegrity(entry, id);
     if (entry.missionId !== missionId) {
       throw evidenceBindingError('MISSION_EVIDENCE_MISSION_MISMATCH', `evidence ${id} belongs to another mission`);
     }
@@ -159,7 +182,6 @@ function validateEvidenceBindings({ evidenceIds, ledger, missionId, stepId, tool
     if (entry.tool !== tool) {
       throw evidenceBindingError('MISSION_EVIDENCE_TOOL_MISMATCH', `evidence ${id} belongs to another tool`);
     }
-    validateEntryIntegrity(entry, id);
     return {
       id,
       missionId: entry.missionId,

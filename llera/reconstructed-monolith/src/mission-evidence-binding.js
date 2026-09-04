@@ -89,6 +89,17 @@ function validBindingIdentifier(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isCanonicalObservedAt(value) {
+  if (typeof value !== 'string') return false;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return false;
+  try {
+    return new Date(parsed).toISOString() === value;
+  } catch (_) {
+    return false;
+  }
+}
+
 function validateEntryIntegrity(entry, id) {
   // Mission/step/tool are part of both the deterministic evidence ID and the
   // binding seal. Keep them as strict textual identifiers at the trust boundary;
@@ -118,8 +129,12 @@ function validateEntryIntegrity(entry, id) {
   if (!Number.isSafeInteger(entry.byteCount) || entry.byteCount < 0) {
     throw evidenceBindingError('MISSION_EVIDENCE_BYTE_COUNT_INVALID', `evidence ${id} has no valid byte count binding`);
   }
-  if (typeof entry.observedAt !== 'string' || !Number.isFinite(Date.parse(entry.observedAt))) {
-    throw evidenceBindingError('MISSION_EVIDENCE_TIMESTAMP_INVALID', `evidence ${id} has no valid observation timestamp`);
+  // Date.parse accepts ambiguous legacy strings such as "0" and locale-shaped
+  // timestamps. Evidence time is part of the deterministic ID/seal, so require the
+  // exact UTC ISO-8601 form emitted by EvidenceLedger to prevent semantically
+  // ambiguous restored records from entering verifier decisions.
+  if (!isCanonicalObservedAt(entry.observedAt)) {
+    throw evidenceBindingError('MISSION_EVIDENCE_TIMESTAMP_INVALID', `evidence ${id} has no canonical observation timestamp`);
   }
   if (typeof entry.summary !== 'string' || !entry.summary.trim() || entry.summary.length > SUMMARY_MAX_CHARS) {
     throw evidenceBindingError('MISSION_EVIDENCE_SUMMARY_INVALID', `evidence ${id} has no valid bounded summary`);

@@ -10,6 +10,7 @@ const { promisify } = require('util');
 const execFileAsync = promisify(nodeExecFile);
 const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+const DEFAULT_MAX_INPUT_BYTES = 64 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/bmp', 'image/gif', 'image/tiff']);
 
 class WindowsOcrAdapter {
@@ -19,6 +20,7 @@ class WindowsOcrAdapter {
     tmpDir = os.tmpdir(),
     timeoutMs = DEFAULT_TIMEOUT_MS,
     maxOutputBytes = DEFAULT_MAX_OUTPUT_BYTES,
+    maxInputBytes = DEFAULT_MAX_INPUT_BYTES,
     fsPromises = fs.promises
   } = {}) {
     if (typeof platform !== 'string') throw new TypeError('OCR platform must be a string');
@@ -26,17 +28,19 @@ class WindowsOcrAdapter {
     if (typeof tmpDir !== 'string' || !tmpDir.trim()) throw new TypeError('OCR tmpDir must be a non-empty string');
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new RangeError('OCR timeout must be a positive safe integer');
     if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes <= 0) throw new RangeError('OCR maxOutputBytes must be a positive safe integer');
+    if (!Number.isSafeInteger(maxInputBytes) || maxInputBytes <= 0) throw new RangeError('OCR maxInputBytes must be a positive safe integer');
     if (!fsPromises || typeof fsPromises.writeFile !== 'function' || typeof fsPromises.unlink !== 'function') throw new TypeError('OCR fsPromises adapter invalid');
     this.platform = platform;
     this.execFile = execFile;
     this.tmpDir = path.resolve(tmpDir);
     this.timeoutMs = timeoutMs;
     this.maxOutputBytes = maxOutputBytes;
+    this.maxInputBytes = maxInputBytes;
     this.fsPromises = fsPromises;
   }
 
   async recognize(input) {
-    const normalized = normalizeInput(input);
+    const normalized = normalizeInput(input, this.maxInputBytes);
     if (this.platform !== 'win32') {
       const error = new Error('Windows.Media.Ocr is only available on Windows');
       error.code = 'WINDOWS_OCR_PLATFORM_UNAVAILABLE';
@@ -104,15 +108,25 @@ class WindowsOcrAdapter {
   }
 }
 
-function normalizeInput(input) {
+function normalizeInput(input, maxInputBytes = DEFAULT_MAX_INPUT_BYTES) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || !Buffer.isBuffer(input.bytes)) {
     const error = new TypeError('Windows OCR requires Buffer input bytes');
     error.code = 'WINDOWS_OCR_INPUT_INVALID';
     throw error;
   }
+  if (!Number.isSafeInteger(maxInputBytes) || maxInputBytes <= 0) {
+    const error = new RangeError('Windows OCR max input bytes invalid');
+    error.code = 'WINDOWS_OCR_INPUT_LIMIT_INVALID';
+    throw error;
+  }
   if (input.bytes.length === 0) {
     const error = new Error('Windows OCR input is empty');
     error.code = 'WINDOWS_OCR_INPUT_EMPTY';
+    throw error;
+  }
+  if (input.bytes.length > maxInputBytes) {
+    const error = new Error('Windows OCR input exceeds limit');
+    error.code = 'WINDOWS_OCR_INPUT_LIMIT';
     throw error;
   }
   if (typeof input.mime !== 'string' || !ALLOWED_MIME.has(input.mime.toLowerCase())) {
@@ -165,5 +179,6 @@ module.exports = {
   windowsOcrScript,
   normalizeInput,
   DEFAULT_TIMEOUT_MS,
-  DEFAULT_MAX_OUTPUT_BYTES
+  DEFAULT_MAX_OUTPUT_BYTES,
+  DEFAULT_MAX_INPUT_BYTES
 };

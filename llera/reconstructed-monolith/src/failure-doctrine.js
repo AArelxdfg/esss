@@ -43,34 +43,36 @@ function failureEventSeal(event) {
 }
 
 function failureEventIdentity(event) {
-  if (event && /^[a-f0-9]{64}$/i.test(String(event.eventSeal || ''))) {
-    return `sealed:${String(event.eventSeal).toLowerCase()}`;
+  if (event && typeof event.eventSeal === 'string' && /^[a-f0-9]{64}$/i.test(event.eventSeal)) {
+    return `sealed:${event.eventSeal.toLowerCase()}`;
   }
   return `legacy:${stableFingerprint({
-    missionId: String(event && event.missionId || ''),
-    stepId: String(event && event.stepId || ''),
-    tool: String(event && event.tool || ''),
-    argsFingerprint: String(event && event.argsFingerprint || '').toLowerCase(),
+    missionId: typeof (event && event.missionId) === 'string' ? event.missionId : '',
+    stepId: typeof (event && event.stepId) === 'string' ? event.stepId : '',
+    tool: typeof (event && event.tool) === 'string' ? event.tool : '',
+    argsFingerprint: typeof (event && event.argsFingerprint) === 'string' ? event.argsFingerprint.toLowerCase() : '',
     failureClass: event && event.failureClass,
-    fingerprint: String(event && event.fingerprint || '').toLowerCase(),
+    fingerprint: typeof (event && event.fingerprint) === 'string' ? event.fingerprint.toLowerCase() : '',
     material: Boolean(event && event.material),
-    message: String(event && event.message || ''),
-    at: Number(event && event.at),
+    message: typeof (event && event.message) === 'string' ? event.message : '',
+    at: typeof (event && event.at) === 'number' ? event.at : NaN,
   })}`;
 }
 
 function structurallyValidFailure(event) {
-  return Boolean(
-    event &&
-    typeof event === 'object' &&
-    event.missionId &&
-    event.stepId &&
-    event.tool &&
-    FAILURE_CLASSES.has(event.failureClass) &&
-    /^[a-f0-9]{64}$/i.test(String(event.argsFingerprint || '')) &&
-    /^[a-f0-9]{64}$/i.test(String(event.fingerprint || '')) &&
-    Number.isFinite(Number(event.at))
-  );
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return false;
+  if (typeof event.missionId !== 'string' || event.missionId.trim().length === 0) return false;
+  if (typeof event.stepId !== 'string' || event.stepId.trim().length === 0) return false;
+  if (typeof event.tool !== 'string' || event.tool.trim().length === 0) return false;
+  if (!FAILURE_CLASSES.has(event.failureClass)) return false;
+  if (typeof event.argsFingerprint !== 'string' || !/^[a-f0-9]{64}$/i.test(event.argsFingerprint)) return false;
+  if (typeof event.fingerprint !== 'string' || !/^[a-f0-9]{64}$/i.test(event.fingerprint)) return false;
+  if (typeof event.message !== 'string') return false;
+  if (typeof event.material !== 'boolean') return false;
+  if (typeof event.at !== 'number' || !Number.isFinite(event.at)) return false;
+  if (event.eventSeal !== undefined && event.eventSeal !== null &&
+      (typeof event.eventSeal !== 'string' || !/^[a-f0-9]{64}$/i.test(event.eventSeal))) return false;
+  return true;
 }
 
 class FailureDoctrine {
@@ -136,8 +138,7 @@ class FailureDoctrine {
       }
 
       if (failure.eventSeal) {
-        if (!/^[a-f0-9]{64}$/i.test(String(failure.eventSeal)) ||
-            failureEventSeal(failure) !== String(failure.eventSeal).toLowerCase()) {
+        if (failureEventSeal(failure) !== failure.eventSeal.toLowerCase()) {
           diagnostics.rejected += 1;
           continue;
         }
@@ -146,16 +147,16 @@ class FailureDoctrine {
       }
 
       const restored = {
-        missionId: String(failure.missionId),
-        stepId: String(failure.stepId),
-        tool: String(failure.tool),
-        argsFingerprint: String(failure.argsFingerprint).toLowerCase(),
+        missionId: failure.missionId,
+        stepId: failure.stepId,
+        tool: failure.tool,
+        argsFingerprint: failure.argsFingerprint.toLowerCase(),
         failureClass: failure.failureClass,
-        fingerprint: String(failure.fingerprint).toLowerCase(),
-        material: Boolean(failure.material),
-        message: String(failure.message || ''),
-        at: Number(failure.at),
-        eventSeal: failure.eventSeal ? String(failure.eventSeal).toLowerCase() : null,
+        fingerprint: failure.fingerprint.toLowerCase(),
+        material: failure.material,
+        message: failure.message,
+        at: failure.at,
+        eventSeal: failure.eventSeal ? failure.eventSeal.toLowerCase() : null,
       };
 
       const identity = failureEventIdentity(restored);

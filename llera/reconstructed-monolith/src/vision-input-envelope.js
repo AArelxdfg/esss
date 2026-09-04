@@ -41,7 +41,15 @@ function normalizeSourceKind(value) {
 
 function verifyVisionInput({ metadata, bytes, maxBytes = DEFAULT_MAX_IMAGE_BYTES } = {}) {
   assertPlainMetadata(metadata);
-  const data = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
+  // Always detach the verified payload from caller-owned memory. Keeping a caller
+  // Buffer here creates a TOCTOU window where bytes can be mutated after their
+  // SHA-256 has been checked but before OCR/vision consumes them.
+  let data;
+  try {
+    data = Buffer.from(bytes || []);
+  } catch (_) {
+    throw fail('VISION_BYTES_INVALID', 'vision input bytes are invalid');
+  }
   const byteLimit = Number.isSafeInteger(maxBytes) && maxBytes > 0 ? maxBytes : DEFAULT_MAX_IMAGE_BYTES;
 
   if (!data.length) throw fail('VISION_BYTES_MISSING', 'vision input bytes are missing');
@@ -85,7 +93,9 @@ function buildOcrRequest({ metadata, bytes, maxBytes } = {}) {
     mime: verified.type,
     bytes: verified.bytes,
     sha256: verified.sha256,
-    payload: verified.data,
+    // Give the consumer its own detached copy as well, so mutation of a
+    // previously returned verification snapshot cannot rewrite this request.
+    payload: Buffer.from(verified.data),
   });
 }
 

@@ -77,14 +77,14 @@ function validateEnrichedEvidence(item) {
 
 function canonical(value, seen = new WeakSet()) {
   if (Array.isArray(value)) {
-    if (seen.has(value)) return '[Circular]';
+    if (seen.has(value)) throw new TypeError('circular_verifier_metadata');
     seen.add(value);
     const out = value.map(item => canonical(item, seen));
     seen.delete(value);
     return out;
   }
   if (value && typeof value === 'object') {
-    if (seen.has(value)) return '[Circular]';
+    if (seen.has(value)) throw new TypeError('circular_verifier_metadata');
     seen.add(value);
     const out = Object.keys(value).sort().reduce((acc, key) => {
       acc[key] = canonical(value[key], seen);
@@ -357,12 +357,21 @@ class DualVerifier {
     }
 
     const sameCheckReference = strictChecks === adversarialChecks;
-    const sameCheckSet = checkSetSignature(strictChecks) === checkSetSignature(adversarialChecks);
-    const strictSemanticKeys = semanticKeys(strictChecks);
-    const adversarialSemanticKeys = semanticKeys(adversarialChecks);
+    let sameCheckSet;
+    let strictSemanticKeys;
+    let adversarialSemanticKeys;
+    let strictDuplicateSemanticKeys;
+    let adversarialDuplicateSemanticKeys;
+    try {
+      sameCheckSet = checkSetSignature(strictChecks) === checkSetSignature(adversarialChecks);
+      strictSemanticKeys = semanticKeys(strictChecks);
+      adversarialSemanticKeys = semanticKeys(adversarialChecks);
+      strictDuplicateSemanticKeys = duplicateSemanticKeys(strictChecks);
+      adversarialDuplicateSemanticKeys = duplicateSemanticKeys(adversarialChecks);
+    } catch (_) {
+      return {ok:false, reason:'verifier_check_metadata_invalid', missionId:missionIds[0]};
+    }
     const semanticOverlap = [...strictSemanticKeys].filter(key => adversarialSemanticKeys.has(key));
-    const strictDuplicateSemanticKeys = duplicateSemanticKeys(strictChecks);
-    const adversarialDuplicateSemanticKeys = duplicateSemanticKeys(adversarialChecks);
     if (this.requireIndependentChecks && (
       sameCheckReference ||
       sameCheckSet ||

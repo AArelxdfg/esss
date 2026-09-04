@@ -5,6 +5,33 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 
+function strictOwnDataEntries(value, { array = false } = {}) {
+  if (Object.getOwnPropertySymbols(value).length) throw new Error('manifest contains symbol keys');
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Object.keys(value);
+  if (array) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) throw new Error('manifest contains non-plain array');
+    if (keys.length !== value.length || keys.some((key, index) => key !== String(index))) {
+      throw new Error('manifest contains sparse or decorated array');
+    }
+    const allowed = new Set([...keys, 'length']);
+    for (const key of Object.keys(descriptors)) {
+      if (!allowed.has(key)) throw new Error('manifest contains non-JSON array property');
+    }
+  } else {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) throw new Error('manifest contains non-plain object');
+    if (Object.keys(descriptors).length !== keys.length) throw new Error('manifest contains non-enumerable property');
+  }
+  return keys.map(key => {
+    const descriptor = descriptors[key];
+    if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+      throw new Error('manifest contains accessor property');
+    }
+    return [key, descriptor.value];
+  });
+}
+
 function stableStringify(value, seen = new Set()) {
   if (value === null) return 'null';
   const type = typeof value;
@@ -20,10 +47,12 @@ function stableStringify(value, seen = new Set()) {
   if (seen.has(value)) throw new Error('manifest contains cyclic value');
   seen.add(value);
   try {
-    if (Array.isArray(value)) return `[${value.map(item => stableStringify(item, seen)).join(',')}]`;
-    const proto = Object.getPrototypeOf(value);
-    if (proto !== Object.prototype && proto !== null) throw new Error('manifest contains non-plain object');
-    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stableStringify(value[k], seen)}`).join(',')}}`;
+    if (Array.isArray(value)) {
+      const entries = strictOwnDataEntries(value, { array: true });
+      return `[${entries.map(([, item]) => stableStringify(item, seen)).join(',')}]`;
+    }
+    const entries = strictOwnDataEntries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item, seen)}`).join(',')}}`;
   } finally {
     seen.delete(value);
   }
@@ -93,7 +122,8 @@ class SignedUpdateLifecycle {
   }
   verifySignedManifest(manifest, signatureBase64) {
     const { payload, payloadSha256 } = this._manifestPayload(manifest);
-    const signature = Buffer.from(signatureBase64 || '', 'base64');
+    if (typeof signatureBase64 !== 'string' || !signatureBase64.trim()) throw new Error('manifest signature missing');
+    const signature = Buffer.from(signatureBase64, 'base64');
     if (!signature.length) throw new Error('manifest signature missing');
     if (!crypto.verify(null, payload, this.publicKey, signature)) throw new Error('manifest signature invalid');
     if (!manifest.version || !manifest.artifact) throw new Error('manifest schema invalid');

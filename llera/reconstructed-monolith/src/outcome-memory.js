@@ -238,13 +238,11 @@ class OutcomeMemory {
       throw new Error(`skill candidate evidence is not derived from source outcome: ${foreignEvidenceIds.join(',')}`);
     }
 
-    const verifierEvidenceIds = requireEvidenceIds(verification.evidenceIds, { context: 'skill verifier' });
-    if (verifierEvidenceIds.length) {
-      const verifierEvidence = new Set(verifierEvidenceIds);
-      const unverifiedCandidateEvidence = candidateEvidenceIds.filter(id => !verifierEvidence.has(id));
-      if (unverifiedCandidateEvidence.length) {
-        throw new Error(`skill candidate evidence was not covered by skill verification: ${unverifiedCandidateEvidence.join(',')}`);
-      }
+    const verifierEvidenceIds = requireEvidenceIds(verification.evidenceIds, { allowEmpty: false, context: 'skill verifier' });
+    const verifierEvidence = new Set(verifierEvidenceIds);
+    const unverifiedCandidateEvidence = candidateEvidenceIds.filter(id => !verifierEvidence.has(id));
+    if (unverifiedCandidateEvidence.length) {
+      throw new Error(`skill candidate evidence was not covered by skill verification: ${unverifiedCandidateEvidence.join(',')}`);
     }
 
     const at = this.now();

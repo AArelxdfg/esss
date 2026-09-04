@@ -14,18 +14,24 @@ const FAILURE_CLASS = Object.freeze({
 const FAILURE_CLASSES = new Set(Object.values(FAILURE_CLASS));
 
 function stableFingerprint(value) {
-  const seen = new WeakSet();
+  const stack = new WeakSet();
   const normalize = (input) => {
     if (input === null || typeof input !== 'object') return input;
-    if (seen.has(input)) return '[circular]';
-    seen.add(input);
-    if (Array.isArray(input)) return input.map(normalize);
-    return Object.keys(input).sort().reduce((acc, key) => {
-      acc[key] = normalize(input[key]);
-      return acc;
-    }, {});
+    if (stack.has(input)) throw new TypeError('circular_failure_fingerprint_input');
+    stack.add(input);
+    try {
+      if (Array.isArray(input)) return input.map(normalize);
+      return Object.keys(input).sort().reduce((acc, key) => {
+        acc[key] = normalize(input[key]);
+        return acc;
+      }, {});
+    } finally {
+      stack.delete(input);
+    }
   };
-  return crypto.createHash('sha256').update(JSON.stringify(normalize(value))).digest('hex');
+  const encoded = JSON.stringify(normalize(value));
+  if (typeof encoded !== 'string') throw new TypeError('failure_fingerprint_input_unserializable');
+  return crypto.createHash('sha256').update(encoded).digest('hex');
 }
 
 function failureEventSeal(event) {
@@ -37,25 +43,25 @@ function failureEventSeal(event) {
     failureClass: event.failureClass,
     fingerprint: event.fingerprint,
     material: Boolean(event.material),
-    message: String(event.message || ''),
+    message: typeof event.message === 'string' ? event.message : '',
     at: event.at,
   });
 }
 
 function failureEventIdentity(event) {
-  if (event && /^[a-f0-9]{64}$/i.test(String(event.eventSeal || ''))) {
-    return `sealed:${String(event.eventSeal).toLowerCase()}`;
+  if (event && typeof event.eventSeal === 'string' && /^[a-f0-9]{64}$/i.test(event.eventSeal)) {
+    return `sealed:${event.eventSeal.toLowerCase()}`;
   }
   return `legacy:${stableFingerprint({
-    missionId: String(event && event.missionId || ''),
-    stepId: String(event && event.stepId || ''),
-    tool: String(event && event.tool || ''),
-    argsFingerprint: String(event && event.argsFingerprint || '').toLowerCase(),
+    missionId: typeof (event && event.missionId) === 'string' ? event.missionId : '',
+    stepId: typeof (event && event.stepId) === 'string' ? event.stepId : '',
+    tool: typeof (event && event.tool) === 'string' ? event.tool : '',
+    argsFingerprint: typeof (event && event.argsFingerprint) === 'string' ? event.argsFingerprint.toLowerCase() : '',
     failureClass: event && event.failureClass,
-    fingerprint: String(event && event.fingerprint || '').toLowerCase(),
+    fingerprint: typeof (event && event.fingerprint) === 'string' ? event.fingerprint.toLowerCase() : '',
     material: Boolean(event && event.material),
-    message: String(event && event.message || ''),
-    at: Number(event && event.at),
+    message: typeof (event && event.message) === 'string' ? event.message : '',
+    at: event && event.at,
   })}`;
 }
 
@@ -71,12 +77,15 @@ function structurallyValidFailure(event) {
   return Boolean(
     event &&
     typeof event === 'object' &&
+    !Array.isArray(event) &&
     validBoundIdentity(event.missionId) &&
     validBoundIdentity(event.stepId) &&
     validBoundIdentity(event.tool) &&
     FAILURE_CLASSES.has(event.failureClass) &&
-    /^[a-f0-9]{64}$/i.test(String(event.argsFingerprint || '')) &&
-    /^[a-f0-9]{64}$/i.test(String(event.fingerprint || '')) &&
+    typeof event.argsFingerprint === 'string' && /^[a-f0-9]{64}$/i.test(event.argsFingerprint) &&
+    typeof event.fingerprint === 'string' && /^[a-f0-9]{64}$/i.test(event.fingerprint) &&
+    (event.message === undefined || typeof event.message === 'string') &&
+    (event.eventSeal === undefined || event.eventSeal === null || (typeof event.eventSeal === 'string' && /^[a-f0-9]{64}$/i.test(event.eventSeal))) &&
     validFailureTimestamp(event.at)
   );
 }
@@ -156,8 +165,7 @@ class FailureDoctrine {
       }
 
       if (failure.eventSeal) {
-        if (!/^[a-f0-9]{64}$/i.test(String(failure.eventSeal)) ||
-            failureEventSeal(failure) !== String(failure.eventSeal).toLowerCase()) {
+        if (failureEventSeal(failure) !== failure.eventSeal.toLowerCase()) {
           diagnostics.rejected += 1;
           continue;
         }
@@ -169,13 +177,13 @@ class FailureDoctrine {
         missionId: failure.missionId,
         stepId: failure.stepId,
         tool: failure.tool,
-        argsFingerprint: String(failure.argsFingerprint).toLowerCase(),
+        argsFingerprint: failure.argsFingerprint.toLowerCase(),
         failureClass: failure.failureClass,
-        fingerprint: String(failure.fingerprint).toLowerCase(),
+        fingerprint: failure.fingerprint.toLowerCase(),
         material: Boolean(failure.material),
-        message: String(failure.message || ''),
+        message: failure.message || '',
         at: failure.at,
-        eventSeal: failure.eventSeal ? String(failure.eventSeal).toLowerCase() : null,
+        eventSeal: failure.eventSeal ? failure.eventSeal.toLowerCase() : null,
       };
 
       const identity = failureEventIdentity(restored);

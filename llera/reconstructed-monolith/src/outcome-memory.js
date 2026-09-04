@@ -204,9 +204,16 @@ class OutcomeMemory {
       throw new Error('missionId/name/description/procedure are required');
     }
 
-    const sourceOutcome = [...this.state.outcomes].reverse().find(o => o.missionId === missionId);
-    if (!sourceOutcome || sourceOutcome.status !== 'completed' || !sourceOutcome.verified) {
-      throw new Error('skill candidates require a verified completed mission outcome');
+    const requestedReceiptSha256 = verification && verification.receiptSha256;
+    const sourceOutcome = [...this.state.outcomes].reverse().find(o =>
+      o.missionId === missionId &&
+      o.status === 'completed' &&
+      o.verified === true &&
+      o.verification &&
+      o.verification.receiptSha256 === requestedReceiptSha256
+    );
+    if (!sourceOutcome) {
+      throw new Error('skill candidates require a verified completed mission outcome bound to the requested receipt');
     }
 
     const sourceReceiptSha256 = sourceOutcome.verification && sourceOutcome.verification.receiptSha256;

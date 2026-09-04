@@ -37,5 +37,38 @@ const { validateEvidenceBindings } = require('../src/mission-evidence-binding');
     error => error && error.code === 'MISSION_EVIDENCE_DUPLICATE'
   );
 
+  for (const invalidContext of [
+    { missionId: { value: context.missionId } },
+    { stepId: [context.stepId] },
+    { tool: { toString: () => context.tool } },
+    { missionId: '   ' },
+    { stepId: '' }
+  ]) {
+    assert.throws(
+      () => validateEvidenceBindings({ ...context, ...invalidContext, ledger: [] }),
+      error => error && error.code === 'MISSION_EVIDENCE_CONTEXT_REQUIRED'
+    );
+  }
+
+  assert.throws(
+    () => validateEvidenceBindings({
+      ...context,
+      ledger: [{
+        id,
+        missionId: { value: context.missionId },
+        stepId: context.stepId,
+        tool: context.tool,
+        kind: 'file',
+        target: 'C:/tmp/evidence.txt',
+        sha256: '0'.repeat(64),
+        bindingSha256: '0'.repeat(64),
+        byteCount: 1,
+        observedAt: '2026-09-04T00:00:00.000Z',
+        summary: 'malformed mission identity'
+      }]
+    }),
+    error => error && error.code === 'MISSION_EVIDENCE_MISSION_INVALID'
+  );
+
   console.log('MONOLITH mission evidence malformed-ledger boundary regression PASS');
 })();

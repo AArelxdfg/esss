@@ -73,11 +73,17 @@ function ledgerEntries(ledger) {
 
 function resolveEntry(ledger, id) {
   const entries = ledgerEntries(ledger);
-  const entry = entries.find(candidate => candidate && candidate.id === id);
-  if (!entry) {
+  const matches = entries.filter(candidate => candidate && candidate.id === id);
+  if (matches.length === 0) {
     throw evidenceBindingError('MISSION_EVIDENCE_NOT_FOUND', `evidence not found: ${id}`);
   }
-  return entry;
+  // A restored/passed-in ledger is an untrusted boundary. Multiple records with the
+  // same deterministic ID make target/SHA-256 resolution ambiguous even if one
+  // record happens to be valid, so never silently accept the first match.
+  if (matches.length !== 1) {
+    throw evidenceBindingError('MISSION_EVIDENCE_DUPLICATE', `duplicate evidence id in ledger: ${id}`);
+  }
+  return matches[0];
 }
 
 function validateEntryIntegrity(entry, id) {

@@ -4,6 +4,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const MAX_MANIFEST_FILES = 4096;
+
 function sha256Bytes(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
@@ -68,6 +70,10 @@ function validateManifest(manifest) {
   failures.push(...validateManifestIdentity(manifest));
   if (manifest.files.length === 0) {
     failures.push({ reason: 'manifest-files-empty' });
+    return { ok: false, failures };
+  }
+  if (manifest.files.length > MAX_MANIFEST_FILES) {
+    failures.push({ reason: 'manifest-files-limit', limit: MAX_MANIFEST_FILES, actual: manifest.files.length });
     return { ok: false, failures };
   }
 
@@ -238,6 +244,7 @@ class IntegritySentinel {
 
 module.exports = {
   IntegritySentinel,
+  MAX_MANIFEST_FILES,
   sha256Bytes,
   canonicalManifestPayload,
   isPathWithin,

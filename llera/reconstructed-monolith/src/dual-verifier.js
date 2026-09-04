@@ -6,6 +6,7 @@ const EVIDENCE_BINDING_REASONS = Object.freeze([
   'invalid_evidence_binding',
   'invalid_evidence_id',
   'incomplete_evidence_binding',
+  'invalid_evidence_field_type',
   'invalid_evidence_tool',
   'invalid_evidence_byte_count',
   'invalid_evidence_binding_sha256',
@@ -15,20 +16,27 @@ const EVIDENCE_BINDING_REASONS = Object.freeze([
   'evidence_summary_too_long'
 ]);
 
+const TEXTUAL_EVIDENCE_FIELDS = Object.freeze([
+  'missionId', 'stepId', 'tool', 'kind', 'target', 'observedAt', 'summary'
+]);
+
 function validateEnrichedEvidence(item) {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return {ok:false, reason:'invalid_evidence_binding'};
   if (typeof item.id !== 'string' || !/^ev_[a-f0-9]{24}$/i.test(item.id)) return {ok:false, reason:'invalid_evidence_id'};
   if (typeof item.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256)) return {ok:false, reason:'invalid_evidence_binding'};
-  const required = ['missionId','stepId','tool','kind','target','observedAt','summary'];
-  if (required.some(key => !String(item[key] || '').trim())) return {ok:false, reason:'incomplete_evidence_binding'};
+
+  for (const field of TEXTUAL_EVIDENCE_FIELDS) {
+    if (typeof item[field] !== 'string') return {ok:false, reason:'invalid_evidence_field_type', field};
+    if (!item[field].trim()) return {ok:false, reason:'incomplete_evidence_binding', field};
+  }
   if (!Number.isSafeInteger(item.byteCount) || item.byteCount < 0) return {ok:false, reason:'invalid_evidence_byte_count'};
   if (typeof item.bindingSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(item.bindingSha256)) {
     return {ok:false, reason:'invalid_evidence_binding_sha256'};
   }
-  if (typeof item.observedAt !== 'string' || !Number.isFinite(Date.parse(item.observedAt))) {
+  if (!Number.isFinite(Date.parse(item.observedAt))) {
     return {ok:false, reason:'invalid_evidence_timestamp'};
   }
-  if (item.summary !== undefined && String(item.summary).length > SUMMARY_MAX_CHARS) {
+  if (item.summary.length > SUMMARY_MAX_CHARS) {
     return {ok:false, reason:'evidence_summary_too_long'};
   }
 
@@ -78,13 +86,17 @@ function checkSetSignature(checks) {
   return JSON.stringify(canonical(Array.isArray(checks) ? checks : []));
 }
 
+function safeText(value) {
+  return typeof value === 'string' ? value : '';
+}
+
 function semanticKeyList(checks) {
   if (!Array.isArray(checks)) return [];
   return checks.map((check, index) => {
-    if (!check || typeof check !== 'object') return `invalid:${index}`;
+    if (!check || typeof check !== 'object' || Array.isArray(check)) return `invalid:${index}`;
     const explicit = check.independenceKey ?? check.semanticKey;
-    if (explicit !== undefined && String(explicit).trim()) return `explicit:${String(explicit).trim()}`;
-    return `implicit:${String(check.name || '').trim()}\u0000${String(check.detail || '').trim()}`;
+    if (typeof explicit === 'string' && explicit.trim()) return `explicit:${explicit.trim()}`;
+    return `implicit:${safeText(check.name).trim()}\u0000${safeText(check.detail).trim()}`;
   });
 }
 
@@ -100,6 +112,16 @@ function duplicateSemanticKeys(checks) {
     else seen.add(key);
   }
   return [...duplicates];
+}
+
+function normalizeEvidenceRefs(raw) {
+  if (!Array.isArray(raw)) return [];
+  const refs = [];
+  for (const id of raw) {
+    if (typeof id !== 'string' || !/^ev_[a-f0-9]{24}$/i.test(id)) return null;
+    if (!refs.includes(id)) refs.push(id);
+  }
+  return refs;
 }
 
 class StrictEvidenceVerifier {
@@ -122,22 +144,23 @@ class StrictEvidenceVerifier {
     }
 
     const normalized = checks.map((raw, index) => {
-      const refs = Array.isArray(raw && raw.evidenceIds)
-        ? [...new Set(raw.evidenceIds.filter(Boolean).map(String))]
-        : [];
-      const unknownEvidenceIds = refs.filter(id => !knownIds.has(id));
-      const missingEvidenceRefs = this.requireEvidenceRefs && refs.length === 0;
-      const bindingOk = !missingEvidenceRefs && unknownEvidenceIds.length === 0;
+      const refs = normalizeEvidenceRefs(raw && raw.evidenceIds);
+      const refsValid = refs !== null;
+      const safeRefs = refsValid ? refs : [];
+      const unknownEvidenceIds = safeRefs.filter(id => !knownIds.has(id));
+      const missingEvidenceRefs = this.requireEvidenceRefs && safeRefs.length === 0;
+      const bindingOk = refsValid && !missingEvidenceRefs && unknownEvidenceIds.length === 0;
       const declaredOk = Boolean(raw) && raw.ok === true;
       return {
-        name: raw && raw.name ? String(raw.name) : `strict_check_${index + 1}`,
+        name: raw && typeof raw.name === 'string' && raw.name.trim() ? raw.name : `strict_check_${index + 1}`,
         ok: declaredOk && bindingOk,
         declaredOk,
         weight: Number.isFinite(raw && raw.weight) && raw.weight > 0 ? raw.weight : 1,
-        detail: raw && raw.detail ? String(raw.detail) : '',
-        evidenceIds: refs,
+        detail: raw && typeof raw.detail === 'string' ? raw.detail : '',
+        evidenceIds: safeRefs,
         unknownEvidenceIds,
-        bindingOk
+        bindingOk,
+        evidenceRefsValid: refsValid
       };
     });
 
@@ -189,25 +212,25 @@ class AdversarialEvidenceVerifier {
     }
 
     const normalized = checks.map((raw, index) => {
-      const refs = Array.isArray(raw && raw.evidenceIds)
-        ? [...new Set(raw.evidenceIds.filter(Boolean).map(String))]
-        : [];
-      const unknownEvidenceIds = refs.filter(id => !knownIds.has(id));
-      const missingEvidenceRefs = this.requireEvidenceRefs && refs.length === 0;
-      const bindingOk = !missingEvidenceRefs && unknownEvidenceIds.length === 0;
+      const refs = normalizeEvidenceRefs(raw && raw.evidenceIds);
+      const refsValid = refs !== null;
+      const safeRefs = refsValid ? refs : [];
+      const unknownEvidenceIds = safeRefs.filter(id => !knownIds.has(id));
+      const missingEvidenceRefs = this.requireEvidenceRefs && safeRefs.length === 0;
+      const bindingOk = refsValid && !missingEvidenceRefs && unknownEvidenceIds.length === 0;
       const declaredOk = Boolean(raw) && raw.ok === true;
-      const severity = ['critical','high','normal'].includes(String(raw && raw.severity || '').toLowerCase())
-        ? String(raw.severity).toLowerCase()
-        : 'normal';
+      const severityRaw = raw && typeof raw.severity === 'string' ? raw.severity.toLowerCase() : '';
+      const severity = ['critical','high','normal'].includes(severityRaw) ? severityRaw : 'normal';
       return {
-        name: raw && raw.name ? String(raw.name) : `adversarial_check_${index + 1}`,
+        name: raw && typeof raw.name === 'string' && raw.name.trim() ? raw.name : `adversarial_check_${index + 1}`,
         ok: declaredOk && bindingOk,
         declaredOk,
         severity,
-        detail: raw && raw.detail ? String(raw.detail) : '',
-        evidenceIds: refs,
+        detail: raw && typeof raw.detail === 'string' ? raw.detail : '',
+        evidenceIds: safeRefs,
         unknownEvidenceIds,
-        bindingOk
+        bindingOk,
+        evidenceRefsValid: refsValid
       };
     });
 
@@ -281,7 +304,7 @@ class DualVerifier {
   }
 
   verify({claim, evidence = [], strictChecks = [], adversarialChecks = []}) {
-    if (!claim) return {ok:false, reason:'claim_required'};
+    if (typeof claim !== 'string' || !claim.trim()) return {ok:false, reason:'claim_required'};
     if (!Array.isArray(evidence) || evidence.length === 0) return {ok:false, reason:'evidence_required'};
 
     for (const item of evidence) {
@@ -294,8 +317,8 @@ class DualVerifier {
     const ids = evidence.map(e => e && e.id);
     if (new Set(ids).size !== ids.length) return {ok:false, reason:'duplicate_evidence_id'};
 
-    const missionIds = [...new Set(evidence.map(e => String(e && e.missionId || '').trim()).filter(Boolean))];
-    if (missionIds.length !== 1 || evidence.some(e => !e || !String(e.missionId || '').trim())) {
+    const missionIds = [...new Set(evidence.map(e => e.missionId.trim()))];
+    if (missionIds.length !== 1) {
       return {ok:false, reason:'mixed_mission_evidence_reject', missionIds};
     }
 
@@ -375,6 +398,7 @@ class DualVerifier {
 
 module.exports = {
   EVIDENCE_BINDING_REASONS,
+  TEXTUAL_EVIDENCE_FIELDS,
   validateEnrichedEvidence,
   checkSetSignature,
   semanticKeys,

@@ -4,13 +4,38 @@ const path = require('node:path');
 const { EvidenceLedger } = require('../../src/evidence-ledger');
 const { WorkModeService } = require('./work-mode-service.cjs');
 
+function resolveEvidenceLedgerStoragePath(userData, missionId) {
+  const evidenceRoot = path.resolve(userData || '', 'evidence');
+  const normalizedMissionId = String(missionId ?? '').trim();
+  if (!normalizedMissionId
+    || normalizedMissionId.length > 200
+    || normalizedMissionId === '.'
+    || normalizedMissionId === '..'
+    || normalizedMissionId.includes('\0')
+    || normalizedMissionId.includes('/')
+    || normalizedMissionId.includes('\\')) {
+    const error = new Error('mission id is not safe for evidence storage');
+    error.code = 'WORK_MODE_EVIDENCE_MISSION_ID_INVALID';
+    throw error;
+  }
+
+  const storagePath = path.resolve(evidenceRoot, `${normalizedMissionId}.json`);
+  const relative = path.relative(evidenceRoot, storagePath);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    const error = new Error('evidence storage escaped mission evidence root');
+    error.code = 'WORK_MODE_EVIDENCE_PATH_ESCAPE';
+    throw error;
+  }
+  return storagePath;
+}
+
 class EvidenceBoundWorkModeService extends WorkModeService {
   constructor(options = {}) {
     super(options);
     const userData = path.resolve(options.userData || '');
     this.runtime.missionTools.evidenceLedgerResolver = missionId => new EvidenceLedger({
       missionId,
-      storagePath: path.join(userData, 'evidence', `${missionId}.json`)
+      storagePath: resolveEvidenceLedgerStoragePath(userData, missionId)
     });
   }
 
@@ -57,4 +82,4 @@ class EvidenceBoundWorkModeService extends WorkModeService {
   }
 }
 
-module.exports = { EvidenceBoundWorkModeService };
+module.exports = { EvidenceBoundWorkModeService, resolveEvidenceLedgerStoragePath };

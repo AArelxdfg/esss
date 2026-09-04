@@ -17,6 +17,21 @@ const CAPABILITY_TOOL_BINDINGS = Object.freeze({
   llera_bench: ['diagnostics', 'bench']
 });
 
+// Only aliases whose recovered V5.4 identity has a semantically equivalent
+// reconstructed capability are admitted here. Do not add approximate mappings:
+// unresolved historical tools must remain visibly unresolved until their real
+// behavior/executor has been restored.
+const HISTORICAL_V54_CAPABILITY_ALIASES = Object.freeze({
+  vision_read_image: 'vision_analyze_image',
+  doctor_run: 'llera_doctor',
+  benchmark_run: 'llera_bench'
+});
+
+function normalizeCapabilityTool(tool) {
+  if (typeof tool !== 'string') return tool;
+  return HISTORICAL_V54_CAPABILITY_ALIASES[tool] || tool;
+}
+
 class MonolithCapabilityBroker {
   constructor({
     vision,
@@ -48,18 +63,28 @@ class MonolithCapabilityBroker {
       else unavailable.push(tool);
     }
 
+    const historicalAliases = Object.entries(HISTORICAL_V54_CAPABILITY_ALIASES).map(([historical, reconstructed]) => ({
+      historical,
+      reconstructed,
+      available: available.includes(reconstructed)
+    }));
+
     return {
       supportedCount: supported.length,
       availableCount: available.length,
       unavailableCount: unavailable.length,
       supported,
       available,
-      unavailable
+      unavailable,
+      historicalAliases,
+      availableHistoricalAliasCount: historicalAliases.filter(item => item.available).length
     };
   }
 
   async invoke(tool, args = {}, context = {}) {
-    switch (tool) {
+    const normalizedTool = normalizeCapabilityTool(tool);
+
+    switch (normalizedTool) {
       case 'vision_analyze_image':
         return this._call('vision', 'analyze', 'vision pipeline unavailable',
           { ...args, kind: args.kind || 'image', context });
@@ -144,4 +169,9 @@ function compact(value) {
   return Object.fromEntries(Object.entries(value || {}).filter(([, v]) => v !== undefined));
 }
 
-module.exports = { MonolithCapabilityBroker, CAPABILITY_TOOL_BINDINGS };
+module.exports = {
+  MonolithCapabilityBroker,
+  CAPABILITY_TOOL_BINDINGS,
+  HISTORICAL_V54_CAPABILITY_ALIASES,
+  normalizeCapabilityTool
+};

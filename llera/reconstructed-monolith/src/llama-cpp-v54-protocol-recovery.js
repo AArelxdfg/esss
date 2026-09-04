@@ -119,10 +119,9 @@ async function recoveryChat(instance, { messages, maxTokens, temperature, signal
     const body = await response.json();
     const message = body?.choices?.[0]?.message || {};
     const direct = typeof message.content === 'string' ? message.content : '';
-    const reasoning = typeof message.reasoning_content === 'string' ? message.reasoning_content : '';
-    const content = cleanReply(!isDegenerate(direct) ? direct : reasoning);
+    const content = cleanReply(direct);
     if (isDegenerate(content)) {
-      const error = new Error('llama.cpp recovery chat returned degenerate output');
+      const error = new Error('llama.cpp recovery chat returned no safe user-visible content');
       error.code = 'LLAMA_RECOVERY_CHAT_DEGENERATE';
       throw error;
     }

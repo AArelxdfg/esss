@@ -4,6 +4,39 @@ const crypto = require('crypto');
 const DEFAULT_MAX_BYTES = 32 * 1024 * 1024;
 const ALLOWED_PRESSURES = new Set(['normal', 'elevated', 'critical']);
 
+function ownDataProperty(object, key) {
+  if (!object || typeof object !== 'object') return { present: false, value: undefined };
+  const descriptor = Object.getOwnPropertyDescriptor(object, key);
+  if (!descriptor) return { present: false, value: undefined };
+  if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+    const error = new Error(`unsafe vision input ${key}`);
+    error.code = 'VISION_INPUT_ACCESSOR_REJECTED';
+    throw error;
+  }
+  return { present: true, value: descriptor.value };
+}
+
+function requiredStringProperty(object, key) {
+  const entry = ownDataProperty(object, key);
+  if (!entry.present || typeof entry.value !== 'string') {
+    const error = new Error(`vision input ${key} must be a string`);
+    error.code = 'VISION_INPUT_TYPE_INVALID';
+    throw error;
+  }
+  return entry.value;
+}
+
+function optionalStringProperty(object, key, fallback) {
+  const entry = ownDataProperty(object, key);
+  if (!entry.present || entry.value === undefined || entry.value === null || entry.value === '') return fallback;
+  if (typeof entry.value !== 'string') {
+    const error = new Error(`vision input ${key} must be a string`);
+    error.code = 'VISION_INPUT_TYPE_INVALID';
+    throw error;
+  }
+  return entry.value;
+}
+
 class VisionPipeline {
   constructor({ now = () => new Date().toISOString(), maxBytes = DEFAULT_MAX_BYTES } = {}) {
     if (typeof now !== 'function') {
@@ -23,20 +56,22 @@ class VisionPipeline {
   }
 
   normalizeInput(input) {
-    if (!input || typeof input !== 'object' || Array.isArray(input) || !Buffer.isBuffer(input.bytes)) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw new Error('vision input bytes required');
     }
-    if (!input.bytes.length) throw new Error('empty vision input');
-    if (input.bytes.length > this.maxBytes) throw new Error('vision input exceeds size limit');
-    if (typeof input.kind !== 'string') throw new Error('vision input kind must be a string');
-    const kind = input.kind.toLowerCase();
+    const bytesEntry = ownDataProperty(input, 'bytes');
+    if (!bytesEntry.present || !Buffer.isBuffer(bytesEntry.value)) throw new Error('vision input bytes required');
+    const rawBytes = bytesEntry.value;
+    if (!rawBytes.length) throw new Error('empty vision input');
+    if (rawBytes.length > this.maxBytes) throw new Error('vision input exceeds size limit');
+
+    const kind = requiredStringProperty(input, 'kind').toLowerCase();
     if (!['image', 'file', 'screen'].includes(kind)) throw new Error('unsupported vision input kind');
-    if (input.mime !== undefined && typeof input.mime !== 'string') throw new Error('vision input mime must be a string');
-    const mime = (input.mime || 'application/octet-stream').toLowerCase();
-    if (input.source !== undefined && typeof input.source !== 'string') throw new Error('vision input source must be a string');
-    const source = input.source || kind;
+    const mime = optionalStringProperty(input, 'mime', 'application/octet-stream').toLowerCase();
+    const source = optionalStringProperty(input, 'source', kind);
     if (!source.trim() || /[\r\n\0]/.test(source)) throw new Error('unsafe vision input source');
-    const bytes = Buffer.from(input.bytes);
+
+    const bytes = Buffer.from(rawBytes);
     const byteCount = bytes.length;
     const digest = crypto.createHash('sha256').update(bytes).digest('hex');
     return {
@@ -172,4 +207,12 @@ function cloneInput(input) {
   return {...input, bytes:Buffer.from(input.bytes)};
 }
 
-module.exports = { VisionPipeline, cloneInput, DEFAULT_MAX_BYTES, normalizePressure };
+module.exports = {
+  VisionPipeline,
+  cloneInput,
+  DEFAULT_MAX_BYTES,
+  normalizePressure,
+  ownDataProperty,
+  requiredStringProperty,
+  optionalStringProperty
+};

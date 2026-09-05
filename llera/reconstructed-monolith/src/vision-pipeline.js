@@ -24,10 +24,20 @@ function optionalStringProperty(object, key, fallback) {
   return entry.value;
 }
 
-function normalizeOcrText(value) {
+function normalizeOcrText(value, { maxBytes = 4 * 1024 * 1024 } = {}) {
   if (value === undefined || value === null) return '';
   if (typeof value !== 'string') {
     const error = new Error('OCR backend output must be string');
+    error.code = 'VISION_OCR_OUTPUT_INVALID';
+    throw error;
+  }
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    const error = new Error('OCR output byte limit must be a positive safe integer');
+    error.code = 'VISION_OCR_OUTPUT_INVALID';
+    throw error;
+  }
+  if (Buffer.byteLength(value, 'utf8') > maxBytes) {
+    const error = new Error('OCR backend output exceeds byte limit');
     error.code = 'VISION_OCR_OUTPUT_INVALID';
     throw error;
   }

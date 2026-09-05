@@ -31,6 +31,17 @@ function isSha256(value) {
   return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
 }
 
+function isCanonicalObservedAt(value) {
+  if (typeof value !== 'string') return false;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return false;
+  try {
+    return new Date(parsed).toISOString() === value;
+  } catch (_) {
+    return false;
+  }
+}
+
 function evidenceId({missionId, stepId, tool, kind, target, sha256: digest, byteCount, observedAt, summary}) {
   return `ev_${sha256(JSON.stringify(canonical({
     missionId, stepId, tool, kind, target, sha256:String(digest || '').toLowerCase(), byteCount, observedAt, summary
@@ -83,7 +94,7 @@ class EvidenceLedger {
       throw new Error('stepId, tool, kind and target required');
     }
     const normalizedTool = tool.trim();
-    if (typeof observedAt !== 'string' || !Number.isFinite(Date.parse(observedAt))) throw new Error('valid evidence timestamp required');
+    if (!isCanonicalObservedAt(observedAt)) throw new Error('canonical evidence timestamp required');
     const computed = bytes === undefined ? null : sha256(bytes);
     if (digest !== undefined && digest !== null && !isSha256(digest)) throw new Error('valid sha256 required');
     const boundDigest = digest || computed;
@@ -162,9 +173,6 @@ class EvidenceLedger {
   forStep(stepId) { return this.entries.filter(x => x.stepId === stepId).map(clone); }
   snapshot() { return this.entries.map(x => clone({...x, metadata:canonical(x.metadata)})); }
 
-  // Default export stays compatible with the AURORA view-model, which consumes
-  // a plain evidence array. sealed=true produces a portable, integrity-bound
-  // state object suitable for backup/restore and cross-process handoff.
   export({sealed = false} = {}) {
     const entries = this.snapshot();
     if (!sealed) return entries;
@@ -173,9 +181,6 @@ class EvidenceLedger {
     return clone(state);
   }
 
-  // Import is fail-closed and atomic with respect to both memory and disk:
-  // every binding is validated before the current ledger is touched; when a
-  // storagePath exists, persistence succeeds before this.entries is replaced.
   import(state) {
     const parsed = clone(state);
     this.#assertState(parsed);
@@ -228,7 +233,7 @@ class EvidenceLedger {
         !isNonEmptyPrimitiveString(entry.stepId) || !isNonEmptyPrimitiveString(entry.tool) ||
         !isNonEmptyPrimitiveString(entry.kind) || !isNonEmptyPrimitiveString(entry.target) ||
         !Number.isSafeInteger(entry.byteCount) || entry.byteCount < 0 ||
-        typeof entry.observedAt !== 'string' || !Number.isFinite(Date.parse(entry.observedAt)) ||
+        !isCanonicalObservedAt(entry.observedAt) ||
         typeof entry.summary !== 'string' || !entry.summary.trim() ||
         !isSha256(entry.sha256)) {
       const error = new Error('persisted evidence binding invalid');

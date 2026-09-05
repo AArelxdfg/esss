@@ -24,6 +24,25 @@ function optionalStringProperty(object, key, fallback) {
   return entry.value;
 }
 
+function positiveSafeInteger(value, label, code = 'VISION_INPUT_LIMIT_INVALID') {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    const error = new Error(`${label} must be a positive safe integer`);
+    error.code = code;
+    throw error;
+  }
+  return value;
+}
+
+function boundedUtf8String(value, { label, maxBytes }) {
+  const limit = positiveSafeInteger(maxBytes, `${label} byte limit`);
+  if (Buffer.byteLength(value, 'utf8') > limit) {
+    const error = new Error(`${label} exceeds byte limit`);
+    error.code = 'VISION_INPUT_METADATA_INVALID';
+    throw error;
+  }
+  return value;
+}
+
 function normalizeOcrText(value, { maxBytes = 4 * 1024 * 1024 } = {}) {
   if (value === undefined || value === null) return '';
   if (typeof value !== 'string') {
@@ -124,9 +143,16 @@ function normalizeVisionOutput(value, {
 }
 
 class VisionPipeline {
-  constructor({ now = () => new Date().toISOString(), maxBytes = 32 * 1024 * 1024 } = {}) {
+  constructor({
+    now = () => new Date().toISOString(),
+    maxBytes = 32 * 1024 * 1024,
+    maxSourceBytes = 16 * 1024,
+    maxMimeBytes = 4096,
+  } = {}) {
     this.now = now;
-    this.maxBytes = maxBytes;
+    this.maxBytes = positiveSafeInteger(maxBytes, 'vision input byte limit');
+    this.maxSourceBytes = positiveSafeInteger(maxSourceBytes, 'vision source byte limit');
+    this.maxMimeBytes = positiveSafeInteger(maxMimeBytes, 'vision MIME byte limit');
     this.active = null;
     this.history = [];
   }
@@ -142,8 +168,14 @@ class VisionPipeline {
 
     const kind = optionalStringProperty(input, 'kind', '').toLowerCase();
     if (!['image', 'file', 'screen'].includes(kind)) throw new Error('unsupported vision input kind');
-    const mime = optionalStringProperty(input, 'mime', 'application/octet-stream').toLowerCase();
-    const source = optionalStringProperty(input, 'source', kind);
+    const mime = boundedUtf8String(
+      optionalStringProperty(input, 'mime', 'application/octet-stream').toLowerCase(),
+      { label: 'vision input mime', maxBytes: this.maxMimeBytes },
+    );
+    const source = boundedUtf8String(
+      optionalStringProperty(input, 'source', kind),
+      { label: 'vision input source', maxBytes: this.maxSourceBytes },
+    );
     if (!source.trim() || /[\r\n\0]/.test(source)) throw new Error('unsafe vision input source');
 
     const bytes = Buffer.from(rawBytes);
@@ -244,4 +276,13 @@ function cloneInput(input) {
   return { ...input, bytes: Buffer.from(input.bytes) };
 }
 
-module.exports = { VisionPipeline, cloneInput, ownDataProperty, optionalStringProperty, normalizeOcrText, normalizeVisionOutput };
+module.exports = {
+  VisionPipeline,
+  cloneInput,
+  ownDataProperty,
+  optionalStringProperty,
+  positiveSafeInteger,
+  boundedUtf8String,
+  normalizeOcrText,
+  normalizeVisionOutput,
+};

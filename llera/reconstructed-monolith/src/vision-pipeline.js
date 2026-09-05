@@ -34,12 +34,28 @@ function normalizeOcrText(value) {
   return value;
 }
 
-function normalizeVisionOutput(value, { maxDepth = 16, maxNodes = 4096 } = {}) {
+function normalizeVisionOutput(value, {
+  maxDepth = 16,
+  maxNodes = 4096,
+  maxStringBytes = 1024 * 1024,
+  maxTotalStringBytes = 4 * 1024 * 1024,
+  maxKeyBytes = 4096,
+} = {}) {
   let nodes = 0;
+  let totalStringBytes = 0;
   const seen = new Set();
 
+  function accountString(entry) {
+    const bytes = Buffer.byteLength(entry, 'utf8');
+    if (bytes > maxStringBytes) throw invalid('vision backend output string exceeds byte limit');
+    totalStringBytes += bytes;
+    if (totalStringBytes > maxTotalStringBytes) throw invalid('vision backend output exceeds total string byte limit');
+    return entry;
+  }
+
   function visit(entry, depth) {
-    if (entry === null || typeof entry === 'string' || typeof entry === 'boolean') return entry;
+    if (entry === null || typeof entry === 'boolean') return entry;
+    if (typeof entry === 'string') return accountString(entry);
     if (typeof entry === 'number') {
       if (!Number.isFinite(entry)) throw invalid('vision backend output contains non-finite number');
       return entry;
@@ -73,6 +89,9 @@ function normalizeVisionOutput(value, { maxDepth = 16, maxNodes = 4096 } = {}) {
 
       const result = Object.create(null);
       for (const key of Object.keys(entry)) {
+        if (Buffer.byteLength(key, 'utf8') > maxKeyBytes) {
+          throw invalid('vision backend object key exceeds byte limit');
+        }
         const descriptor = Object.getOwnPropertyDescriptor(entry, key);
         if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
           throw invalid('vision backend object contains unsafe accessor');

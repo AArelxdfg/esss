@@ -56,6 +56,36 @@ class SignedUpdateLifecycle {
   async init() {
     await Promise.all([fsp.mkdir(this.paths.downloads,{recursive:true}),fsp.mkdir(this.paths.staging,{recursive:true}),fsp.mkdir(this.paths.backup,{recursive:true})]);
   }
+  async _assertManagedDirectory(dir,label) {
+    let st;
+    try { st=await fsp.lstat(dir); } catch (error) {
+      const wrapped=new Error(`Cannot inspect ${label}: ${error.message}`);
+      wrapped.code='UPDATE_MANAGED_PATH_INSPECTION_FAILED';
+      wrapped.cause=error;
+      throw wrapped;
+    }
+    if (st.isSymbolicLink() || !st.isDirectory()) {
+      const error=new Error(`${label} must be a real directory, not a link or alternate file type`);
+      error.code='UPDATE_MANAGED_PATH_UNSAFE';
+      throw error;
+    }
+  }
+  async _assertManagedRegularFile(file,label,{allowMissing=false}={}) {
+    let st;
+    try { st=await fsp.lstat(file); } catch (error) {
+      if (allowMissing && error?.code === 'ENOENT') return false;
+      const wrapped=new Error(`Cannot inspect ${label}: ${error.message}`);
+      wrapped.code='UPDATE_MANAGED_PATH_INSPECTION_FAILED';
+      wrapped.cause=error;
+      throw wrapped;
+    }
+    if (st.isSymbolicLink() || !st.isFile()) {
+      const error=new Error(`${label} must be a real regular file, not a link or alternate file type`);
+      error.code='UPDATE_MANAGED_PATH_UNSAFE';
+      throw error;
+    }
+    return true;
+  }
   _manifestPayload(manifest) {
     if (!manifest || typeof manifest !== 'object') throw new Error('manifest required');
     const payload = Buffer.from(stableStringify(manifest));
@@ -158,21 +188,24 @@ class SignedUpdateLifecycle {
     await this.init(); const version = safeVersionSegment(manifest.version);
     const currentFile=path.join(this.paths.current,'LLera.bin'), backupFile=path.join(this.paths.backup,'LLera.previous.bin');
     await fsp.mkdir(this.paths.current,{recursive:true}); await fsp.mkdir(this.paths.backup,{recursive:true});
+    await this._assertManagedDirectory(this.paths.current,'current install directory');
+    await this._assertManagedDirectory(this.paths.backup,'rollback directory');
     let hadCurrent=false, backupSha256=null;
     try {
-      await fsp.access(currentFile);
-      hadCurrent=true;
+      hadCurrent=await this._assertManagedRegularFile(currentFile,'current install',{allowMissing:true});
     } catch (error) {
-      if (error?.code !== 'ENOENT') {
-        const wrapped=new Error(`Cannot inspect current install before update: ${error.message}`);
-        wrapped.code='UPDATE_CURRENT_INSPECTION_FAILED';
-        wrapped.cause=error;
-        throw wrapped;
-      }
+      if (error?.code === 'UPDATE_MANAGED_PATH_UNSAFE') throw error;
+      const wrapped=new Error(`Cannot inspect current install before update: ${error.message}`);
+      wrapped.code='UPDATE_CURRENT_INSPECTION_FAILED';
+      wrapped.cause=error;
+      throw wrapped;
     }
+    const existingBackup=await this._assertManagedRegularFile(backupFile,'rollback backup',{allowMissing:true});
+    if (existingBackup) await fsp.rm(backupFile,{force:true});
     if (hadCurrent) {
       try {
         await fsp.copyFile(currentFile,backupFile);
+        await this._assertManagedRegularFile(backupFile,'rollback backup');
         backupSha256=await sha256File(backupFile);
       } catch (error) {
         const wrapped=new Error(`Cannot create rollback backup: ${error.message}`);
@@ -181,9 +214,14 @@ class SignedUpdateLifecycle {
         throw wrapped;
       }
     }
-    const tmp=`${currentFile}.new`; await fsp.copyFile(stagedPath,tmp); const digest=await sha256File(tmp);
+    const tmp=`${currentFile}.new`;
+    await this._assertManagedRegularFile(tmp,'activation temporary file',{allowMissing:true}).then(exists => exists ? fsp.rm(tmp,{force:true}) : null);
+    await fsp.copyFile(stagedPath,tmp);
+    await this._assertManagedRegularFile(tmp,'activation temporary file');
+    const digest=await sha256File(tmp);
     if (digest.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) { await fsp.rm(tmp,{force:true}); throw new Error('activation integrity mismatch'); }
     await fsp.rename(tmp,currentFile);
+    await this._assertManagedRegularFile(currentFile,'current install');
     await this._writeJournal({
       state:'activated',version,currentFile,
       backupFile:hadCurrent?backupFile:null,
@@ -207,18 +245,26 @@ class SignedUpdateLifecycle {
     if (backupFile !== path.resolve(expectedBackupFile)) {
       throw new Error('rollback backup path binding mismatch');
     }
+    await this._assertManagedDirectory(this.paths.current,'current install directory');
+    await this._assertManagedDirectory(this.paths.backup,'rollback directory');
+    await this._assertManagedRegularFile(currentFile,'current install');
+    await this._assertManagedRegularFile(backupFile,'rollback backup');
     const backupDigest=await sha256File(backupFile);
     if (backupDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
       throw new Error('rollback backup integrity mismatch');
     }
     const tmp=`${currentFile}.rollback`;
+    const staleRollbackTmp=await this._assertManagedRegularFile(tmp,'rollback temporary file',{allowMissing:true});
+    if (staleRollbackTmp) await fsp.rm(tmp,{force:true});
     await fsp.copyFile(backupFile,tmp);
+    await this._assertManagedRegularFile(tmp,'rollback temporary file');
     const tmpDigest=await sha256File(tmp);
     if (tmpDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
       await fsp.rm(tmp,{force:true});
       throw new Error('rollback copy integrity mismatch');
     }
     await fsp.rename(tmp,currentFile);
+    await this._assertManagedRegularFile(currentFile,'restored current install');
     const restoredDigest=await sha256File(currentFile);
     if (restoredDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
       throw new Error('rollback restored install integrity mismatch');

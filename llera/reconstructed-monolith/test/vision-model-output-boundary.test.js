@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { VisionPipeline } = require('../src/vision-pipeline');
+const { VisionPipeline, normalizeVisionOutput } = require('../src/vision-pipeline');
 
 (async () => {
   const input = {
@@ -33,6 +33,19 @@ const { VisionPipeline } = require('../src/vision-pipeline');
   assert.strictEqual(effects, 0, 'vision result getters must never execute');
   assert.strictEqual(pipeline.active, null, 'failed vision backend must release single-flight slot');
 
+  assert.throws(
+    () => normalizeVisionOutput('x'.repeat(33), { maxStringBytes: 32, maxTotalStringBytes: 128 }),
+    (error) => error && error.code === 'VISION_MODEL_OUTPUT_INVALID' && /string exceeds byte limit/.test(error.message),
+  );
+  assert.throws(
+    () => normalizeVisionOutput(['12345678', 'abcdefgh', 'ABCDEFGH'], { maxStringBytes: 16, maxTotalStringBytes: 20 }),
+    (error) => error && error.code === 'VISION_MODEL_OUTPUT_INVALID' && /total string byte limit/.test(error.message),
+  );
+  assert.throws(
+    () => normalizeVisionOutput({ ['k'.repeat(17)]: 'ok' }, { maxKeyBytes: 16 }),
+    (error) => error && error.code === 'VISION_MODEL_OUTPUT_INVALID' && /key exceeds byte limit/.test(error.message),
+  );
+
   const backendObject = {
     caption: 'MONOLITH VISION OUTPUT TEST 2026',
     confidence: 0.99,
@@ -61,6 +74,8 @@ const { VisionPipeline } = require('../src/vision-pipeline');
     accessorRejectedWithoutExecution: effects === 0,
     structuredOutputAccepted: true,
     outputSnapshotIsolated: true,
+    outputStringBudgetEnforced: true,
+    outputKeyBudgetEnforced: true,
     singleFlightReleased: true,
   });
 })().catch((error) => {

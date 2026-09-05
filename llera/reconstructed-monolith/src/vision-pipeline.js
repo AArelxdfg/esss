@@ -70,6 +70,12 @@ function normalizeVisionOutput(value, {
   maxTotalStringBytes = 4 * 1024 * 1024,
   maxKeyBytes = 4096,
 } = {}) {
+  maxDepth = positiveSafeInteger(maxDepth, 'vision output depth limit', 'VISION_MODEL_OUTPUT_LIMIT_INVALID');
+  maxNodes = positiveSafeInteger(maxNodes, 'vision output node limit', 'VISION_MODEL_OUTPUT_LIMIT_INVALID');
+  maxStringBytes = positiveSafeInteger(maxStringBytes, 'vision output string byte limit', 'VISION_MODEL_OUTPUT_LIMIT_INVALID');
+  maxTotalStringBytes = positiveSafeInteger(maxTotalStringBytes, 'vision output total string byte limit', 'VISION_MODEL_OUTPUT_LIMIT_INVALID');
+  maxKeyBytes = positiveSafeInteger(maxKeyBytes, 'vision output key byte limit', 'VISION_MODEL_OUTPUT_LIMIT_INVALID');
+
   let nodes = 0;
   let totalStringBytes = 0;
   const seen = new Set();

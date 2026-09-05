@@ -2,6 +2,8 @@
 const crypto = require('crypto');
 
 const DEFAULT_MAX_BYTES = 32 * 1024 * 1024;
+const DEFAULT_MAX_MIME_BYTES = 1024;
+const DEFAULT_MAX_SOURCE_BYTES = 4096;
 const ALLOWED_PRESSURES = new Set(['normal', 'elevated', 'critical']);
 
 function ownDataProperty(object, key) {
@@ -35,6 +37,25 @@ function optionalStringProperty(object, key, fallback) {
     throw error;
   }
   return entry.value;
+}
+
+function validateMetadataString(value, key, { maxBytes, requireNonEmpty = true } = {}) {
+  if (typeof value !== 'string') {
+    const error = new Error(`vision input ${key} must be a string`);
+    error.code = 'VISION_INPUT_TYPE_INVALID';
+    throw error;
+  }
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    const error = new Error(`vision input ${key} byte limit invalid`);
+    error.code = 'VISION_INPUT_METADATA_INVALID';
+    throw error;
+  }
+  if ((requireNonEmpty && !value.trim()) || /[\r\n\0]/.test(value) || Buffer.byteLength(value, 'utf8') > maxBytes) {
+    const error = new Error(`unsafe vision input ${key}`);
+    error.code = 'VISION_INPUT_METADATA_INVALID';
+    throw error;
+  }
+  return value;
 }
 
 function normalizeOcrText(value, { maxBytes = 4 * 1024 * 1024 } = {}) {
@@ -87,9 +108,16 @@ class VisionPipeline {
 
     const kind = requiredStringProperty(input, 'kind').toLowerCase();
     if (!['image', 'file', 'screen'].includes(kind)) throw new Error('unsupported vision input kind');
-    const mime = optionalStringProperty(input, 'mime', 'application/octet-stream').toLowerCase();
-    const source = optionalStringProperty(input, 'source', kind);
-    if (!source.trim() || /[\r\n\0]/.test(source)) throw new Error('unsafe vision input source');
+    const mime = validateMetadataString(
+      optionalStringProperty(input, 'mime', 'application/octet-stream').toLowerCase(),
+      'mime',
+      { maxBytes: DEFAULT_MAX_MIME_BYTES },
+    );
+    const source = validateMetadataString(
+      optionalStringProperty(input, 'source', kind),
+      'source',
+      { maxBytes: DEFAULT_MAX_SOURCE_BYTES },
+    );
 
     const bytes = Buffer.from(rawBytes);
     const byteCount = bytes.length;
@@ -225,9 +253,12 @@ module.exports = {
   VisionPipeline,
   cloneInput,
   DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_MIME_BYTES,
+  DEFAULT_MAX_SOURCE_BYTES,
   normalizePressure,
   ownDataProperty,
   requiredStringProperty,
   optionalStringProperty,
+  validateMetadataString,
   normalizeOcrText
 };

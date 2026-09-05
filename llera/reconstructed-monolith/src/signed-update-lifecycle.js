@@ -181,12 +181,19 @@ class SignedUpdateLifecycle {
     const journal=await this.readJournal();
     if(!journal||journal.state!=='activated'||!journal.backupFile) throw new Error('rollback unavailable');
     if(!/^[a-f0-9]{64}$/i.test(String(journal.backupSha256 || ''))) throw new Error('rollback backup digest unavailable');
-    const currentFile=journal.currentFile, backupDigest=await sha256File(journal.backupFile);
+    const expectedCurrentFile=path.join(this.paths.current,'LLera.bin');
+    const expectedBackupFile=path.join(this.paths.backup,'LLera.previous.bin');
+    const currentFile=path.resolve(String(journal.currentFile || ''));
+    const backupFile=path.resolve(String(journal.backupFile || ''));
+    if (currentFile !== path.resolve(expectedCurrentFile) || backupFile !== path.resolve(expectedBackupFile)) {
+      throw new Error('rollback journal path binding mismatch');
+    }
+    const backupDigest=await sha256File(backupFile);
     if (backupDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
       throw new Error('rollback backup integrity mismatch');
     }
     const tmp=`${currentFile}.rollback`;
-    await fsp.copyFile(journal.backupFile,tmp);
+    await fsp.copyFile(backupFile,tmp);
     const tmpDigest=await sha256File(tmp);
     if (tmpDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
       await fsp.rm(tmp,{force:true});

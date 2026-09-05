@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - llera-reliability-audit-2026-08-29
+      - llera-final-build-reconstruction-2026-09-01
+    paths:
+      - 'llera/reconstructed-monolith/**'
+      - '.github/workflows/llera-reliability-audit.yml'
   workflow_dispatch:
 
 permissions:
@@ -32,6 +36,7 @@ jobs:
             test/dual-verifier-evidence-coverage.test.js
             test/evidence-verifier.test.js
             test/evidence-ledger-persistence.test.js
+            test/evidence-ledger-canonical-timestamp.test.js
             test/anti-loop-semantic-path.test.js
             test/tool-surface.test.js
             test/runtime-pid-guard-edge-cases.test.js

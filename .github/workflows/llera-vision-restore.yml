@@ -12,6 +12,7 @@ on:
       - 'llera/reconstructed-monolith/test/vision-input-snapshot-isolation.test.js'
       - 'llera/reconstructed-monolith/test/vision-input-coercion-boundary.test.js'
       - 'llera/reconstructed-monolith/test/vision-ocr-output-boundary.test.js'
+      - 'llera/reconstructed-monolith/test/vision-model-output-boundary.test.js'
       - '.github/workflows/llera-vision-restore.yml'
   workflow_dispatch:
 
@@ -43,3 +44,5 @@ jobs:
         run: node llera/reconstructed-monolith/test/vision-input-coercion-boundary.test.js
       - name: Vision OCR output boundary
         run: node llera/reconstructed-monolith/test/vision-ocr-output-boundary.test.js
+      - name: Vision model output boundary
+        run: node llera/reconstructed-monolith/test/vision-model-output-boundary.test.js

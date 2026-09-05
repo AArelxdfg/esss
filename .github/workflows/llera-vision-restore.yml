@@ -8,6 +8,7 @@ on:
       - 'llera/reconstructed-monolith/src/vision-runtime-adapter.js'
       - 'llera/reconstructed-monolith/test/vision-runtime-adapter.test.js'
       - 'llera/reconstructed-monolith/test/vision-backend-recovery.test.js'
+      - 'llera/reconstructed-monolith/test/vision-degraded-backend-fallback.test.js'
       - 'llera/reconstructed-monolith/test/vision-hostguard.test.js'
       - 'llera/reconstructed-monolith/test/vision-input-snapshot-isolation.test.js'
       - 'llera/reconstructed-monolith/test/vision-input-coercion-boundary.test.js'
@@ -37,6 +38,8 @@ jobs:
         run: node llera/reconstructed-monolith/test/vision-runtime-adapter.test.js
       - name: Vision backend recovery
         run: node llera/reconstructed-monolith/test/vision-backend-recovery.test.js
+      - name: Vision degraded backend fallback
+        run: node llera/reconstructed-monolith/test/vision-degraded-backend-fallback.test.js
       - name: Vision HOSTGUARD admission
         run: node llera/reconstructed-monolith/test/vision-hostguard.test.js
       - name: Vision immutable input snapshot

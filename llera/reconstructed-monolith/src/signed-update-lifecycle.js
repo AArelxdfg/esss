@@ -139,11 +139,16 @@ class SignedUpdateLifecycle {
     const version = safeVersionSegment(manifest.version);
     const finalPath = path.join(this.paths.downloads, `${version}.bin`);
     const partPath = `${finalPath}.part`;
+    await this._assertManagedDirectory(this.paths.downloads,'downloads directory');
+    await this._assertManagedRegularFile(finalPath,'downloaded artifact',{allowMissing:true});
+    const partExists = await this._assertManagedRegularFile(partPath,'partial download',{allowMissing:true});
     let offset = 0;
-    if (resume) {
-      try { offset = (await fsp.stat(partPath)).size; } catch { offset = 0; }
+    if (resume && partExists) {
+      offset = (await fsp.lstat(partPath)).size;
       if (offset > artifact.size) { await fsp.rm(partPath,{force:true}); offset = 0; }
-    } else await fsp.rm(partPath,{force:true});
+    } else if (!resume && partExists) {
+      await fsp.rm(partPath,{force:true});
+    }
     const headers = offset ? { Range: `bytes=${offset}-` } : {};
     const response = await this.fetchImpl(artifact.url,{headers});
     if (!response || !response.ok) throw new Error(`download failed: ${response && response.status}`);
@@ -165,11 +170,14 @@ class SignedUpdateLifecycle {
         this.onProgress({phase:'download',received,total:artifact.size,percent:Math.min(100,received/artifact.size*100)});
       }
     } finally { await handle.close(); }
-    const st = await fsp.stat(partPath);
+    await this._assertManagedRegularFile(partPath,'partial download');
+    const st = await fsp.lstat(partPath);
     if (st.size !== artifact.size) throw new Error(`artifact size mismatch: ${st.size} != ${artifact.size}`);
     const digest = await sha256File(partPath);
     if (digest.toLowerCase() !== artifact.sha256.toLowerCase()) throw new Error('artifact sha256 mismatch');
+    await this._assertManagedRegularFile(finalPath,'downloaded artifact',{allowMissing:true});
     await fsp.rename(partPath,finalPath);
+    await this._assertManagedRegularFile(finalPath,'downloaded artifact');
     this.onProgress({phase:'verified',received:st.size,total:artifact.size,percent:100});
     return {path:finalPath,sha256:digest,size:st.size};
   }

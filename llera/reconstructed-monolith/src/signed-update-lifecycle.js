@@ -219,11 +219,15 @@ class SignedUpdateLifecycle {
       throw new Error('rollback copy integrity mismatch');
     }
     await fsp.rename(tmp,currentFile);
+    const restoredDigest=await sha256File(currentFile);
+    if (restoredDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {
+      throw new Error('rollback restored install integrity mismatch');
+    }
     await this._writeJournal({
       state:'rolled-back',fromVersion:journal.version,currentFile,
-      restoredSha256:backupDigest,expectedBackupSha256:journal.backupSha256
+      restoredSha256:restoredDigest,expectedBackupSha256:journal.backupSha256
     });
-    this.onProgress({phase:'rolled-back',percent:100}); return {currentFile,restoredSha256:backupDigest};
+    this.onProgress({phase:'rolled-back',percent:100}); return {currentFile,restoredSha256:restoredDigest};
   }
   async readJournal() { try { return JSON.parse(await fsp.readFile(this.paths.journal,'utf8')); } catch { return null; } }
   async _writeJournal(value) {

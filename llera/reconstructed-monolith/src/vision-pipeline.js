@@ -37,6 +37,26 @@ function optionalStringProperty(object, key, fallback) {
   return entry.value;
 }
 
+function normalizeOcrText(value, { maxBytes = 4 * 1024 * 1024 } = {}) {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') {
+    const error = new Error('OCR backend output must be string');
+    error.code = 'VISION_OCR_OUTPUT_INVALID';
+    throw error;
+  }
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    const error = new Error('OCR output byte limit must be a positive safe integer');
+    error.code = 'VISION_OCR_OUTPUT_INVALID';
+    throw error;
+  }
+  if (Buffer.byteLength(value, 'utf8') > maxBytes) {
+    const error = new Error('OCR backend output exceeds byte limit');
+    error.code = 'VISION_OCR_OUTPUT_INVALID';
+    throw error;
+  }
+  return value;
+}
+
 class VisionPipeline {
   constructor({ now = () => new Date().toISOString(), maxBytes = DEFAULT_MAX_BYTES } = {}) {
     if (typeof now !== 'function') {
@@ -134,13 +154,7 @@ class VisionPipeline {
 
       if (shouldOcr && canOcr) {
         try {
-          const ocrResult = await ocr(cloneInput(n));
-          if (typeof ocrResult !== 'string') {
-            const error = new TypeError('OCR backend must return a string');
-            error.code = 'VISION_OCR_RESULT_INVALID';
-            throw error;
-          }
-          text = ocrResult;
+          text = normalizeOcrText(await ocr(cloneInput(n)));
           backends.push('windows-ocr');
         } catch (error) {
           warnings.push({ backend: 'windows-ocr', reason: String(error && error.message || error) });
@@ -214,5 +228,6 @@ module.exports = {
   normalizePressure,
   ownDataProperty,
   requiredStringProperty,
-  optionalStringProperty
+  optionalStringProperty,
+  normalizeOcrText
 };

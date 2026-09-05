@@ -185,8 +185,11 @@ class SignedUpdateLifecycle {
     const expectedBackupFile=path.join(this.paths.backup,'LLera.previous.bin');
     const currentFile=path.resolve(String(journal.currentFile || ''));
     const backupFile=path.resolve(String(journal.backupFile || ''));
-    if (currentFile !== path.resolve(expectedCurrentFile) || backupFile !== path.resolve(expectedBackupFile)) {
-      throw new Error('rollback journal path binding mismatch');
+    if (currentFile !== path.resolve(expectedCurrentFile)) {
+      throw new Error('rollback current path binding mismatch');
+    }
+    if (backupFile !== path.resolve(expectedBackupFile)) {
+      throw new Error('rollback backup path binding mismatch');
     }
     const backupDigest=await sha256File(backupFile);
     if (backupDigest.toLowerCase() !== journal.backupSha256.toLowerCase()) {

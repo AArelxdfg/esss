@@ -24,6 +24,16 @@ function optionalStringProperty(object, key, fallback) {
   return entry.value;
 }
 
+function normalizeOcrText(value) {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') {
+    const error = new Error('OCR backend output must be string');
+    error.code = 'VISION_OCR_OUTPUT_INVALID';
+    throw error;
+  }
+  return value;
+}
+
 class VisionPipeline {
   constructor({ now = () => new Date().toISOString(), maxBytes = 32 * 1024 * 1024 } = {}) {
     this.now = now;
@@ -97,7 +107,7 @@ class VisionPipeline {
 
       if (shouldOcr && canOcr) {
         try {
-          text = String(await ocr(cloneInput(n)) || '');
+          text = normalizeOcrText(await ocr(cloneInput(n)));
           backends.push('windows-ocr');
         } catch (error) {
           warnings.push({ backend: 'windows-ocr', reason: String(error && error.message || error) });
@@ -145,4 +155,4 @@ function cloneInput(input) {
   return { ...input, bytes: Buffer.from(input.bytes) };
 }
 
-module.exports = { VisionPipeline, cloneInput, ownDataProperty, optionalStringProperty };
+module.exports = { VisionPipeline, cloneInput, ownDataProperty, optionalStringProperty, normalizeOcrText };

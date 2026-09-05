@@ -38,6 +38,21 @@ const { SignedUpdateLifecycle, stableStringify } = require('../src/signed-update
   assert.equal(journal.backupSha256, crypto.createHash('sha256').update(oldBytes).digest('hex'));
   assert.equal(journal.manifestPayloadSha256, verificationReceipt.payloadSha256);
 
+  const externalTarget = path.join(tmp, 'outside-managed-current.bin');
+  const externalBackup = path.join(tmp, 'outside-managed-backup.bin');
+  const externalBytes = Buffer.from('external bytes that must never be promoted');
+  await fs.writeFile(externalTarget, Buffer.from('external current'));
+  await fs.writeFile(externalBackup, externalBytes);
+  await lifecycle._writeJournal({
+    ...journal,
+    currentFile: externalTarget,
+    backupFile: externalBackup,
+    backupSha256: crypto.createHash('sha256').update(externalBytes).digest('hex')
+  });
+  await assert.rejects(lifecycle.rollback(), /rollback journal path binding mismatch/);
+  assert.equal((await fs.readFile(externalTarget)).toString(), 'external current', 'tampered journal must not redirect rollback writes outside managed current slot');
+
+  await lifecycle._writeJournal(journal);
   await fs.writeFile(journal.backupFile, Buffer.from('tampered rollback bytes'));
   await assert.rejects(lifecycle.rollback(), /rollback backup integrity mismatch/);
   assert.equal((await fs.readFile(current)).toString(), newBytes.toString(), 'active verified build must remain untouched after rejected rollback');
@@ -51,6 +66,8 @@ const { SignedUpdateLifecycle, stableStringify } = require('../src/signed-update
     signedManifestReceiptRequired:true,
     backupDigestJournalBound:true,
     manifestDigestJournalBound:true,
+    rollbackPathsBoundToManagedSlots:true,
+    tamperedJournalPathRejected:true,
     tamperedBackupRejected:true,
     activeBuildPreservedOnReject:true,
     unboundLegacyRollbackFailsClosed:true

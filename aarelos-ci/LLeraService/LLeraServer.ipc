@@ -1,0 +1,8 @@
+endpoint LLeraServer
+{
+    ping() => (String reply)
+    status() => (String state, bool model_loaded, bool voice_enabled)
+    request_action(String capability, String verb, String argument) => (bool accepted, String decision)
+    set_voice_enabled(bool enabled) => (bool effective)
+    kill_switch() => ()
+}

@@ -1,0 +1,25 @@
+name: AArel OS Runner Probe
+
+on:
+  push:
+    branches: [aarelos-ci-sprint]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: [self-hosted, linux, x64, aarelos]
+    steps:
+      - name: Probe runner
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "AARELOS_RUNNER_PROBE=PASS"
+          echo "AARELOS_PROBE_REV=2026-08-24T15:53+03:00"
+          uname -a
+          date -u
+          df -h /
+          free -h
+          git --version
+          cmake --version | head -1
+          gcc --version | head -1
+          qemu-system-x86_64 --version | head -1

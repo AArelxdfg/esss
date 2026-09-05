@@ -1,0 +1,59 @@
+name: AArel OS CI Diagnostics
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnostics:
+    runs-on: [self-hosted, linux, x64, aarelos]
+    permissions:
+      contents: read
+    steps:
+      - name: Runner heartbeat
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "AARELOS_RUNNER_HEARTBEAT=PASS"
+          uname -a
+          python3 --version
+          df -h /
+          free -h
+
+      - name: Checkout repository without external actions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git init .
+          git remote remove origin || true
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git reset --hard FETCH_HEAD
+          git clean -ffd
+          git rev-parse HEAD
+
+      - name: Collect environment
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p aarelos-diag
+          {
+            echo "heartbeat=PASS"
+            echo "commit=$(git rev-parse HEAD)"
+            echo "uname:"; uname -a
+            echo "cmake:"; cmake --version | head -1 || true
+            echo "ninja:"; ninja --version || true
+            echo "gcc:"; gcc --version | head -1 || true
+            echo "python:"; python3 --version || true
+            echo "disk:"; df -h /
+            echo "memory:"; free -h
+          } | tee aarelos-diag/environment.txt
+          cat aarelos-diag/environment.txt >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Validate AArel CI files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f aarelos-ci/run-ci.sh
+          bash -n aarelos-ci/run-ci.sh
+          find aarelos-ci -maxdepth 2 -type f | sort | tee aarelos-diag/files.txt
+          echo "AARELOS_DIAGNOSTICS=PASS" | tee -a "${GITHUB_STEP_SUMMARY}"

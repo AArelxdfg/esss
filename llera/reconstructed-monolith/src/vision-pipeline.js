@@ -34,6 +34,66 @@ function normalizeOcrText(value) {
   return value;
 }
 
+function normalizeVisionOutput(value, { maxDepth = 16, maxNodes = 4096 } = {}) {
+  let nodes = 0;
+  const seen = new Set();
+
+  function visit(entry, depth) {
+    if (entry === null || typeof entry === 'string' || typeof entry === 'boolean') return entry;
+    if (typeof entry === 'number') {
+      if (!Number.isFinite(entry)) throw invalid('vision backend output contains non-finite number');
+      return entry;
+    }
+    if (entry === undefined) return null;
+    if (typeof entry !== 'object') throw invalid('vision backend output must be JSON-safe data');
+    if (depth > maxDepth) throw invalid('vision backend output exceeds depth limit');
+    if (++nodes > maxNodes) throw invalid('vision backend output exceeds node limit');
+    if (seen.has(entry)) throw invalid('vision backend output must not contain cycles');
+
+    const prototype = Object.getPrototypeOf(entry);
+    if (Array.isArray(entry)) {
+      if (prototype !== Array.prototype) throw invalid('vision backend array prototype is unsafe');
+    } else if (prototype !== Object.prototype && prototype !== null) {
+      throw invalid('vision backend object prototype is unsafe');
+    }
+
+    seen.add(entry);
+    try {
+      if (Array.isArray(entry)) {
+        const result = [];
+        for (let index = 0; index < entry.length; index += 1) {
+          const descriptor = Object.getOwnPropertyDescriptor(entry, String(index));
+          if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+            throw invalid('vision backend array contains unsafe accessor or sparse entry');
+          }
+          result.push(visit(descriptor.value, depth + 1));
+        }
+        return result;
+      }
+
+      const result = Object.create(null);
+      for (const key of Object.keys(entry)) {
+        const descriptor = Object.getOwnPropertyDescriptor(entry, key);
+        if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+          throw invalid('vision backend object contains unsafe accessor');
+        }
+        result[key] = visit(descriptor.value, depth + 1);
+      }
+      return result;
+    } finally {
+      seen.delete(entry);
+    }
+  }
+
+  function invalid(message) {
+    const error = new Error(message);
+    error.code = 'VISION_MODEL_OUTPUT_INVALID';
+    return error;
+  }
+
+  return visit(value, 0);
+}
+
 class VisionPipeline {
   constructor({ now = () => new Date().toISOString(), maxBytes = 32 * 1024 * 1024 } = {}) {
     this.now = now;
@@ -98,7 +158,7 @@ class VisionPipeline {
 
       if (canVision) {
         try {
-          vision = await visionModel(cloneInput(n));
+          vision = normalizeVisionOutput(await visionModel(cloneInput(n)));
           backends.push('vision-4b');
         } catch (error) {
           warnings.push({ backend: 'vision-4b', reason: String(error && error.message || error) });
@@ -155,4 +215,4 @@ function cloneInput(input) {
   return { ...input, bytes: Buffer.from(input.bytes) };
 }
 
-module.exports = { VisionPipeline, cloneInput, ownDataProperty, optionalStringProperty, normalizeOcrText };
+module.exports = { VisionPipeline, cloneInput, ownDataProperty, optionalStringProperty, normalizeOcrText, normalizeVisionOutput };

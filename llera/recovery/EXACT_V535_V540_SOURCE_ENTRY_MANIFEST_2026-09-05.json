@@ -1,0 +1,54 @@
+{
+  "v535": {
+    "schema": 1,
+    "artifact": "LLera_V5_3_5_MONOLITH_OMEGA_EVIDENCE_LEDGER_Source.zip",
+    "version": "5.3.5",
+    "artifactSize": 3242430,
+    "artifactSha256": "06e9413789ffda643c5ba89be2794523a03f0d75a89eed91ca910527b4479097",
+    "zipEntryCount": 62,
+    "entries": [
+      {"path":"LLera_HOSTGUARD_CODEX_WORKSPACE/","kind":"directory","size":0,"sha256":null},
+      {"path":"LLera_HOSTGUARD_CODEX_WORKSPACE/README_V5_3_LIVEUPDATE.md","kind":"file","size":2530,"sha256":"95d25d93ae9bfc6aef6432990b82ad9c66ab49f9a8f75b61b26cbc1adf7d8d2b"},
+      {"path":"LLera_HOSTGUARD_CODEX_WORKSPACE/test_v5_integrity.js","kind":"file","size":3843,"sha256":"3f6e7f3055fb455ea4224ad6d70f57fd5481534796d9556bf2ffb4af81946dd6"},
+      {"path":"LLera_HOSTGUARD_CODEX_WORKSPACE/test_v531_reliability.js","kind":"file","size":5650,"sha256":"21b4ef95e37437eb789eb35dc5189e253546928cb75b6d5ad36633920d5e9dcb"}
+    ],
+    "note": "Exact historical File Library bytes; parity authority only. Does not mark reconstructed source exact or publishable. This manifest begins the per-entry reconciliation ledger; remaining entries are intentionally reconciled in subsequent verified passes."
+  },
+  "v540": {
+    "schema": 1,
+    "artifact": "LLera_V5_4_0_MONOLITH_AURORA_UX_Source.zip",
+    "version": "5.4.0",
+    "artifactSize": 1448475,
+    "artifactSha256": "b2b4cd091a68c6cc729585330353c292f990af3363193869b9f5971947af3471",
+    "zipEntryCount": 61,
+    "entries": [
+      {"path":"README_FINAL.md","kind":"file","size":2785,"sha256":"4149821fdb3b2af637222553b939bda3ccb7e94c875b0ebeb7b8478ce7a15ec4"},
+      {"path":"test_v53_liveupdate.js","kind":"file","size":4786,"sha256":"c3e5d1f7b08fa784ac46ca176d0db98490c3797146b945acced139848476788f"},
+      {"path":"test_v52_vision_models.js","kind":"file","size":3071,"sha256":"1287dc0c8dd1d5d7fdc23483d82b4a4098011a5008820892050329de21248018"},
+      {"path":"VERIFY_WORKSPACE.ps1","kind":"file","size":1109,"sha256":"5aa202844783e893135a7c4230771a5723c923281544911e26fc8caf7b0e203d"},
+      {"path":"README_V5_1_WORKMODE.md","kind":"file","size":3235,"sha256":"25e2604a9097d4ab9951231ecc6592bc8d27a5eef2fbef9644687c93947957f2"},
+      {"path":"uninstaller.go","kind":"file","size":5365,"sha256":"f6eff21e9779245a2f21d2e1a420bc458a80fd231350737def7a228572765ebe"},
+      {"path":"SECRET_SCAN.json","kind":"file","size":133,"sha256":"0a924d799e46bd1a028794332502f2d1f97e03c013e32c91185690dcfc0abe2a"},
+      {"path":"payload/","kind":"directory","size":0,"sha256":null},
+      {"path":"payload/app/","kind":"directory","size":0,"sha256":null},
+      {"path":"payload/app/preload.js","kind":"file","size":6243,"sha256":"0344cc8f617a3ad9943d6bb137c0ca405d741e97000f5cbe4518ee4df1a2583a"},
+      {"path":"payload/app/main.js","kind":"file","size":34046,"sha256":"79280b9b89373f02c080063b5bbb4a37f35b00a668e6aa4c20ad22bac2be9f58"},
+      {"path":"payload/app/workspace.css","kind":"file","size":9666,"sha256":"e659086e488b8e69f962be9684c7c7f7ffb3a44eb1c0e2f3c5f567461c0597f6"},
+      {"path":"payload/app/agent.html","kind":"file","size":7404,"sha256":"15931f51639a415495a45976e10029d5d756622433cb318db86bc9b2577d1fde"},
+      {"path":"payload/app/agent.css","kind":"file","size":8131,"sha256":"34ce4e92e29fb4508a9650f71bd9a5f22f43e85215a22f670a010b47ea82975f"},
+      {"path":"payload/app/premium.css","kind":"file","size":4518,"sha256":"ad74dfe94aa44e23ba84aa207cf20b0b80ed0864e5c57fa01c2d6e1938069140"},
+      {"path":"payload/app/agent.js","kind":"file","size":70040,"sha256":"a56fd1bc43355b1461aec4d62cf94613c54db3601d6444754439241444e71d53"},
+      {"path":"payload/app/v5/","kind":"directory","size":0,"sha256":null},
+      {"path":"payload/app/v5/evolution.js","kind":"file","size":7728,"sha256":"64d6ad4ef36babba962a2799ea90f340fb8ccf892d13d0be812a1af2377ce114"},
+      {"path":"payload/app/package.json","kind":"file","size":1546,"sha256":"b68ac3e4b45b17717d0255036fb6ca04fa4e67731c72577966f9242dc6df2c3e"},
+      {"path":"payload/app/style.css","kind":"file","size":17141,"sha256":"be89907adcc9315e84bf810677632aeab423fd881af58648bcb55962d34d8e92"},
+      {"path":"payload/app/renderer.js","kind":"file","size":26848,"sha256":"752ecf31ab783c5315302d08da0d14ff81e2091c65e9d9163790a0595779395b"},
+      {"path":"payload/app/v3/core.js","kind":"file","size":21611,"sha256":"358577e8e11b69ea7544051405f71538402303a96332627273c4dfaa09e51a25"},
+      {"path":"payload/app/index.html","kind":"file","size":16440,"sha256":"8fe2f003b7187cb319454644e0d8b7c4000de28d036dcf17d390f839412b9ed4"},
+      {"path":"payload/app/ux.css","kind":"file","size":7975,"sha256":"71f15d8323ac7ad096295042af0ac6ced21fd60473b62240745adb65ea4ca0ce"},
+      {"path":"payload/app/updater.js","kind":"file","size":4402,"sha256":"2a9f5366a9d9c9e1d5c5ed234a28cd745d8b25789e08e115619c8d3a2a839d19"},
+      {"path":"payload/app/v4/cognition.js","kind":"file","size":15127,"sha256":"0ddd2907bc10c1a09d184676d2233ce526848b9ace52c51ca87fbe234bf958f2"}
+    ],
+    "note": "Exact historical File Library bytes; parity authority only. Does not mark reconstructed source exact or publishable. This manifest begins the per-entry reconciliation ledger; remaining entries are intentionally reconciled in subsequent verified passes."
+  }
+}

@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { VisionPipeline } = require('../src/vision-pipeline');
+const { VisionPipeline, normalizeOcrText } = require('../src/vision-pipeline');
 
 (async () => {
   const bytes = Buffer.from('MONOLITH OCR TEST 2026');
@@ -33,6 +33,16 @@ const { VisionPipeline } = require('../src/vision-pipeline');
   assert.strictEqual(effects, 0, 'OCR result coercion must not execute attacker-controlled toString');
   assert.strictEqual(pipeline.active, null, 'failed OCR must release the single-flight slot');
 
+  assert.throws(
+    () => normalizeOcrText('🙂🙂🙂', { maxBytes: 11 }),
+    (error) => error && error.code === 'VISION_OCR_OUTPUT_INVALID' && /exceeds byte limit/.test(error.message),
+  );
+  assert.throws(
+    () => normalizeOcrText('ok', { maxBytes: Number.POSITIVE_INFINITY }),
+    (error) => error && error.code === 'VISION_OCR_OUTPUT_INVALID' && /positive safe integer/.test(error.message),
+  );
+  assert.strictEqual(normalizeOcrText('🙂🙂🙂', { maxBytes: 12 }), '🙂🙂🙂');
+
   const result = await pipeline.analyze(input, {
     ocr: async () => 'MONOLITH OCR TEST 2026',
   });
@@ -47,6 +57,8 @@ const { VisionPipeline } = require('../src/vision-pipeline');
   console.log('MONOLITH vision OCR output boundary PASS', {
     coerciveOutputRejected: true,
     sideEffects: effects,
+    utf8ByteBudgetEnforced: true,
+    invalidByteBudgetRejected: true,
     validStringAccepted: true,
     singleFlightReleased: true,
   });

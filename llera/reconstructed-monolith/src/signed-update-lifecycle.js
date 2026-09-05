@@ -162,9 +162,25 @@ class SignedUpdateLifecycle {
     try {
       await fsp.access(currentFile);
       hadCurrent=true;
-      await fsp.copyFile(currentFile,backupFile);
-      backupSha256=await sha256File(backupFile);
-    } catch {}
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        const wrapped=new Error(`Cannot inspect current install before update: ${error.message}`);
+        wrapped.code='UPDATE_CURRENT_INSPECTION_FAILED';
+        wrapped.cause=error;
+        throw wrapped;
+      }
+    }
+    if (hadCurrent) {
+      try {
+        await fsp.copyFile(currentFile,backupFile);
+        backupSha256=await sha256File(backupFile);
+      } catch (error) {
+        const wrapped=new Error(`Cannot create rollback backup: ${error.message}`);
+        wrapped.code='UPDATE_ROLLBACK_BACKUP_FAILED';
+        wrapped.cause=error;
+        throw wrapped;
+      }
+    }
     const tmp=`${currentFile}.new`; await fsp.copyFile(stagedPath,tmp); const digest=await sha256File(tmp);
     if (digest.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) { await fsp.rm(tmp,{force:true}); throw new Error('activation integrity mismatch'); }
     await fsp.rename(tmp,currentFile);
